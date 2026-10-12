@@ -855,7 +855,7 @@ try
         var result = offlineService.RefreshAsync([KoreanHolidayCalendars.AppleId],
             CancellationToken.None).GetAwaiter().GetResult();
         Assert.That(result.Count == 1 && !result[0].Success && result[0].EventCount == 1
-            && offlineService.Events.Count == 1,
+            && offlineService.Events.Count(e => e.CalendarId == KoreanHolidayCalendars.AppleId) == 1,
             "failed public holiday refresh retains last-good cached data");
         Assert.That(KoreanHolidayFeedService.DescribeResults(result).Contains("가져오기 실패")
             && KoreanHolidayFeedService.DescribeResults(result).Contains("캐시 유지"),
