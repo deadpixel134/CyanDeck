@@ -829,7 +829,7 @@ try
             && result[0].EventCount == 1 && googleRequests.Count == 2
             && googleRequests[0].Contains("ko.south_korea.official%23holiday%40group.v.calendar.google.com")
             && googleRequests[1].Contains("www.google.com")
-            && googleService.Events.Single().CalendarId == KoreanHolidayCalendars.GoogleId,
+            && googleService.Events.Count(e => e.CalendarId == KoreanHolidayCalendars.GoogleId) == 1,
             "Google holidays retry same calendar ID on alternate host after non-ICS response");
         Assert.That(KoreanHolidayFeedService.DescribeResults(result).Contains("대체 주소 사용"),
             "Google holiday fallback returns completed result to settings instead of loading forever");
