@@ -49,6 +49,15 @@ jobs:
         run: |
           python tools/run_v43_safety_regressions.py
           python tools/test_v45_recycle_bin_preflight.py
+      - name: Execute calendar and desktop regression harnesses
+        shell: pwsh
+        run: |
+          dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Calendar domain harness failed; release blocked.' }
+          dotnet run --project tests/WatcherLifetimeHarness/WatcherLifetimeHarness.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Watcher lifetime harness failed; release blocked.' }
+          dotnet run --project tests/FenceVisibilityHarness/FenceVisibilityHarness.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Fence visibility harness failed; release blocked.' }
       - name: Build, sign and independently verify update package
         shell: pwsh
         run: |
