@@ -1,0 +1,5 @@
+# Example only. Do not rename this example verbatim.
+# Paste JUST the Desktop app OAuth Client ID (one line) into a new file named:
+# desktopdeck-google-client-id.txt
+# 123456789012-example.apps.googleusercontent.com
+# Never store access tokens, refresh tokens, passwords or client secret in this file.

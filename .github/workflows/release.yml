@@ -1,0 +1,107 @@
+name: signed-github-release
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  signed-build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        runtime: [win-x64, win-arm64]
+    env:
+      DESKTOPDECK_UPDATE_SIGNING_KEY_PEM: ${{ secrets.DESKTOPDECK_UPDATE_SIGNING_KEY_PEM }}
+      DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON: ${{ secrets.DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate exact tag, signing key and desktop OAuth
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:DESKTOPDECK_UPDATE_SIGNING_KEY_PEM)) {
+            throw 'Missing DESKTOPDECK_UPDATE_SIGNING_KEY_PEM repository secret; refusing unsigned release.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON)) {
+            throw 'Missing DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON repository secret; refusing Google-unprovisioned release.'
+          }
+          [xml]$proj = Get-Content 'src/DesktopDeck/DesktopDeck.csproj' -Raw
+          $expected = 'v' + [string]$proj.Project.PropertyGroup.Version
+          if ('${{ github.ref_name }}' -cne $expected) { throw "Tag must exactly match version: $expected" }
+          try {
+            $cred = $env:DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON | ConvertFrom-Json
+            if ([string]$cred.installed.client_id -notmatch '^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$' -or
+                [string]::IsNullOrWhiteSpace([string]$cred.installed.client_secret)) {
+              throw 'Missing valid Desktop installed client properties.'
+            }
+          } catch { throw 'Invalid Desktop Google OAuth JSON secret; do not use a Web client JSON.' }
+      - name: Static security regression gate
+        shell: pwsh
+        run: |
+          python tools/run_v43_safety_regressions.py
+          python tools/test_v45_recycle_bin_preflight.py
+      - name: Build, sign and independently verify update package
+        shell: pwsh
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP ('desktopdeck-private-' + [Guid]::NewGuid().ToString('N') + '.pem')
+          $oauth = Join-Path 'json' 'client_secret.json'
+          try {
+            [IO.File]::WriteAllText($key, $env:DESKTOPDECK_UPDATE_SIGNING_KEY_PEM, [Text.UTF8Encoding]::new($false))
+            New-Item -ItemType Directory -Force -Path 'json' | Out-Null
+            [IO.File]::WriteAllText($oauth, $env:DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON, [Text.UTF8Encoding]::new($false))
+            .\package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $key
+            $version = ([xml](Get-Content src/DesktopDeck/DesktopDeck.csproj -Raw)).Project.PropertyGroup.Version
+            .\verify-release.ps1 -ManifestPath "dist/DesktopDeck-$version-${{ matrix.runtime }}.update.json"
+          } finally {
+            if (Test-Path -LiteralPath $oauth) { Remove-Item -LiteralPath $oauth -Force }
+            if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Force }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-${{ matrix.runtime }}
+          path: |
+            dist/DesktopDeck-*.zip
+            dist/DesktopDeck-*.update.json
+          if-no-files-found: error
+
+  publish:
+    needs: signed-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: signed-*
+          path: release-assets
+          merge-multiple: true
+      - name: Attach complete source archive and checksums
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          sourceZip="release-assets/DesktopDeck-${TAG}-full-source.zip"
+          git archive --format=zip --output "$sourceZip" HEAD
+          files="$(unzip -Z1 "$sourceZip" | wc -l)"
+          test "$files" -ge 260 || { echo "Source release unexpectedly incomplete: $files files"; exit 1; }
+          (cd release-assets && sha256sum -- *.zip > SHA256SUMS.txt)
+      - name: Publish verified GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$(find release-assets -name '*.update.json' | wc -l)" -eq 2
+          test "$(find release-assets -name '*.zip' | wc -l)" -eq 3
+          gh release create "$TAG" release-assets/*.zip release-assets/*.update.json release-assets/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --title "DesktopDeck $TAG" \
+            --notes "Signed Windows updates for win-x64 and win-arm64; full source archive and SHA-256 checksums included."

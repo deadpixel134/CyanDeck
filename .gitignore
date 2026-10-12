@@ -1,0 +1,41 @@
+# Build output
+**/bin/
+**/obj/
+publish/
+dist/
+.vs/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.exe
+*.dll
+*.pdb
+*.zip
+*.msi
+*.bak
+*.tmp
+*.log
+*.user
+*.suo
+
+# Authentication, user data, and credentials (never publish)
+.env
+.env.*
+*.pfx
+*.p12
+*.key
+*.pem
+**/client_secret*.json
+**/*oauth*credentials*.json
+**/*token*.json
+**/layout.json
+**/calendar-events.json
+**/calendar-preferences.json
+**/desktopdeck-google-client-id.txt
+**/DesktopDeck-diagnostics-*.zip
+
+# Legacy generated reports and version-specific scratch material
+docs/CALENDAR_*_TEST_REPORT.*
+docs/*STATIC*RESULTS*
+docs/*REGRESSION*RESULTS*

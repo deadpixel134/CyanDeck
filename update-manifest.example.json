@@ -1,0 +1,13 @@
+{
+  "version": "7.49.5",
+  "schema": 35,
+  "runtime": "win-x64",
+  "packageUrl": "DesktopDeck-7.49.5-win-x64.zip",
+  "sha256": "REPLACE_WITH_PACKAGE_SHA256",
+  "releaseNotesUrl": "",
+  "notes": "Optional release notes shown before download.",
+  "publishedUtc": "2026-09-29T00:00:00Z",
+  "signatureAlgorithm": "RSA-PSS-SHA256",
+  "signature": "REQUIRED_BASE64_RSA_PSS_SIGNATURE",
+  "keyId": "REQUIRED_SHA256_FINGERPRINT_OF_SUBJECT_PUBLIC_KEY_INFO"
+}

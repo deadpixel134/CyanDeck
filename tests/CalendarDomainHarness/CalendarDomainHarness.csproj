@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarEventStore.cs" Link="CalendarEventStore.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarEventMovePolicy.cs" Link="CalendarEventMovePolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/WeekBarLayout.cs" Link="WeekBarLayout.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarWeekSizingPolicy.cs" Link="CalendarWeekSizingPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarViewportPolicy.cs" Link="CalendarViewportPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarHeaderPolicy.cs" Link="CalendarHeaderPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/GoogleCalendarCatalogRefreshPolicy.cs" Link="GoogleCalendarCatalogRefreshPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarSyncIntervalPolicy.cs" Link="CalendarSyncIntervalPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/GoogleEventReconciliation.cs" Link="GoogleEventReconciliation.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/GoogleUploadReconciliation.cs" Link="GoogleUploadReconciliation.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarPreferences.cs" Link="CalendarPreferences.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/KoreanHolidayCalendars.cs" Link="KoreanHolidayCalendars.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/GoogleOAuthClientConfiguration.cs" Link="GoogleOAuthClientConfiguration.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/CalendarBackupRestorer.cs" Link="CalendarBackupRestorer.cs" />
+    <Compile Include="../../src/DesktopDeck/Calendar/VerifiedCredentialCheckpoint.cs" Link="VerifiedCredentialCheckpoint.cs" />
+    <Compile Include="../../src/DesktopDeck/Services/FeatureSwitchCheckpoint.cs" Link="FeatureSwitchCheckpoint.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,30 @@
+<Window x:Class="DesktopDeck.Views.SnapshotGalleryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DesktopDeck - 레이아웃 스냅샷" Width="720" Height="560"
+        WindowStartupLocation="CenterScreen" Background="#17191E" Foreground="#F4F6FA"
+        ShowInTaskbar="False" ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Foreground" Value="#F4F6FA"/>
+            <Setter Property="Background" Value="#24FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#35FFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,7"/>
+            <Setter Property="Margin" Value="4,0,0,0"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <StackPanel Margin="2,0,0,14">
+            <TextBlock Text="레이아웃 스냅샷" FontSize="22" FontWeight="SemiBold"/>
+            <TextBlock Text="저장된 그룹 위치를 미리보고 복원합니다." Foreground="#9FABB9" Margin="0,5,0,0"/>
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="CardsPanel"/>
+        </ScrollViewer>
+    </Grid>
+</Window>

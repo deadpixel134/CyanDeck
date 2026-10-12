@@ -1,0 +1,35 @@
+name: Windows build and safety tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+    strategy:
+      matrix:
+        runtime: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Static safety regression checks
+        run: |
+          python tools/run_v43_safety_regressions.py
+          python tools/test_v45_recycle_bin_preflight.py
+      - name: WPF build
+        run: dotnet build src/DesktopDeck/DesktopDeck.csproj --configuration Release
+      - name: Calendar domain tests
+        run: dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj --configuration Release
+      - name: Watcher lifetime tests
+        run: dotnet run --project tests/WatcherLifetimeHarness/WatcherLifetimeHarness.csproj --configuration Release
+      - name: Fence visibility tests
+        run: dotnet run --project tests/FenceVisibilityHarness/FenceVisibilityHarness.csproj --configuration Release

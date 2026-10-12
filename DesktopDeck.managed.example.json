@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "name": "Office desktop baseline",
+  "deploymentStyle": "Flexible",
+  "settings": {
+    "QuickHide.Enabled": true,
+    "QuickHide.AlwaysShowIconsAtStartup": true,
+    "General.QuickHideMode": "GroupsOnly",
+    "General.PageAnimationsEnabled": true,
+    "General.AutoImportDesktopItems": true,
+    "General.CreateGroupMouseButtonMode": "RightOnly",
+    "Layout.UseSameSpacingInsideAndOutsideGroups": false,
+    "Automation.UseDefaultDesktopPlacement": false,
+    "Automation.DefaultDesktopPlacementKind": "Desktop",
+    "Automation.DefaultDesktopPlacementGroupId": null,
+    "Automation.DefaultDesktopPlacementTabId": null,
+    "Automation.ActivateDefaultDestinationTab": false,
+    "Performance.IconCacheCapacity": 1024,
+    "Safety.LargeRecycleConfirmThreshold": 20,
+    "Input.EnableTouchIconFlick": false,
+    "Appearance.ShowTitlebarControlsInInactiveTabs": false,
+    "Appearance.HideFileShortcutBadges": false,
+    "Appearance.HideInternetShortcutBadges": false,
+    "Appearance.ShowShortcutBadgesInFolderPortals": false,
+    "Appearance.AnimateIconsWhenMoved": false,
+    "Appearance.IconMovementAnimationDurationMs": 160,
+    "Performance.IconMovementAnimationMaxItems": 128
+  },
+  "lockedSettings": [
+    "General.AutoImportDesktopItems"
+  ],
+  "capabilities": {
+    "Layout.SwapScreenContents": false,
+    "Layout.IconSpacing.Edit": true,
+    "Automation.EditRules": true,
+    "ImportExport.Import": false,
+    "Input.TouchIconFlick": true,
+    "FolderPortal.CreateFromDesktopAltDrop": true
+  }
+}

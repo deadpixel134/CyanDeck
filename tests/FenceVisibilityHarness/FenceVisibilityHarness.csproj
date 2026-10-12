@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/DesktopDeck/Services/FenceVisibilityPolicy.cs" Link="Production/FenceVisibilityPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Services/DesktopShowDesktopRecoveryPolicy.cs" Link="Production/DesktopShowDesktopRecoveryPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Appearance/LooseIconOpacityPolicy.cs" Link="Production/LooseIconOpacityPolicy.cs" />
+    <Compile Include="../../src/DesktopDeck/Services/TabSwitchActivationPolicy.cs" Link="Production/TabSwitchActivationPolicy.cs" />
+  </ItemGroup>
+</Project>
