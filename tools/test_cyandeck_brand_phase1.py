@@ -174,6 +174,13 @@ checks.update({
     "prepared verification rejects linked files": "Refusing linked migration item:" in migration_preflight,
     "prepared verification refuses apply combination": "Use -VerifyPrepared or -Apply, not both." in migration_preflight,
 })
+root_readiness = source("src/DesktopDeck/Services/DataRootPaths.cs")
+checks.update({
+    "cutover readiness is read only": "HasPreparedCriticalData" in root_readiness and "ActiveRoaming => LegacyRoaming" in root_readiness,
+    "cutover checks optional calendar presence": 'File.Exists(Path.Combine(LegacyRoaming, "calendar-events.json"))' in root_readiness,
+    "cutover checks Google token presence": 'File.Exists(Path.Combine(LegacyRoaming, "calendar-google-token.dat"))' in root_readiness,
+    "cutover checks Google account presence": 'File.Exists(Path.Combine(LegacyRoaming, "calendar-google-owner.dat"))' in root_readiness,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
