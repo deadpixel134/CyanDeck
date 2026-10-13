@@ -26,6 +26,47 @@ public static class DataRootPaths
         File.Exists(Path.Combine(CyanRoaming, "calendar-google-owner.dat")) ==
         File.Exists(Path.Combine(LegacyRoaming, "calendar-google-owner.dat"));
 
+    // Stronger read-only verification than the presence-only UI indicator.
+    // Any changed, added or removed file invalidates the staged copy.
+    public static bool IsPreparedCopyIdentical()
+    {
+        try
+        {
+            if (!HasPreparedCriticalData) return false;
+            var source = new DirectoryInfo(LegacyRoaming);
+            var target = new DirectoryInfo(CyanRoaming);
+            if (!source.Exists || !target.Exists) return false;
+            var sourceFiles = source.GetFiles("*", SearchOption.AllDirectories);
+            var targetFiles = target.GetFiles("*", SearchOption.AllDirectories);
+            if (sourceFiles.Length != targetFiles.Length) return false;
+            foreach (var file in sourceFiles)
+            {
+                if ((file.Attributes & FileAttributes.ReparsePoint) != 0) return false;
+                var relative = Path.GetRelativePath(source.FullName, file.FullName);
+                var copy = new FileInfo(Path.Combine(target.FullName, relative));
+                if (!copy.Exists || (copy.Attributes & FileAttributes.ReparsePoint) != 0 || copy.Length != file.Length)
+                    return false;
+                using var originalStream = file.OpenRead();
+                using var copiedStream = copy.OpenRead();
+                var originalHash = System.Security.Cryptography.SHA256.HashData(originalStream);
+                var copiedHash = System.Security.Cryptography.SHA256.HashData(copiedStream);
+                if (!originalHash.AsSpan().SequenceEqual(copiedHash)) return false;
+            }
+            var sourceDirs = source.GetDirectories("*", SearchOption.AllDirectories);
+            var targetDirs = target.GetDirectories("*", SearchOption.AllDirectories);
+            if (sourceDirs.Length != targetDirs.Length) return false;
+            foreach (var dir in sourceDirs)
+            {
+                if ((dir.Attributes & FileAttributes.ReparsePoint) != 0) return false;
+                var copy = new DirectoryInfo(Path.Combine(target.FullName, Path.GetRelativePath(source.FullName, dir.FullName)));
+                if (!copy.Exists || (copy.Attributes & FileAttributes.ReparsePoint) != 0) return false;
+            }
+            return true;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
     // All persistent stores must switch together in a later, verified release.
     // Never infer activation merely because the destination directory exists.
     public static string ActiveRoaming => LegacyRoaming;
