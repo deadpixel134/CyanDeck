@@ -33,6 +33,8 @@ chk={
     'installer rejects links': 'CyanDeck installer refused reparse-point path' in inst,
     'installer checks destination before copying': inst.index('Assert-NoReparseAncestors $installDir') < inst.index('Copy-Item $source'),
     'installer checks owned file targets': 'Assert-NoReparseAncestors (Join-Path $installDir $name)' in inst,
+    'installer preflights required helper files before writing': all(fragment in inst for fragment in ("'uninstall.ps1','apply-update.ps1','recover-desktop-icons.ps1'", 'Assert-NoReparseAncestors $helperSource', 'Required CyanDeck installer helper is missing:')) and inst.index('Required CyanDeck installer helper is missing:') < inst.index('Copy-Item $source'),
+    'installer protects recovery helper destination': "'apply-update.ps1','recover-desktop-icons.ps1'" in inst and 'Assert-NoReparseAncestors (Join-Path $installDir $name)' in inst,
     'installer checks source EXE': 'Assert-NoReparseAncestors $source' in inst,
     'installer checks existing shortcuts': 'Assert-ShortcutBelongsToDesktopDeck' in inst,
     'installer refuses foreign shortcut': 'CyanDeck installer refused to overwrite an unrelated shortcut' in inst,
