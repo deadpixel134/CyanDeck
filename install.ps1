@@ -105,6 +105,8 @@ Copy-Item (Join-Path $PSScriptRoot "uninstall.ps1") (Join-Path $installDir "unin
 Copy-Item (Join-Path $PSScriptRoot "apply-update.ps1") (Join-Path $installDir "apply-update.ps1") -Force
 Copy-Item (Join-Path $PSScriptRoot "recover-desktop-icons.ps1") (Join-Path $installDir "recover-desktop-icons.ps1") -Force
 
+# Ensure Start Menu path exists before creating the CyanDeck shortcut.
+New-Item -ItemType Directory -Path $startMenuDir -Force | Out-Null
 $wsh = New-Object -ComObject WScript.Shell
 $link = $wsh.CreateShortcut($shortcut)
 $link.TargetPath = Join-Path $installDir "CyanDeck.exe"

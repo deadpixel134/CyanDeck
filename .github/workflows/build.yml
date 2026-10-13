@@ -36,6 +36,18 @@ jobs:
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)
             if (@($errors).Count -gt 0) { throw "Syntax error in $file" }
           }
+      - name: Standalone CyanDeck identity test
+        shell: pwsh
+        run: python tools/test_cyandeck_identity.py
+      - name: Clean install and uninstall in disposable Windows profile
+        shell: pwsh
+        run: ./tools/test_cyandeck_clean_install.ps1
+      - name: Signed-style update layout and rollback integration
+        shell: pwsh
+        run: ./tools/test_cyandeck_update_package_layout.ps1
+      - name: Windows PowerShell update rollback compatibility
+        shell: powershell
+        run: ./tools/test_cyandeck_update_package_layout.ps1
       - name: Build CyanDeck WPF for ${{ matrix.runtime }}
         shell: pwsh
         run: |

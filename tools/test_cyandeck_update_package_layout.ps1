@@ -57,7 +57,7 @@ try {
     @{ name='mixed-root'; files=[ordered]@{ 'CyanDeck.exe'='new-exe'; 'extra/README.md'='unrelated' } },
     @{ name='duplicate-entry'; files=[ordered]@{ 'CyanDeck.exe'='new-exe'; 'README.md'='valid'; 'A/README.md'='mixed' } },
     @{ name='second-exe-root'; files=[ordered]@{ 'A/CyanDeck.exe'='new-exe'; 'B/CyanDeck.exe'='new-exe' } },
-    @{ name='uncoordinated-exe'; files=[ordered]@{ 'CyanDeck.exe'='new-exe'; 'CyanDeck.exe'='new-exe' } }
+    @{ name='unexpected-other-exe'; files=[ordered]@{ 'CyanDeck.exe'='new-exe'; 'AnotherApp.exe'='unrelated' } }
   )
   foreach ($fixture in $fixtures) {
     $zip = New-FixtureZip $fixture.name $fixture.files
