@@ -17,14 +17,65 @@ if (Test-Path -LiteralPath $installDir -PathType Container) {
   }
 }
 
+# This legacy uninstaller must not remove a program or profile after an
+# explicit CyanDeck cutover. Never interpret malformed/directory fences as absent.
+function Assert-LegacyWriterFenceAbsent {
+  $fencePath = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'DesktopDeck\migration\legacy-writer-fenced.json'))
+  $cursor = $fencePath
+  while ($cursor) {
+    $attributes = $null
+    try { $attributes = [IO.File]::GetAttributes($cursor) }
+    catch [IO.FileNotFoundException] { }
+    catch [IO.DirectoryNotFoundException] { }
+    if ($null -ne $attributes) {
+      if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Unsafe CyanDeck legacy profile fence path: $cursor"
+      }
+      if ([string]::Equals($cursor, $fencePath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'CyanDeck profile cutover fence is present. Legacy uninstall and purge are blocked.'
+      }
+    }
+    $parent = [IO.Path]::GetDirectoryName($cursor.TrimEnd('\', '/'))
+    if (-not $parent -or $parent -eq $cursor) { break }
+    $cursor = $parent
+  }
+}
+
+# Take the same old/new writer locks used by app, installer, updater and
+# migration. Never remove binaries while either version is still writing.
+$legacyUninstallMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
+$writerUninstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
+$ownsLegacyUninstallMutex = $false
+$ownsWriterUninstallMutex = $false
+try {
+  try { $ownsLegacyUninstallMutex = $legacyUninstallMutex.WaitOne(0) }
+  catch [Threading.AbandonedMutexException] {
+    $ownsLegacyUninstallMutex = $true
+    throw 'DesktopDeck stopped unexpectedly; inspect data before uninstalling.'
+  }
+  if (-not $ownsLegacyUninstallMutex) {
+    throw 'DesktopDeck is running or another profile operation is active. Uninstall cancelled.'
+  }
+  try { $ownsWriterUninstallMutex = $writerUninstallMutex.WaitOne(0) }
+  catch [Threading.AbandonedMutexException] {
+    $ownsWriterUninstallMutex = $true
+    throw 'A CyanDeck writer stopped unexpectedly; inspect data before uninstalling.'
+  }
+  if (-not $ownsWriterUninstallMutex) {
+    throw 'Another CyanDeck writer or data migration owns the profile. Uninstall cancelled.'
+  }
+  Assert-LegacyWriterFenceAbsent
 # Graceful exit is a prerequisite, not a forced Stop-Process. This avoids
 # corrupting a pending layout or calendar save during uninstallation.
-if (@(Get-Process DesktopDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is running. Exit from the tray menu before uninstalling.'
 }
 
 if ($PurgeData -and -not $ConfirmPurgeData) {
   throw 'Deleting user data requires both -PurgeData and -ConfirmPurgeData. A backup will be retained.'
+}
+if ($PurgeData -and (Test-Path -LiteralPath (Join-Path $env:APPDATA 'CyanDeck'))) {
+  throw 'A CyanDeck candidate profile exists. Refusing to purge only DesktopDeck data while the second copy remains.'
 }
 if ($PurgeData) {
   $backupRoot = Join-Path $env:LOCALAPPDATA 'DesktopDeck-uninstall-backups'
@@ -112,3 +163,10 @@ if ($PurgeData) {
 }
 Write-Host 'CyanDeck was uninstalled (unrelated files preserved).'
 if (-not $PurgeData) { Write-Host 'Your settings were preserved in %APPDATA%\DesktopDeck.' }
+
+} finally {
+  if ($ownsWriterUninstallMutex) { $writerUninstallMutex.ReleaseMutex() }
+  $writerUninstallMutex.Dispose()
+  if ($ownsLegacyUninstallMutex) { $legacyUninstallMutex.ReleaseMutex() }
+  $legacyUninstallMutex.Dispose()
+}
