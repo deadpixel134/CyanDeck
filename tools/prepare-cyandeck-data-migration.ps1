@@ -227,7 +227,11 @@ function Assert-CanPrepareJournal {
 # prevents an app instance from starting during the copy/verification window.
 # Process-name checks alone cannot close the startup race.
 $migrationMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
+# New DesktopDeck/CyanDeck builds hold this lease for their entire runtime.
+# This second lock remains stable even if their executable identity changes.
+$writerLeaseMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
 $ownsMigrationMutex = $false
+$ownsWriterLease = $false
 try {
   try {
     $ownsMigrationMutex = $migrationMutex.WaitOne(0)
@@ -239,6 +243,15 @@ try {
   }
   if (-not $ownsMigrationMutex) {
     throw 'DesktopDeck is running or another migration holds its single-instance mutex.'
+  }
+  try {
+    $ownsWriterLease = $writerLeaseMutex.WaitOne(0)
+  } catch [Threading.AbandonedMutexException] {
+    $ownsWriterLease = $true
+    throw 'CyanDeck legacy writer lease was abandoned; retry after inspecting application state.'
+  }
+  if (-not $ownsWriterLease) {
+    throw 'Another DesktopDeck/CyanDeck process holds the legacy-profile writer lease.'
   }
 if ($RecoverPreparation -and ($Apply -or $VerifyPrepared -or $AbortPreparation)) {
   throw 'Use -RecoverPreparation by itself.'
@@ -405,6 +418,8 @@ try {
 }
 
 } finally {
+  if ($ownsWriterLease) { $writerLeaseMutex.ReleaseMutex() }
+  $writerLeaseMutex.Dispose()
   if ($ownsMigrationMutex) { $migrationMutex.ReleaseMutex() }
   $migrationMutex.Dispose()
 }
