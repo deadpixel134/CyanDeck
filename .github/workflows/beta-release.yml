@@ -1,0 +1,139 @@
+name: CyanDeck signed beta release on version bump
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'tools/**', 'package.ps1', 'verify-release.ps1', 'install.ps1', 'uninstall.ps1', 'apply-update.ps1', 'update-manifest.example.json', '.github/workflows/beta-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c "import xml.etree.ElementTree as e;print(e.parse('src/CyanDeck/CyanDeck.csproj').findtext('.//Version'))")"
+          python3 - "$version" <<'PY'
+          import sys
+          v=sys.argv[1].split('.')
+          if len(v)!=3 or not all(x.isdigit() for x in v) or tuple(map(int,v))<(8,0,2):
+              raise SystemExit('Invalid CyanDeck three-part version.')
+          PY
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=false" >> "$GITHUB_OUTPUT"
+          if [ "$version" = 8.0.2 ]; then
+            echo "8.0.2 is reserved for the specifically requested stable release."
+            exit 0
+          fi
+          if ! gh release view v8.0.2 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Stable v8.0.2 not published yet. Beta release deferred."
+            exit 0
+          fi
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Version v$version already exists. Bump the patch version for every new beta."
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+  sign:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [win-x64, win-arm64]
+    env:
+      CYANDECK_UPDATE_SIGNING_KEY_PEM: ${{ secrets.CYANDECK_UPDATE_SIGNING_KEY_PEM || secrets.DESKTOPDECK_UPDATE_SIGNING_KEY_PEM }}
+      CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON: ${{ secrets.CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON || secrets.DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify signature identity and safety regressions
+        shell: pwsh
+        run: |
+          if (-not $env:CYANDECK_UPDATE_SIGNING_KEY_PEM -or -not $env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON) { throw 'Missing release signing or OAuth secret.' }
+          $oauth=$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON | ConvertFrom-Json
+          if (-not $oauth.installed.client_id -or -not $oauth.installed.client_secret) { throw 'Invalid Google Desktop OAuth.' }
+          python tools/run_v43_safety_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Safety tests failed.' }
+          python tools/test_v45_recycle_bin_preflight.py
+          if ($LASTEXITCODE -ne 0) { throw 'Recycle safety failed.' }
+          python tools/test_cyandeck_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'Identity test failed.' }
+          foreach ($name in @('CalendarDomainHarness','FenceVisibilityHarness','WatcherLifetimeHarness')) {
+            dotnet run --project "tests/$name/$name.csproj" -c Release
+            if ($LASTEXITCODE -ne 0) { throw "Domain tests failed: $name" }
+          }
+      - name: Produce and test signed OAuth-enabled beta ZIP
+        shell: pwsh
+        run: |
+          $key=Join-Path $env:RUNNER_TEMP ('beta-sign-'+[Guid]::NewGuid().ToString('N')+'.pem')
+          $oauthPath='json/client_secret.json'
+          try {
+            [IO.File]::WriteAllText($key,$env:CYANDECK_UPDATE_SIGNING_KEY_PEM,[Text.UTF8Encoding]::new($false))
+            New-Item -ItemType Directory json -Force | Out-Null
+            [IO.File]::WriteAllText($oauthPath,$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON,[Text.UTF8Encoding]::new($false))
+            ./package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $key
+            if (-not $?) { throw 'Packaging failed.' }
+            ./verify-release.ps1 -ManifestPath "dist/CyanDeck-${{ needs.prepare.outputs.version }}-${{ matrix.runtime }}.update.json"
+            if (-not $?) { throw 'Signature check failed.' }
+            ./tools/test_cyandeck_release_package.ps1 -Runtime '${{ matrix.runtime }}' -RequireOAuth
+            if (-not $?) { throw 'Actual ZIP install/uninstall failed.' }
+          } finally {
+            if (Test-Path $oauthPath) { Remove-Item -LiteralPath $oauthPath -Force }
+            if (Test-Path $key) { Remove-Item -LiteralPath $key -Force }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-beta-${{ matrix.runtime }}
+          path: |
+            dist/CyanDeck-*.zip
+            dist/CyanDeck-*.update.json
+          if-no-files-found: error
+  publish:
+    needs: [prepare, sign]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: signed-beta-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create public prerelease without touching stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          test "$(find release-assets -name '*.zip' | wc -l)" -eq 2
+          test "$(find release-assets -name '*.update.json' | wc -l)" -eq 2
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release version already exists; refuse overwrite."; exit 1
+          fi
+          git archive --format=zip --output "release-assets/CyanDeck-${tag}-full-source.zip" "$GITHUB_SHA"
+          (cd release-assets && sha256sum -- *.zip > SHA256SUMS.txt)
+          gh release create "$tag" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            --title "CyanDeck $tag (Beta)" \
+            --notes "Opt-in beta release of CyanDeck. Signed RSA-PSS manifests, package SHA-256, Windows x64/ARM64 installation smoke tests. To receive prereleases, enable Beta update channel in CyanDeck settings. Stable-channel clients do not receive prereleases." \
+            release-assets/*.zip release-assets/*.update.json release-assets/SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == true)')" = true
