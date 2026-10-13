@@ -223,10 +223,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void InitializeManagedDeployment()
     {
-        var cachePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "CyanDeck",
-            "managed-policy-cache.json");
+        // Product branding must not redirect the managed-policy recovery cache
+        // before every writer is migrated to the same active profile root.
+        var cachePath = Path.Combine(DataRootPaths.ActiveRoaming, "managed-policy-cache.json");
 
         _managedPolicy = new ManagedPolicyCoordinator(
             new ManagedPolicyReader(),
