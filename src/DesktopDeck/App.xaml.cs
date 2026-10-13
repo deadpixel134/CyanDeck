@@ -11,6 +11,7 @@ public partial class App : Application
 {
     private const string ActivationPipeName = "DesktopDeck.Activation.v1";
     private Mutex? _mutex;
+    private LegacyProfileWriterGate? _legacyWriterGate;
     private AppController? _controller;
     private CancellationTokenSource? _activationCts;
     private Task? _activationTask;
@@ -51,10 +52,12 @@ public partial class App : Application
             return;
         }
 
-        // Hold the legacy singleton mutex while checking the cutover fence.
-        // Never start any persistent store if the fence is present or unsafe.
+        // Both mutexes stay owned until all durable saves finish on shutdown.
+        // The shared writer lease spans executable-identity changes, while the
+        // existing singleton mutex also excludes old, non-cooperating builds.
         try
         {
+            _legacyWriterGate = LegacyProfileWriterGate.Acquire();
             CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
             // A verified journal is not sufficient to activate a data root.
             if (CyanDeckCutoverJournal.IsSafeToActivateAtStartup())
@@ -180,9 +183,17 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         try { _activationCts?.Cancel(); } catch { }
-        _controller?.Dispose();
-        _activationCts?.Dispose();
-        _mutex?.Dispose();
-        base.OnExit(e);
+        try { _controller?.Dispose(); }
+        finally
+        {
+            // Keep the writer lease until AppController has flushed its data.
+            try { _legacyWriterGate?.Dispose(); }
+            finally
+            {
+                _activationCts?.Dispose();
+                _mutex?.Dispose();
+                base.OnExit(e);
+            }
+        }
     }
 }
