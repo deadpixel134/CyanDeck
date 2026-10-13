@@ -243,6 +243,11 @@ checks.update({
     "migration rechecks running app before publish": "started during migration; refusing to publish" in migration_script,
     "migration checks before final publish": migration_script.index("Source directory set changed during migration") < migration_script.index("Move-Item -LiteralPath $staging -Destination $destination"),
 })
+checks.update({
+    "migration uses application single-instance mutex": "'Local\\\\DesktopDeck.SingleInstance'" in migration_script,
+    "migration acquires mutex without waiting": "$migrationMutex.WaitOne(0)" in migration_script,
+    "migration releases mutex after work": "$migrationMutex.ReleaseMutex()" in migration_script and "$migrationMutex.Dispose()" in migration_script,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
