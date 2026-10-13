@@ -163,7 +163,6 @@ try {
   # deleting or replacing the published data directory.
   Remove-Item -LiteralPath $journal -Force
   $lockPath = $journal + '.lock'
-  $lockDirectory = $lockPath + '.blocked'
   # Existing lock file may remain; hold it with FileShare.None instead of
   # disturbing its contents. Recovery must fail without changing data.
   $lockHandle = [IO.FileStream]::new($lockPath, [IO.FileMode]::OpenOrCreate,
@@ -223,6 +222,30 @@ try {
   if (-not $rejected) { throw 'Oversized journal was accepted during abort.' }
   Set-Content -LiteralPath $journal -Value $savedJournal -NoNewline -Encoding UTF8
   & $script -AbortPreparation
+  # Failure injection at the exact publish/journal boundary: lock the journal
+  # writer during -Apply, so the full copy publishes but metadata cannot.
+  # Recovery must repair this genuine partial-publication state.
+  $blockedJournal = [IO.FileStream]::new(($journal + '.lock'),
+    [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  $publishedWithError = $false
+  try {
+    try { & $script -Apply } catch {
+      $publishedWithError = ([string]$_).Contains('-RecoverPreparation')
+    }
+  } finally { $blockedJournal.Dispose() }
+  if (-not $publishedWithError -or
+      -not (Test-Path -LiteralPath (Join-Path $cyan 'layout.json') -PathType Leaf)) {
+    throw 'Journal failure injection did not leave a safely published copy.'
+  }
+  & $script -RecoverPreparation
+  $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+  if ($entry.Phase -ne 'prepared') {
+    throw 'Recovery after a real publication failure did not restore prepared metadata.'
+  }
+  & $script -VerifyPrepared
+  if (-not (Test-Path -LiteralPath (Join-Path $legacy 'layout.json') -PathType Leaf)) {
+    throw 'Partial publication recovery altered legacy data.'
+  }
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
 finally {
