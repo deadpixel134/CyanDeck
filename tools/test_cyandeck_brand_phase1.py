@@ -288,6 +288,7 @@ checks.update({
         "CyanDeck migration compatibility gate" in release_workflow
         and "CyanDeck migration Windows PowerShell 5.1 gate" in release_workflow,
 })
+startup = source("src/DesktopDeck/App.xaml.cs")
 writer_gate = source("src/DesktopDeck/Services/LegacyProfileWriterGate.cs")
 checks.update({
     "cross-executable writer mutex name matches migration tool":
