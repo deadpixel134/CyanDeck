@@ -24,5 +24,6 @@
     <Compile Include="../../src/DesktopDeck/Calendar/VerifiedCredentialCheckpoint.cs" Link="VerifiedCredentialCheckpoint.cs" />
     <Compile Include="../../src/DesktopDeck/Services/FeatureSwitchCheckpoint.cs" Link="FeatureSwitchCheckpoint.cs" />
     <Compile Include="../../src/DesktopDeck/Services/DataRootPaths.cs" Link="DataRootPaths.cs" />
+    <Compile Include="../../src/DesktopDeck/Services/CyanDeckCutoverJournal.cs" Link="CyanDeckCutoverJournal.cs" />
   </ItemGroup>
 </Project>
