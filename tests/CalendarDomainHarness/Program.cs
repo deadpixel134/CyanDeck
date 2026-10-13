@@ -58,61 +58,7 @@ using (var restarted = CyanDeckSingleInstanceGate.TryAcquire(singletonName))
 {
     Assert.That(restarted.IsFirst, "clean shutdown releases singleton for next application");
 }
-// The second gate is independent of executable names and remains exclusive
-// across threads/processes, including a future differently named CyanDeck.exe.
-using (var firstWriter = LegacyProfileWriterGate.Acquire())
-{
-    var otherWriterRejected = Task.Run(() =>
-    {
-        try
-        {
-            using var conflictingWriter = LegacyProfileWriterGate.Acquire();
-            return false;
-        }
-        catch (InvalidOperationException) { return true; }
-    }).GetAwaiter().GetResult();
-    Assert.That(otherWriterRejected,
-        "shared profile writer lease excludes a second executable writer");
-}
-using (var reopenedWriter = LegacyProfileWriterGate.Acquire())
-{
-    Assert.That(reopenedWriter is not null,
-        "profile lease is released after clean shutdown and can be reacquired");
-}
-
-// Validate writer-fence refusal in an isolated directory, never user data.
-var fenceRoot = Path.Combine(Path.GetTempPath(), "cyandeck-fence-" + Guid.NewGuid().ToString("N"));
-try
-{
-    CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot);
-    var fenceDirectory = Path.Combine(fenceRoot, "migration");
-    Directory.CreateDirectory(fenceDirectory);
-    var fencePath = Path.Combine(fenceDirectory, "legacy-writer-fenced.json");
-    File.WriteAllText(fencePath, "{}");
-    var refused = false;
-    try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot); }
-    catch (InvalidOperationException) { refused = true; }
-    Assert.That(refused, "legacy writer fence blocks startup");
-    File.WriteAllText(fencePath, new string('X', 4097));
-    var oversizedRefused = false;
-    try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot); }
-    catch (InvalidDataException) { oversizedRefused = true; }
-    Assert.That(oversizedRefused, "oversized writer fence fails closed");
-    File.Delete(fencePath);
-    CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot);
-    // A directory at the fence path must not be interpreted as an absent file.
-    Directory.CreateDirectory(fencePath);
-    var directoryRefused = false;
-    try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot); }
-    catch (InvalidDataException) { directoryRefused = true; }
-    Assert.That(directoryRefused, "directory-shaped writer fence fails closed");
-    Directory.Delete(fencePath);
-    CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot);
-}
-finally
-{
-    if (Directory.Exists(fenceRoot)) Directory.Delete(fenceRoot, recursive: true);
-}
+// Standalone CyanDeck uses only its own single-instance guard.
 
 Assert.That(CalendarHeaderPolicy.FormatToday(new DateTime(2026, 10, 9)) == "2026.10.09 (금)",
     "Korean calendar header includes zero-padded date and correct weekday");
