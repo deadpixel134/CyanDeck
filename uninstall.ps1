@@ -16,34 +16,21 @@ if (Test-Path -LiteralPath $installDir -PathType Container) {
   }
 }
 
-# This legacy uninstaller must not remove a program or profile after an
-# explicit CyanDeck cutover. Never interpret malformed/directory fences as absent.
-# Take the same old/new writer locks used by app, installer, updater and
-# migration. Never remove binaries while either version is still writing.
-$legacyUninstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
-$writerUninstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
-$ownsLegacyUninstallMutex = $false
-$ownsWriterUninstallMutex = $false
+# Uninstall only CyanDeck application files, preserving the old product separately.
+$cyanUninstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
+$ownsCyanUninstallMutex = $false
 try {
-  try { $ownsLegacyUninstallMutex = $legacyUninstallMutex.WaitOne(0) }
+  try { $ownsCyanUninstallMutex = $cyanUninstallMutex.WaitOne(0) }
   catch [Threading.AbandonedMutexException] {
-    $ownsLegacyUninstallMutex = $true
+    $ownsCyanUninstallMutex = $true
     throw 'CyanDeck stopped unexpectedly; inspect data before uninstalling.'
   }
-  if (-not $ownsLegacyUninstallMutex) {
+  if (-not $ownsCyanUninstallMutex) {
     throw 'CyanDeck is running or another profile operation is active. Uninstall cancelled.'
-  }
-  try { $ownsWriterUninstallMutex = $writerUninstallMutex.WaitOne(0) }
-  catch [Threading.AbandonedMutexException] {
-    $ownsWriterUninstallMutex = $true
-    throw 'A CyanDeck writer stopped unexpectedly; inspect data before uninstalling.'
-  }
-  if (-not $ownsWriterUninstallMutex) {
-    throw 'Another CyanDeck writer or data migration owns the profile. Uninstall cancelled.'
   }
 # Graceful exit is a prerequisite, not a forced Stop-Process. This avoids
 # corrupting a pending layout or calendar save during uninstallation.
-if (@(Get-Process -Name CyanDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+if (@(Get-Process -Name CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is running. Exit from the tray menu before uninstalling.'
 }
 
@@ -138,8 +125,6 @@ Write-Host 'CyanDeck was uninstalled (unrelated files preserved).'
 if (-not $PurgeData) { Write-Host 'Your settings were preserved in %APPDATA%\CyanDeck.' }
 
 } finally {
-  if ($ownsWriterUninstallMutex) { $writerUninstallMutex.ReleaseMutex() }
-  $writerUninstallMutex.Dispose()
-  if ($ownsLegacyUninstallMutex) { $legacyUninstallMutex.ReleaseMutex() }
-  $legacyUninstallMutex.Dispose()
+  if ($ownsCyanUninstallMutex) { $cyanUninstallMutex.ReleaseMutex() }
+  $cyanUninstallMutex.Dispose()
 }

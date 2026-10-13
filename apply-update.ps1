@@ -182,19 +182,19 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
 # Wait until the requesting application has exited before taking both locks.
 # Keep both owned until installation/rollback/recovery finishes, then relaunch.
 Wait-CyanDeckProcess $WaitForPid
-$legacyUpdateMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
-$ownsLegacyUpdateMutex = $false
+$cyanUpdateMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
+$ownsCyanUpdateMutex = $false
 try {
-  try { $ownsLegacyUpdateMutex = $legacyUpdateMutex.WaitOne(0) }
+  try { $ownsCyanUpdateMutex = $cyanUpdateMutex.WaitOne(0) }
   catch [Threading.AbandonedMutexException] {
-    $ownsLegacyUpdateMutex = $true
+    $ownsCyanUpdateMutex = $true
     throw 'CyanDeck stopped unexpectedly; inspect its data before updating or recovering.'
   }
-  if (-not $ownsLegacyUpdateMutex) {
+  if (-not $ownsCyanUpdateMutex) {
     throw 'CyanDeck is running or another update owns its profile. Update cancelled.'
   }
 # Manual recovery must not replace files while another CyanDeck instance is running.
-if (@(Get-Process -Name CyanDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+if (@(Get-Process -Name CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is still running. Exit all instances normally before updating or recovering.'
 }
 $InstallDir = Assert-OrdinaryDirectory $InstallDir 'Install directory'
@@ -384,8 +384,8 @@ try {
 }
 } # Completed normal update/rollback branch.
 } finally {
-  if ($ownsLegacyUpdateMutex) { $legacyUpdateMutex.ReleaseMutex() }
-  $legacyUpdateMutex.Dispose()
+  if ($ownsCyanUpdateMutex) { $cyanUpdateMutex.ReleaseMutex() }
+  $cyanUpdateMutex.Dispose()
 }
 
 # A relaunched EXE must not race its own updater's still-held mutex.

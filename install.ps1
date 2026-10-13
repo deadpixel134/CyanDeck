@@ -69,38 +69,22 @@ function Assert-ShortcutBelongsToCyanDeck([string]$Path, [string]$ExpectedExe) {
 }
 $expectedExe = Join-Path $installDir 'CyanDeck.exe'
 Assert-ShortcutBelongsToCyanDeck $shortcut $expectedExe
-Assert-ShortcutBelongsToCyanDeck $cyanShortcut $expectedExe
 if ($CreateDesktopShortcut) { Assert-ShortcutBelongsToCyanDeck $desktopShortcut $expectedExe }
 
-# This installer remains a legacy-profile application. It must not put an
-# old CyanDeck.exe back on disk after a future CyanDeck profile cutover.
-# Presence of the cutover fence is a hard stop even when JSON is malformed.
-# Acquire in the same order as the application and migration tool. The old
-# mutex excludes released CyanDeck builds; the new lease spans future EXE
-# renames. Hold both until all installed files and shortcuts are committed.
-$legacyInstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
-$writerInstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
-$ownsLegacyInstallMutex = $false
-$ownsWriterInstallMutex = $false
+# Standalone CyanDeck installation, without legacy-profile migration.
+$cyanInstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
+$ownsCyanInstallMutex = $false
 try {
-  try { $ownsLegacyInstallMutex = $legacyInstallMutex.WaitOne(0) }
+  try { $ownsCyanInstallMutex = $cyanInstallMutex.WaitOne(0) }
   catch [Threading.AbandonedMutexException] {
-    $ownsLegacyInstallMutex = $true
+    $ownsCyanInstallMutex = $true
     throw 'A previous CyanDeck instance stopped unexpectedly. Inspect its data before installing.'
   }
-  if (-not $ownsLegacyInstallMutex) {
+  if (-not $ownsCyanInstallMutex) {
     throw 'CyanDeck is running or another installer is active. Close it before installing.'
   }
-  try { $ownsWriterInstallMutex = $writerInstallMutex.WaitOne(0) }
-  catch [Threading.AbandonedMutexException] {
-    $ownsWriterInstallMutex = $true
-    throw 'A legacy-profile writer stopped unexpectedly. Inspect its data before installing.'
-  }
-  if (-not $ownsWriterInstallMutex) {
-    throw 'Another CyanDeck writer or data migration holds the legacy profile. Installation cancelled.'
-  }
 # Do not terminate the process while layout/calendar writes may be in flight.
-if (@(Get-Process -Name CyanDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+if (@(Get-Process -Name CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is running. Please exit from the tray menu and retry the installer.'
 }
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
@@ -143,11 +127,9 @@ if ($StartWithWindows) {
 }
 
 Write-Host "Installed CyanDeck to: $installDir"
-Write-Host "Start Menu shortcut: $cyanShortcut"
+Write-Host "Start Menu shortcut: $shortcut"
 
 } finally {
-  if ($ownsWriterInstallMutex) { $writerInstallMutex.ReleaseMutex() }
-  $writerInstallMutex.Dispose()
-  if ($ownsLegacyInstallMutex) { $legacyInstallMutex.ReleaseMutex() }
-  $legacyInstallMutex.Dispose()
+  if ($ownsCyanInstallMutex) { $cyanInstallMutex.ReleaseMutex() }
+  $cyanInstallMutex.Dispose()
 }

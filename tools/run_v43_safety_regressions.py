@@ -18,8 +18,6 @@ scripts = [
   'test_v32_desktop_recycle_boundary.py',
   'test_v31_original_source_protection_factory_reset.py',
   'test_full_source_structure.py',
-  'test_cyandeck_brand_phase1.py',
-  'test_cyandeck_launcher_contract.py',
 ]
 results = []
 for name in scripts:

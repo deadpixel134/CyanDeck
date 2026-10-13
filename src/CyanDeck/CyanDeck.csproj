@@ -9,7 +9,6 @@
     <Product>CyanDeck</Product>
     <Title>CyanDeck</Title>
     <AssemblyName>CyanDeck</AssemblyName>
-    <!-- Native WPF CyanDeck only when explicitly requested. -->
     <RootNamespace>CyanDeck</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>

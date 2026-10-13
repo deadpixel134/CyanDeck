@@ -11,7 +11,6 @@ public partial class App : Application
 {
     private const string ActivationPipeName = "CyanDeck.Activation.v1";
     private CyanDeckSingleInstanceGate? _instanceGate;
-    private LegacyProfileWriterGate? _legacyWriterGate;
     private AppController? _controller;
     private CancellationTokenSource? _activationCts;
     private Task? _activationTask;

@@ -2,8 +2,7 @@ using System.Threading;
 
 namespace CyanDeck.Services;
 
-// Keep this name stable while CyanDeck.exe and CyanDeck.exe can both
-// write the legacy profile. A clean exit must explicitly release ownership.
+// Only one CyanDeck process may own and write the CyanDeck profile.
 public sealed class CyanDeckSingleInstanceGate : IDisposable
 {
     public const string MutexName = @"Local\CyanDeck.SingleInstance";
