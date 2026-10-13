@@ -52,6 +52,24 @@ foreach ($dir in $directories) {
     throw "Refusing linked directory: $($dir.FullName)"
   }
 }
+# Validate critical data before creating a migration copy.
+$layout = Join-Path $legacy 'layout.json'
+if (Test-Path -LiteralPath $layout -PathType Leaf) {
+  try {
+    $state = Get-Content -LiteralPath $layout -Raw | ConvertFrom-Json -ErrorAction Stop
+    if ($null -eq $state -or $state -isnot [pscustomobject]) { throw 'Layout must be an object.' }
+    if ($null -ne $state.Version -and ([int]$state.Version -lt 0 -or [int]$state.Version -gt 35)) {
+      throw 'Unsupported layout schema version.'
+    }
+  } catch { throw "Layout validation failed: $_" }
+}
+$calendar = Join-Path $legacy 'calendar-events.json'
+if (Test-Path -LiteralPath $calendar -PathType Leaf) {
+  try {
+    $events = Get-Content -LiteralPath $calendar -Raw | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
+    if ($events -isnot [array]) { throw 'Calendar must be an array.' }
+  } catch { throw "Calendar validation failed: $_" }
+}
 Write-Host "Source: $legacy"
 Write-Host "Destination: $destination"
 Write-Host "Files: $($files.Count)"
