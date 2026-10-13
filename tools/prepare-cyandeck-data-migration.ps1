@@ -52,23 +52,30 @@ foreach ($dir in $directories) {
     throw "Refusing linked directory: $($dir.FullName)"
   }
 }
-# Validate critical data before creating a migration copy.
-$layout = Join-Path $legacy 'layout.json'
-if (Test-Path -LiteralPath $layout -PathType Leaf) {
+# Check every recovery candidate, not just the primary file. Do not
+# promote corrupt backups or a future schema into a new data root.
+foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
+                     'calendar-events.json', 'calendar-events.json.bak', 'calendar-events.json.tmp')) {
+  $candidate = Join-Path $legacy $name
+  if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
   try {
-    $state = Get-Content -LiteralPath $layout -Raw | ConvertFrom-Json -ErrorAction Stop
-    if ($null -eq $state -or $state -isnot [pscustomobject]) { throw 'Layout must be an object.' }
-    if ($null -ne $state.Version -and ([int]$state.Version -lt 0 -or [int]$state.Version -gt 35)) {
-      throw 'Unsupported layout schema version.'
+    $raw = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 -ErrorAction Stop
+    $parsed = ConvertFrom-Json -InputObject $raw -NoEnumerate -ErrorAction Stop
+    if ($name.StartsWith('layout.json', [StringComparison]::OrdinalIgnoreCase)) {
+      if ($null -eq $parsed -or $parsed -isnot [pscustomobject]) { throw 'Layout must be an object.' }
+      if ($null -ne $parsed.Version) {
+        $version = 0
+        if (-not [int]::TryParse([string]$parsed.Version, [ref]$version) -or $version -lt 0 -or $version -gt 35) {
+          throw 'Unsupported layout schema version.'
+        }
+      }
+    } else {
+      if ($parsed -isnot [array]) { throw 'Calendar must be an array.' }
+      foreach ($event in $parsed) {
+        if ($null -eq $event -or $event -isnot [pscustomobject]) { throw 'Calendar event must be an object.' }
+      }
     }
-  } catch { throw "Layout validation failed: $_" }
-}
-$calendar = Join-Path $legacy 'calendar-events.json'
-if (Test-Path -LiteralPath $calendar -PathType Leaf) {
-  try {
-    $events = Get-Content -LiteralPath $calendar -Raw | ConvertFrom-Json -NoEnumerate -ErrorAction Stop
-    if ($events -isnot [array]) { throw 'Calendar must be an array.' }
-  } catch { throw "Calendar validation failed: $_" }
+  } catch { throw "Migration preflight failed for $name; original data unchanged: $_" }
 }
 Write-Host "Source: $legacy"
 Write-Host "Destination: $destination"

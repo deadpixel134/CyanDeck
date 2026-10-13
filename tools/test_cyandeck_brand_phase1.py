@@ -133,10 +133,16 @@ checks.update({
 })
 migration_preflight = source("tools/prepare-cyandeck-data-migration.ps1")
 checks.update({
-    "migration validates layout before copying": "Layout validation failed:" in migration_preflight and migration_preflight.index("Layout validation failed:") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
+    "migration validates layout before copying": "Migration preflight failed for $name" in migration_preflight and migration_preflight.index("Layout validation failed:") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
     "migration rejects unsupported layout schema": "Unsupported layout schema version." in migration_preflight,
     "migration validates calendar array": "Calendar must be an array." in migration_preflight,
-    "migration validates calendar before copying": migration_preflight.index("Calendar validation failed:") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
+    "migration validates calendar before copying": migration_preflight.index("Migration preflight failed for $name") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
+})
+checks.update({
+    "migration checks layout backup and staged state": "'layout.json.bak'" in migration_preflight and "'layout.json.tmp'" in migration_preflight,
+    "migration checks calendar backup and staged state": "'calendar-events.json.bak'" in migration_preflight and "'calendar-events.json.tmp'" in migration_preflight,
+    "migration rejects malformed calendar entries": "Calendar event must be an object." in migration_preflight,
+    "migration refuses invalid schema text": "[int]::TryParse" in migration_preflight,
 })
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
