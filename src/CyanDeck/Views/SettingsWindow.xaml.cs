@@ -104,6 +104,7 @@ public partial class SettingsWindow : Window
         SwapScreenContentsButton.IsEnabled = !safeMode && !compatibilityReadOnly;
         AutomaticUpdateCheck.IsChecked = state.Settings.EnableAutomaticUpdateChecks || state.Settings.InstallUpdatesAutomatically;
         InstallUpdatesAutomaticallyCheck.IsChecked = state.Settings.InstallUpdatesAutomatically;
+        BetaUpdateChannelCheck.IsChecked = state.Settings.EnableBetaUpdateChannel;
         UpdateManifestSourceBox.Text = state.Settings.UpdateManifestSource ?? "";
         RequireSignedUpdateCheck.IsChecked = true;
         UpdatePublicKeyPathBox.Text = state.Settings.UpdatePublicKeyPath ?? "";
@@ -616,6 +617,7 @@ public partial class SettingsWindow : Window
         s.CrashLoopWindowMinutes = (int)Math.Round(CrashLoopWindowSlider.Value);
         s.EnableAutomaticUpdateChecks = AutomaticUpdateCheck.IsChecked == true;
         s.InstallUpdatesAutomatically = AutomaticUpdateCheck.IsChecked == true && InstallUpdatesAutomaticallyCheck.IsChecked == true;
+        s.EnableBetaUpdateChannel = BetaUpdateChannelCheck.IsChecked == true;
         s.UpdateManifestSource = UpdateManifestSourceBox.Text.Trim();
         s.RequireSignedUpdateManifests = true;
         s.UpdatePublicKeyPath = UpdatePublicKeyPathBox.Text.Trim();
@@ -1039,6 +1041,7 @@ public partial class SettingsWindow : Window
         CrashLoopWindowSlider.Value = d.CrashLoopWindowMinutes;
         AutomaticUpdateCheck.IsChecked = d.EnableAutomaticUpdateChecks || d.InstallUpdatesAutomatically;
         InstallUpdatesAutomaticallyCheck.IsChecked = d.InstallUpdatesAutomatically;
+        BetaUpdateChannelCheck.IsChecked = d.EnableBetaUpdateChannel;
         UpdateManifestSourceBox.Text = d.UpdateManifestSource;
         RequireSignedUpdateCheck.IsChecked = true;
         UpdatePublicKeyPathBox.Text = d.UpdatePublicKeyPath;
@@ -1068,7 +1071,7 @@ public partial class SettingsWindow : Window
     private void AboutValidateConfiguration_Click(object sender, RoutedEventArgs e) => _validateConfiguration();
     private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
     {
-        ApplyChanges();
+        if (!ApplyChanges()) return;
         await _checkForUpdates();
         LastUpdateCheckText.Text = _state.Settings.LastUpdateCheckUtc is DateTime lastUpdate ? $"마지막 업데이트 확인: {lastUpdate.ToLocalTime():g}" : "마지막 업데이트 확인: 없음";
     }

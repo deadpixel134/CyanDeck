@@ -4710,7 +4710,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         // The startup check happens once per process, not once per day.
         // Never auto-restart from Safe Mode or while an update requires recovery.
         if (_safeMode || _compatibilityReadOnly || UpdateService.HasPendingRecovery()) return;
-        if (string.IsNullOrWhiteSpace(UpdateService.ResolveManifestSource(_state.Settings.UpdateManifestSource))) return;
+        if (string.IsNullOrWhiteSpace(UpdateService.ResolveManifestSource(_state.Settings.UpdateManifestSource, _state.Settings.EnableBetaUpdateChannel))) return;
         _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => _ = CheckForUpdatesAsync(interactive: false)));
     }
 
@@ -4726,8 +4726,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             // channel cannot trigger a network request on every application start.
             _state.Settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Persist();
-            var check = await UpdateService.CheckAsync(_state.Settings.UpdateManifestSource, _state.Settings.RequireSignedUpdateManifests, _state.Settings.UpdatePublicKeyPath);
-            DiagnosticsLog.Info($"Update check completed: current={check.CurrentVersion}, latest={check.LatestVersion}, available={check.UpdateAvailable}, signatureVerified={check.SignatureVerified}");
+            var channelSource = UpdateService.ResolveManifestSource(_state.Settings.UpdateManifestSource, _state.Settings.EnableBetaUpdateChannel);
+            var check = await UpdateService.CheckAsync(channelSource, _state.Settings.RequireSignedUpdateManifests, _state.Settings.UpdatePublicKeyPath);
+            DiagnosticsLog.Info($"Update check completed: channel={(_state.Settings.EnableBetaUpdateChannel ? "beta" : "stable")}, current={check.CurrentVersion}, latest={check.LatestVersion}, available={check.UpdateAvailable}, signatureVerified={check.SignatureVerified}");
             if (!check.UpdateAvailable)
             {
                 if (interactive)
@@ -4762,7 +4763,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var verification = "업데이트 매니페스트 RSA-PSS 서명과 패키지 SHA-256을 검증했습니다.";
             if (System.Windows.MessageBox.Show($"{verification}\n\n지금 CyanDeck {check.LatestVersion}을(를) 설치하시겠습니까? CyanDeck이 다시 시작됩니다.", "CyanDeck 업데이트 준비 완료", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
-            UpdateService.TryLaunchInstall(staged, check.Manifest.Sha256, Environment.ProcessId, relaunch: true);
+            if (!UpdateService.TryLaunchInstall(staged, check.Manifest.Sha256, Environment.ProcessId, relaunch: true))
+                throw new InvalidOperationException("검증된 업데이트 설치 프로그램을 시작하지 못했습니다.");
             Exit();
         }
         catch (Exception ex)

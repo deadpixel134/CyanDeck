@@ -16,6 +16,7 @@ namespace CyanDeck.Services;
 public static class GitHubReleaseSource
 {
     public const string DefaultChannel = "github-release://deadpixel134/CyanDeck";
+    public const string BetaChannel = "github-release-beta://deadpixel134/CyanDeck";
     private const long MaxManifestBytes = 256 * 1024;
     private const long MaxPackageBytes = 300L * 1024 * 1024;
     private static readonly Regex SafePart = new("^[A-Za-z0-9_.-]+$", RegexOptions.CultureInvariant);
@@ -28,12 +29,13 @@ public static class GitHubReleaseSource
     private sealed record ReleaseInfo(string Owner, string Repository, string Tag, List<GitHubAsset> Assets);
 
     public static bool IsGitHubReleaseSource(string? source) =>
-        source?.StartsWith("github-release://", StringComparison.OrdinalIgnoreCase) == true;
+        source?.StartsWith("github-release://", StringComparison.OrdinalIgnoreCase) == true
+        || source?.StartsWith("github-release-beta://", StringComparison.OrdinalIgnoreCase) == true;
 
-    private static (string Owner, string Repository, string? Asset) Parse(string source)
+    private static (string Owner, string Repository, string? Asset, bool Beta) Parse(string source)
     {
         if (!Uri.TryCreate(source, UriKind.Absolute, out var uri) ||
-            !string.Equals(uri.Scheme, "github-release", StringComparison.OrdinalIgnoreCase) ||
+            uri.Scheme is not ("github-release" or "github-release-beta") ||
             !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
             !string.IsNullOrEmpty(uri.UserInfo) || !uri.IsDefaultPort)
             throw new InvalidDataException("Invalid GitHub release channel URL.");
@@ -41,16 +43,17 @@ public static class GitHubReleaseSource
         if (parts.Length is < 1 or > 2 || !SafePart.IsMatch(uri.Host) ||
             parts.Any(p => !SafePart.IsMatch(p) || p is "." or ".."))
             throw new InvalidDataException("Invalid GitHub release repository or asset name.");
-        return (uri.Host, parts[0], parts.Length == 2 ? parts[1] : null);
+        return (uri.Host, parts[0], parts.Length == 2 ? parts[1] : null,
+            uri.Scheme == "github-release-beta");
     }
 
     public static string PackageSource(string manifestSource, string packageFile)
     {
-        var (owner, repository, _) = Parse(manifestSource);
+        var (owner, repository, _, beta) = Parse(manifestSource);
         if (string.IsNullOrWhiteSpace(packageFile) || !SafePart.IsMatch(packageFile) ||
             !packageFile.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("GitHub update manifest must refer to a ZIP asset filename (no paths or URLs).");
-        return $"github-release://{owner}/{repository}/{packageFile}";
+        return $"{(beta ? "github-release-beta" : "github-release")}://{owner}/{repository}/{packageFile}";
     }
 
     // GitHub's /releases/latest may still refer to the old DesktopDeck v7
@@ -69,15 +72,43 @@ public static class GitHubReleaseSource
         return version.ToString(3);
     }
 
-    private static async Task<ReleaseInfo> LatestAsync(string owner, string repository, CancellationToken token)
+    // Beta is opt-in. Github /releases/latest excludes prereleases, so select
+    // the highest numeric CyanDeck version among all PUBLISHED release records.
+    // A draft is not an update and must never be selected.
+    internal static string SelectLatestBetaReleaseTag(JsonElement releases)
     {
-        var url = new Uri($"https://api.github.com/repos/{owner}/{repository}/releases/latest");
+        if (releases.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("GitHub beta release listing was not an array.");
+        Version? bestVersion = null;
+        string? bestTag = null;
+        foreach (var entry in releases.EnumerateArray())
+        {
+            if (entry.TryGetProperty("draft", out var draft) && draft.GetBoolean()) continue;
+            if (!entry.TryGetProperty("tag_name", out var tagElement)) continue;
+            var tag = tagElement.GetString() ?? "";
+            try { _ = RequireNativeCyanDeckVersion(tag); }
+            catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException) { continue; }
+            var version = Version.Parse(tag[1..]);
+            if (bestVersion is null || version > bestVersion)
+            {
+                bestVersion = version;
+                bestTag = tag;
+            }
+        }
+        return bestTag ?? throw new FileNotFoundException("No published CyanDeck stable or beta release was found.");
+    }
+
+    private static async Task<ReleaseInfo> ReadReleaseAsync(string owner, string repository,
+        Uri url, CancellationToken token)
+    {
         using var response = await SendGitHubAsync(url, "application/vnd.github+json", token).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
-            throw new InvalidOperationException("GitHub release not accessible. For a private repository, configure CYANDECK_GITHUB_TOKEN on this PC, or publish updates in a public release repository.");
+            throw new InvalidOperationException("GitHub update release not accessible. Check the release is public and the repository is reachable.");
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token).ConfigureAwait(false);
+        if (doc.RootElement.TryGetProperty("draft", out var draft) && draft.GetBoolean())
+            throw new InvalidDataException("Draft releases cannot be consumed by an update channel.");
         var tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
         _ = RequireNativeCyanDeckVersion(tag);
         var assets = new List<GitHubAsset>();
@@ -86,17 +117,35 @@ public static class GitHubReleaseSource
             var id = element.GetProperty("id").GetInt64();
             var name = element.GetProperty("name").GetString() ?? "";
             var size = element.GetProperty("size").GetInt64();
-            if (id > 0 && SafePart.IsMatch(name) && size > 0)
-                assets.Add(new GitHubAsset(id, name, size));
+            if (id > 0 && SafePart.IsMatch(name) && size > 0) assets.Add(new GitHubAsset(id, name, size));
         }
         return new ReleaseInfo(owner, repository, tag, assets);
     }
 
+    private static async Task<ReleaseInfo> LatestAsync(string owner, string repository,
+        bool beta, CancellationToken token)
+    {
+        if (!beta)
+            return await ReadReleaseAsync(owner, repository,
+                new Uri($"https://api.github.com/repos/{owner}/{repository}/releases/latest"), token).ConfigureAwait(false);
+        // The public releases endpoint returns published stable + prereleases.
+        using var response = await SendGitHubAsync(
+            new Uri($"https://api.github.com/repos/{owner}/{repository}/releases?per_page=100"),
+            "application/vnd.github+json", token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token).ConfigureAwait(false);
+        var tag = SelectLatestBetaReleaseTag(doc.RootElement);
+        return await ReadReleaseAsync(owner, repository,
+            new Uri($"https://api.github.com/repos/{owner}/{repository}/releases/tags/{tag}"), token).ConfigureAwait(false);
+    }
+
+
     public static async Task<string> ReadManifestAsync(string source, string runtime, CancellationToken token)
     {
-        var (owner, repository, asset) = Parse(source);
+        var (owner, repository, asset, beta) = Parse(source);
         if (asset is not null) throw new InvalidDataException("A GitHub manifest source must refer to the repository, not an asset.");
-        var release = await LatestAsync(owner, repository, token).ConfigureAwait(false);
+        var release = await LatestAsync(owner, repository, beta, token).ConfigureAwait(false);
         var manifestName = $"CyanDeck-{RequireNativeCyanDeckVersion(release.Tag)}-{runtime}.update.json";
         var manifest = release.Assets.FirstOrDefault(a => string.Equals(a.Name, manifestName, StringComparison.OrdinalIgnoreCase))
             ?? throw new FileNotFoundException($"Signed manifest asset missing in latest GitHub Release: {manifestName}");
@@ -112,10 +161,18 @@ public static class GitHubReleaseSource
 
     public static async Task DownloadPackageAsync(string source, string destination, CancellationToken token)
     {
-        var (owner, repository, assetName) = Parse(source);
+        var (owner, repository, assetName, beta) = Parse(source);
         if (assetName is null || !assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("GitHub package source must reference a release ZIP asset.");
-        var release = await LatestAsync(owner, repository, token).ConfigureAwait(false);
+        // Pin the package to the version named in the verified manifest.
+        // A new beta release between manifest and ZIP retrieval must not silently
+        // substitute a different archive.
+        var m = Regex.Match(assetName, @"^CyanDeck-(?<version>\d+\.\d+\.\d+)-win-(?:x64|arm64)\.zip$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!m.Success) throw new InvalidDataException("GitHub package asset name is not versioned.");
+        var tag = "v" + m.Groups["version"].Value;
+        var release = await ReadReleaseAsync(owner, repository,
+            new Uri($"https://api.github.com/repos/{owner}/{repository}/releases/tags/{tag}"), token).ConfigureAwait(false);
         var asset = release.Assets.FirstOrDefault(a => string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase))
             ?? throw new FileNotFoundException($"GitHub Release ZIP not found: {assetName}");
         if (asset.Size > MaxPackageBytes) throw new InvalidDataException("GitHub release ZIP is too large.");

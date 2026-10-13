@@ -1045,3 +1045,22 @@ sealed class HolidayStubHandler : HttpMessageHandler
             Content = new StringContent(_reply(request.RequestUri!))
         });
 }
+
+// Update channels: stable does not consume prereleases; opt-in beta can choose
+// the highest published numeric CyanDeck release and ignores draft versions.
+using (var releases = System.Text.Json.JsonDocument.Parse("""
+[
+  {"tag_name":"v8.0.2","draft":false,"prerelease":false},
+  {"tag_name":"v8.0.4","draft":true,"prerelease":true},
+  {"tag_name":"v8.0.3","draft":false,"prerelease":true},
+  {"tag_name":"v7.49.5","draft":false,"prerelease":false}
+]
+"""))
+{
+    Assert.That(GitHubReleaseSource.SelectLatestBetaReleaseTag(releases.RootElement) == "v8.0.3",
+        "beta includes published prereleases but not drafts or old product");
+}
+Assert.That(GitHubReleaseSource.PackageSource(GitHubReleaseSource.BetaChannel, "CyanDeck-8.0.3-win-x64.zip")
+    == "github-release-beta://deadpixel134/CyanDeck/CyanDeck-8.0.3-win-x64.zip",
+    "beta package source retains its channel identity");
+

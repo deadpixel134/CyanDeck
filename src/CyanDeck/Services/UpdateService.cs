@@ -53,8 +53,10 @@ public static class UpdateService
         _ => "win-x64"
     };
 
-    public static string ResolveManifestSource(string configured)
+    public static string ResolveManifestSource(string configured, bool betaChannel = false)
     {
+        // Explicit beta choice always overrides custom/adjacent stable sources.
+        if (betaChannel) return GitHubReleaseSource.BetaChannel;
         if (!string.IsNullOrWhiteSpace(configured)) return Environment.ExpandEnvironmentVariables(configured.Trim());
         var fromEnvironment = Environment.GetEnvironmentVariable("CYANDECK_UPDATE_MANIFEST");
         if (!string.IsNullOrWhiteSpace(fromEnvironment)) return Environment.ExpandEnvironmentVariables(fromEnvironment.Trim());

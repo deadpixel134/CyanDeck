@@ -30,4 +30,7 @@ release=(source/'Services'/'GitHubReleaseSource.cs').read_text(encoding='utf-8')
 assert 'github-release://deadpixel134/CyanDeck' in release
 assert 'github-release://deadpixel134/DesktopDeck' not in release
 assert 'RequireNativeCyanDeckVersion' in release
+assert 'github-release-beta://deadpixel134/CyanDeck' in release
+assert 'EnableBetaUpdateChannel' in (source/'Models'/'Models.cs').read_text(encoding='utf-8')
+assert 'BetaUpdateChannelCheck' in (source/'Views'/'SettingsWindow.xaml').read_text(encoding='utf-8')
 print('PASS: standalone CyanDeck namespace, executable, storage, OAuth and original icon')

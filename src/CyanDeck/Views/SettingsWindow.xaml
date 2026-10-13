@@ -443,6 +443,8 @@
                         <TextBlock x:Name="UpdatesSection" Text="업데이트" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="AutomaticUpdateCheck" Content="프로그램 실행 시 GitHub Releases 업데이트 확인" />
                         <CheckBox x:Name="InstallUpdatesAutomaticallyCheck" Content="검증된 새 버전 자동 설치 후 재시작" Margin="0,4,0,4"/>
+                         <CheckBox x:Name="BetaUpdateChannelCheck" Content="베타 채널 업데이트 활성화 (시험판 수신)" Margin="0,5,0,4"/>
+                         <TextBlock Foreground="#E6BE7A" TextWrapping="Wrap" Margin="0,0,0,8" Text="베타 채널은 공개된 정식·베타 릴리스 중 높은 버전을 받습니다. RSA-PSS 서명과 SHA-256 검증은 동일하게 적용됩니다. 선택하면 아래 사용자 지정 매니페스트 주소보다 베타 채널을 우선합니다."/>
                         <TextBlock Text="업데이트 매니페스트 URL/로컬 경로 (비우면 GitHub Releases 기본 채널)"/>
                         <TextBox x:Name="UpdateManifestSourceBox" Margin="0,4,0,6" Padding="7,5" Background="#20242B" Foreground="#F2F4F8" BorderBrush="#3A424E"/>
                         <CheckBox x:Name="RequireSignedUpdateCheck" Content="RSA-PSS 서명 검증 필수 (보안 정책, 해제 불가)" IsEnabled="False" IsChecked="True" Margin="0,2,0,4"/>
@@ -450,7 +452,7 @@
                         <TextBox x:Name="UpdatePublicKeyPathBox" Margin="0,4,0,6" Padding="7,5" Background="#20242B" Foreground="#F2F4F8" BorderBrush="#3A424E"/>
                         <TextBlock Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,8" Text="Private 저장소의 업데이트에는 각 PC의 CYANDECK_GITHUB_TOKEN 환경 변수가 필요합니다. RSA 공개키 PEM도 반드시 있어야 합니다. 원격 채널은 HTTPS만 허용하고 RSA-PSS 서명과 SHA-256 검증을 반드시 통과해야 설치됩니다. 로컬에 신뢰할 RSA 공개 키를 지정해야 합니다. 키 경로를 비우면 실행 파일 옆의 CyanDeck.update-public-key.pem을 사용합니다."/>
                         <WrapPanel Margin="0,0,0,6">
-                            <Button Content="업데이트 확인…" Margin="0,0,8,8" Click="CheckForUpdates_Click"/>
+                            <Button Content="업데이트 확인 및 설치…" Margin="0,0,8,8" Click="CheckForUpdates_Click"/>
                             <Button Content="마지막 앱 업데이트 되돌리기…" Margin="0,0,8,8" Click="RollbackUpdate_Click"/>
                         </WrapPanel>
                         <TextBlock x:Name="LastUpdateCheckText" Foreground="#AEB8C6" Margin="0,0,0,16"/>

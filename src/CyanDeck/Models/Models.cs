@@ -224,6 +224,9 @@ public sealed class DeckSettings
     public int CrashLoopWindowMinutes { get; set; } = 10;
     public bool EnableAutomaticUpdateChecks { get; set; } = true;
     public bool InstallUpdatesAutomatically { get; set; } = true;
+    // Opt-in: releases/latest for stable, public prereleases included for beta.
+    public bool EnableBetaUpdateChannel { get; set; }
+
     public string UpdateManifestSource { get; set; } = "";
     public DateTime? LastUpdateCheckUtc { get; set; }
     public bool RequireSignedUpdateManifests { get; set; } = true;
