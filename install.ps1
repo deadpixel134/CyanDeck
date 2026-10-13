@@ -34,11 +34,24 @@ function Assert-NoReparseAncestors([string]$Target) {
 Assert-NoReparseAncestors $installDir
 Assert-NoReparseAncestors (Join-Path $installDir 'DesktopDeck.exe')
 foreach ($name in @('desktopdeck-google-client-id.txt','DesktopDeck.update-public-key.pem',
-                   'uninstall.ps1','apply-update.ps1')) {
+                   'uninstall.ps1','apply-update.ps1','recover-desktop-icons.ps1')) {
   Assert-NoReparseAncestors (Join-Path $installDir $name)
 }
 # Source must be a regular EXE rather than a link into another location.
 Assert-NoReparseAncestors $source
+# Validate all required helper sources BEFORE overwriting any installed file.
+# A half-copied update can otherwise leave an existing installation unusable.
+foreach ($name in @('uninstall.ps1','apply-update.ps1','recover-desktop-icons.ps1')) {
+  $helperSource = Join-Path $PSScriptRoot $name
+  Assert-NoReparseAncestors $helperSource
+  if (-not (Test-Path -LiteralPath $helperSource -PathType Leaf)) {
+    throw "Required CyanDeck installer helper is missing: $name"
+  }
+}
+foreach ($name in @('desktopdeck-google-client-id.txt','DesktopDeck.update-public-key.pem')) {
+  $optionalSource = Join-Path $PSScriptRoot $name
+  if (Test-Path -LiteralPath $optionalSource) { Assert-NoReparseAncestors $optionalSource }
+}
 Assert-NoReparseAncestors $shortcut
 Assert-NoReparseAncestors $cyanShortcut
 if ($CreateDesktopShortcut) { Assert-NoReparseAncestors $desktopShortcut }
