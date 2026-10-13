@@ -84,6 +84,24 @@ function Write-CutoverJournal([string]$Phase) {
     } finally { if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force } }
   } finally { $gate.Dispose() }
 }
+# Reject a stale or incompatible journal BEFORE creating the candidate.
+# This avoids publishing a copy that cannot be recorded as prepared.
+function Assert-CanPrepareJournal {
+  $canonical = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'CyanDeck'))
+  if (-not [string]::Equals($destination, $canonical, [StringComparison]::OrdinalIgnoreCase)) { return }
+  $journal = Join-Path (Join-Path (Join-Path $env:LOCALAPPDATA 'DesktopDeck') 'migration') 'cyandeck-cutover-state.json'
+  Assert-SafePath $journal
+  if (-not (Test-Path -LiteralPath $journal)) { return }
+  $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
+      -not [string]::Equals($previous.LegacyRoot, $legacy, [StringComparison]::OrdinalIgnoreCase) -or
+      -not [string]::Equals($previous.CandidateRoot, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Unrecognized migration journal; refusing to prepare.'
+  }
+  if ($previous.Phase -ne 'aborted') {
+    throw 'Existing migration journal must be aborted before preparing again.'
+  }
+}
 # Share the application's actual single-instance mutex. Holding ownership
 # prevents an app instance from starting during the copy/verification window.
 # Process-name checks alone cannot close the startup race.
@@ -168,6 +186,7 @@ if ($VerifyPrepared) {
 if (Test-Path -LiteralPath $destination) {
   throw "Destination already exists; refusing to merge or overwrite: $destination"
 }
+Assert-CanPrepareJournal
 $files = @(Get-SafeTree $legacy | Where-Object { -not $_.PSIsContainer })
 foreach ($file in $files) {
   if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
