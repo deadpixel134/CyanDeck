@@ -3,10 +3,10 @@
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 read=lambda p:(r/p).read_text(encoding='utf-8-sig')
-mod=read('src/DesktopDeck/Calendar/CalendarModule.cs')
-host=read('src/DesktopDeck/Services/DesktopHost.cs')
-loose=read('src/DesktopDeck/Services/LooseDesktopIconHost.cs')
-app=read('src/DesktopDeck/Services/AppController.cs')
+mod=read('src/CyanDeck/Calendar/CalendarModule.cs')
+host=read('src/CyanDeck/Services/DesktopHost.cs')
+loose=read('src/CyanDeck/Services/LooseDesktopIconHost.cs')
+app=read('src/CyanDeck/Services/AppController.cs')
 attach=mod.split('public void EnsureAttachedAfterShellRebuild(bool force = false)',1)[1].split('public async Task SynchronizeAsync()',1)[0]
 schedule=mod.split('private void ScheduleBoundedPlacementRetry(',1)[1].split('private void OnDeferredPlacementRetry(',1)[0]
 tick=mod.split('private void OnDeferredPlacementRetry(',1)[1].split('public void RetryHiddenSurface()',1)[0]
@@ -30,8 +30,8 @@ checks={
  'no stacking above other apps': 'NativeMethods.HWND_TOPMOST' not in zorder and 'NativeMethods.HWND_BOTTOM' in zorder,
  'recycle repeated failures throttled': 'RecyclePlacementCooldown = TimeSpan.FromSeconds(30)' in loose and '_recyclePlacementRetryAfterUtc' in recycle,
  'user tray gets meaningful status': '자동 표시 복구 예약됨' in mod and any(label in app for label in ('v38 표시 복구', 'v41 표시 복구')),
- 'calendar local-only and Google code retained': Path(r/'src/DesktopDeck/Calendar/GoogleCalendarSync.cs').exists() and 'LocalOnly' in read('src/DesktopDeck/Calendar/GoogleCalendarSync.cs'),
- 'schema remains 35': 'Current = 35;' in read('src/DesktopDeck/Services/StateSchema.cs'),
+ 'calendar local-only and Google code retained': Path(r/'src/CyanDeck/Calendar/GoogleCalendarSync.cs').exists() and 'LocalOnly' in read('src/CyanDeck/Calendar/GoogleCalendarSync.cs'),
+ 'schema remains 35': 'Current = 35;' in read('src/CyanDeck/Services/StateSchema.cs'),
 }
 for title,passed in checks.items():
  print(('PASS' if passed else 'FAIL')+': '+title)

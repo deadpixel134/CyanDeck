@@ -3,10 +3,10 @@
 from pathlib import Path
 r = Path(__file__).resolve().parents[1]
 text = lambda name: (r / name).read_text(encoding='utf-8-sig')
-bundle = text('src/DesktopDeck/Services/DiagnosticBundleService.cs')
-shortcut = text('src/DesktopDeck/Services/ShortcutLaunchService.cs')
-report = text('src/DesktopDeck/Services/ProblemReportService.cs')
-log = text('src/DesktopDeck/Services/DiagnosticsLog.cs')
+bundle = text('src/CyanDeck/Services/DiagnosticBundleService.cs')
+shortcut = text('src/CyanDeck/Services/ShortcutLaunchService.cs')
+report = text('src/CyanDeck/Services/ProblemReportService.cs')
+log = text('src/CyanDeck/Services/DiagnosticsLog.cs')
 checks = {
   'diagnostic ZIP created via bounded temporary file and validated before replacing': 'ZipFile.OpenRead(tempZip)' in bundle and 'File.Replace(tempZip, destinationPath, null)' in bundle and 'File.Delete(destinationPath)' not in bundle,
   'diagnostic exporter reads at most a limited log tail': 'const int maxReadBytes = 3_000_000' in bundle and 'file.Seek(-maxReadBytes, SeekOrigin.End)' in bundle,
@@ -26,7 +26,7 @@ checks = {
   'shortcut reveal failure logged without file path': 'errorType={revealFailure.GetType().Name}' in shortcut and 'hresult=0x{revealFailure.HResult:X8}' in shortcut,
   'shortcut diagnostics stay with user; not uploaded': 'ProblemReportService.ShowOnce' in shortcut and 'Clipboard' not in shortcut and 'nothing is uploaded' in report,
   'no blanket log wipe introduced': 'File.AppendAllText(CurrentPath' in log and 'File.Delete(CurrentPath)' not in log,
-  'state schema stays 35': 'Current = 35' in text('src/DesktopDeck/Services/StateSchema.cs'),
+  'state schema stays 35': 'Current = 35' in text('src/CyanDeck/Services/StateSchema.cs'),
   'OAuth secrets not part of the source': not (r/'json/client_secret.json').exists(),
 }
 for label, ok in checks.items(): print(('PASS' if ok else 'FAIL') + ': ' + label)

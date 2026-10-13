@@ -3,11 +3,11 @@
 from pathlib import Path
 import sys
 root=Path(__file__).resolve().parents[1]
-view=(root/'src/DesktopDeck/Views/FenceWindow.xaml.cs').read_text()
-keyboard=(root/'src/DesktopDeck/Views/FenceWindow.Keyboard.cs').read_text()
-dialog=(root/'src/DesktopDeck/Views/CollectionDesktopDeleteDialog.cs').read_text()
-recycler=(root/'src/DesktopDeck/Services/DesktopRecycleService.cs').read_text()
-clipboard=(root/'src/DesktopDeck/Services/DeckShellClipboardService.cs').read_text()
+view=(root/'src/CyanDeck/Views/FenceWindow.xaml.cs').read_text()
+keyboard=(root/'src/CyanDeck/Views/FenceWindow.Keyboard.cs').read_text()
+dialog=(root/'src/CyanDeck/Views/CollectionDesktopDeleteDialog.cs').read_text()
+recycler=(root/'src/CyanDeck/Services/DesktopRecycleService.cs').read_text()
+clipboard=(root/'src/CyanDeck/Services/DeckShellClipboardService.cs').read_text()
 choose=view[view.index('private void DeleteItems('): view.index('private static bool IsProtectedDeletionTarget(')]
 explicit=view[view.index('private void RecycleActualDesktopCollectionItems('):view.index('private void RemoveCollectionReferences(')]
 remove=view[view.index('private void RemoveCollectionReferences('):view.index('private void DeleteItems(')]

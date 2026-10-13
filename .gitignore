@@ -32,8 +32,8 @@ __pycache__/
 **/layout.json
 **/calendar-events.json
 **/calendar-preferences.json
-**/desktopdeck-google-client-id.txt
-**/DesktopDeck-diagnostics-*.zip
+**/cyandeck-google-client-id.txt
+**/CyanDeck-diagnostics-*.zip
 
 # Legacy generated reports and version-specific scratch material
 docs/CALENDAR_*_TEST_REPORT.*

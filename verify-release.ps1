@@ -23,7 +23,7 @@ function Get-CanonicalManifestPayload($Manifest) {
   $notesUrlValue = Escape-ManifestValue (([string]$Manifest.releaseNotesUrl).Trim())
   $notesValue = Escape-ManifestValue ([string]$Manifest.notes)
   $lines = @(
-    "DesktopDeck.UpdateManifest.v1",
+    "CyanDeck.UpdateManifest.v1",
     "version=$v",
     "schema=$($Manifest.schema)",
     "runtime=$runtimeValue",
@@ -37,7 +37,7 @@ function Get-CanonicalManifestPayload($Manifest) {
 
 if (-not [string]::IsNullOrWhiteSpace([string]$manifest.signature)) {
   if ([string]::IsNullOrWhiteSpace($PublicKeyPath)) {
-    $candidate = Join-Path (Split-Path -Parent $manifestPathResolved) "DesktopDeck.update-public-key.pem"
+    $candidate = Join-Path (Split-Path -Parent $manifestPathResolved) "CyanDeck.update-public-key.pem"
     if (Test-Path $candidate) { $PublicKeyPath = $candidate } else { throw "Manifest is signed; provide -PublicKeyPath." }
   }
   $rsa = [System.Security.Cryptography.RSA]::Create()

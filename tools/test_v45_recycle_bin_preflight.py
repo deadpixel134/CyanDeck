@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
-s=(r/'src/DesktopDeck/Services/RecycleBinPreflight.cs').read_text()
-f=(r/'src/DesktopDeck/Views/FenceWindow.xaml.cs').read_text(encoding='utf-8-sig')
-l=(r/'src/DesktopDeck/Services/LooseDesktopIconHost.cs').read_text(encoding='utf-8-sig')
-d=(r/'src/DesktopDeck/Services/DesktopRecycleService.cs').read_text()
+s=(r/'src/CyanDeck/Services/RecycleBinPreflight.cs').read_text()
+f=(r/'src/CyanDeck/Views/FenceWindow.xaml.cs').read_text(encoding='utf-8-sig')
+l=(r/'src/CyanDeck/Services/LooseDesktopIconHost.cs').read_text(encoding='utf-8-sig')
+d=(r/'src/CyanDeck/Services/DesktopRecycleService.cs').read_text()
 c={
  'large folder enumeration bounded': 'MaxEnumeratedEntries = 4096' in s,
  'reparse points avoided': 'FileAttributes.ReparsePoint' in s,

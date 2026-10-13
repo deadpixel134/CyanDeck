@@ -1,5 +1,5 @@
-using DesktopDeck.Appearance;
-using DesktopDeck.Services;
+using CyanDeck.Appearance;
+using CyanDeck.Services;
 
 var count = 0;
 // Every combination of the three independent visibility toggles and the

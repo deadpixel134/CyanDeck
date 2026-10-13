@@ -1,5 +1,5 @@
-using DesktopDeck.Calendar;
-using DesktopDeck.Services;
+using CyanDeck.Calendar;
+using CyanDeck.Services;
 using System.Text.Json;
 using System.IO.Compression;
 using System.Net;
@@ -24,37 +24,37 @@ static bool AcceptUpdateZip(params string[] entryNames)
     try { UpdatePackageLayoutPolicy.Validate(reader); return true; }
     catch (InvalidDataException) { return false; }
 }
-Assert.That(AcceptUpdateZip("DesktopDeck.exe", "README.md"),
+Assert.That(AcceptUpdateZip("CyanDeck.exe", "README.md"),
     "legacy package supports flat signed payload");
-Assert.That(AcceptUpdateZip("DesktopDeck-7.49.6-win-x64/", "DesktopDeck-7.49.6-win-x64/DesktopDeck.exe", "DesktopDeck-7.49.6-win-x64/README.md"),
+Assert.That(AcceptUpdateZip("CyanDeck-7.49.6-win-x64/", "CyanDeck-7.49.6-win-x64/CyanDeck.exe", "CyanDeck-7.49.6-win-x64/README.md"),
     "legacy package supports one wrapped signed payload");
-Assert.That(!AcceptUpdateZip("a/DesktopDeck.exe", "b/README.md"),
+Assert.That(!AcceptUpdateZip("a/CyanDeck.exe", "b/README.md"),
     "signed package refuses sibling payload directories");
-Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "sub/README.md"),
+Assert.That(!AcceptUpdateZip("CyanDeck.exe", "sub/README.md"),
     "signed package refuses mixed flat and nested content");
-Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "desktopdeck.exe"),
+Assert.That(!AcceptUpdateZip("CyanDeck.exe", "cyandeck.exe"),
     "signed package refuses case-insensitive filename collisions");
-Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "DesktopDeck.exe"),
+Assert.That(!AcceptUpdateZip("CyanDeck.exe", "CyanDeck.exe"),
     "signed package refuses duplicate ZIP entries");
-Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "CyanDeck.exe"),
+Assert.That(!AcceptUpdateZip("CyanDeck.exe", "CyanDeck.exe"),
     "legacy channel refuses uncoordinated CyanDeck executable handoff");
-Assert.That(!AcceptUpdateZip("nested/../DesktopDeck.exe"),
+Assert.That(!AcceptUpdateZip("nested/../CyanDeck.exe"),
     "signed package refuses traversal");
 Assert.That(!AcceptUpdateZip("README.md"), "signed package requires legacy executable");
 
 // Exercise the production singleton lifecycle on a test-only mutex name.
 var singletonName = @"Local\CyanDeck.SingletonLifecycleTest." + Guid.NewGuid().ToString("N");
-using (var primary = LegacySingleInstanceGate.TryAcquire(singletonName))
+using (var primary = CyanDeckSingleInstanceGate.TryAcquire(singletonName))
 {
     Assert.That(primary.IsFirst, "first process owns the legacy singleton");
     var secondaryRejected = Task.Run(() =>
     {
-        using var secondary = LegacySingleInstanceGate.TryAcquire(singletonName);
+        using var secondary = CyanDeckSingleInstanceGate.TryAcquire(singletonName);
         return !secondary.IsFirst;
     }).GetAwaiter().GetResult();
     Assert.That(secondaryRejected, "secondary process cannot steal singleton ownership");
 }
-using (var restarted = LegacySingleInstanceGate.TryAcquire(singletonName))
+using (var restarted = CyanDeckSingleInstanceGate.TryAcquire(singletonName))
 {
     Assert.That(restarted.IsFirst, "clean shutdown releases singleton for next application");
 }
@@ -154,7 +154,7 @@ Assert.That(movedTimed.StartAt?.Hour == 23 && movedTimed.StartAt?.Day == 12
     && movedTimed.EndAt?.Hour == 1 && movedTimed.EndAt?.Day == 13
     && movedTimed.EndAt - movedTimed.StartAt == TimeSpan.FromMinutes(105),
     "overnight timed event keeps local start and end times and duration");
-var dragScratch = Path.Combine(Path.GetTempPath(), "desktopdeck-date-move-" + Guid.NewGuid().ToString("N"));
+var dragScratch = Path.Combine(Path.GetTempPath(), "cyandeck-date-move-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(dragScratch);
 try
 {
@@ -179,7 +179,7 @@ try
 finally { Directory.Delete(dragScratch, recursive: true); }
 
 // OAuth application ID is shared, but tokens never are.
-var oauthScratch = Path.Combine(Path.GetTempPath(), "desktopdeck-oauth-id-" + Guid.NewGuid().ToString("N"));
+var oauthScratch = Path.Combine(Path.GetTempPath(), "cyandeck-oauth-id-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(oauthScratch);
 try
 {
@@ -222,7 +222,7 @@ Assert.That(new GoogleCalendarSource { AccessRole = "writerWithoutPrivateAccess"
     "Google writerWithoutPrivateAccess can create/edit events");
 Assert.That(!new GoogleCalendarSource { AccessRole = "reader" }.CanWrite,
     "read-only subscribed calendar cannot be chosen as an upload target");
-var multiScratch = Path.Combine(Path.GetTempPath(), "desktopdeck-multi-cal-" + Guid.NewGuid().ToString("N"));
+var multiScratch = Path.Combine(Path.GetTempPath(), "cyandeck-multi-cal-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(multiScratch);
 try
 {
@@ -355,7 +355,7 @@ var titles = CalendarEventStore.ParseLines("first\r\n\r\n second \nthird\n ");
 Assert.That(titles.SequenceEqual(["first", "second", "third"]), "each nonempty line becomes a separate title");
 // Prove that the persisted checkpoint and in-memory edit have the same
 // commit boundary. A .tmp DIRECTORY deterministically simulates an I/O error.
-var scratch = Path.Combine(Path.GetTempPath(), "desktopdeck-calendar-harness-" + Guid.NewGuid().ToString("N"));
+var scratch = Path.Combine(Path.GetTempPath(), "cyandeck-calendar-harness-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(scratch);
 try
 {
@@ -539,7 +539,7 @@ try
 }
 finally { Directory.Delete(scratch, recursive: true); }
 // v15: explicit, confirmed recovery preserves .bak and archives damaged primary.
-var restoreScratch = Path.Combine(Path.GetTempPath(), "desktopdeck-manual-restore-" + Guid.NewGuid().ToString("N"));
+var restoreScratch = Path.Combine(Path.GetTempPath(), "cyandeck-manual-restore-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(restoreScratch);
 try
 {
@@ -640,7 +640,7 @@ try
 finally { Directory.Delete(restoreScratch, recursive: true); }
 
 // Upload metadata must be atomic even when the remote request has succeeded.
-var uploadScratch = Path.Combine(Path.GetTempPath(), "desktopdeck-upload-tests-" + Guid.NewGuid().ToString("N"));
+var uploadScratch = Path.Combine(Path.GetTempPath(), "cyandeck-upload-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(uploadScratch);
 try
 {
@@ -848,7 +848,7 @@ Assert.That(publicCalendars.Count == 2
 var oldHolidayPreferences = JsonSerializer.Deserialize<CalendarPreferences>("{\"Catalog\":[],\"SelectedCalendarIds\":[]}")!;
 Assert.That(oldHolidayPreferences.ShowAppleKoreanHolidays && !oldHolidayPreferences.ShowGoogleKoreanHolidays,
     "legacy preferences default to Apple-on and Google-off without changing Google selection");
-var holidayTemp = Path.Combine(Path.GetTempPath(), "desktopdeck-holiday-" + Guid.NewGuid().ToString("N"));
+var holidayTemp = Path.Combine(Path.GetTempPath(), "cyandeck-holiday-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(holidayTemp);
 try
 {
@@ -976,7 +976,7 @@ finally { Directory.Delete(holidayTemp, recursive: true); }
 
 // Explicit local-only events must survive restarts, edits and long-press relocation
 // without being queued for Google upload (and without requiring an account).
-var localOnlyScratch = Path.Combine(Path.GetTempPath(), "desktopdeck-local-only-" + Guid.NewGuid().ToString("N"));
+var localOnlyScratch = Path.Combine(Path.GetTempPath(), "cyandeck-local-only-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(localOnlyScratch);
 try
 {
@@ -1061,7 +1061,7 @@ static class Assert
 }
 
 
-namespace DesktopDeck.Services
+namespace CyanDeck.Services
 {
     public static class DiagnosticsLog
     {

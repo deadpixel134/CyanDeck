@@ -4,21 +4,21 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 def read(rel): return (root/rel).read_text(encoding='utf-8-sig')
 up = read('apply-update.ps1')
-svc = read('src/DesktopDeck/Services/UpdateService.cs')
-ctl = read('src/DesktopDeck/Services/AppController.cs')
-fence = read('src/DesktopDeck/Views/FenceWindow.xaml.cs')
-diag = read('src/DesktopDeck/Services/DiagnosticBundleService.cs')
+svc = read('src/CyanDeck/Services/UpdateService.cs')
+ctl = read('src/CyanDeck/Services/AppController.cs')
+fence = read('src/CyanDeck/Views/FenceWindow.xaml.cs')
+diag = read('src/CyanDeck/Services/DiagnosticBundleService.cs')
 inst = read('install.ps1')
 uninst = read('uninstall.ps1')
 build = read('build.ps1')
 package = read('package.ps1')
-model = read('src/DesktopDeck/Models/Models.cs')
-xaml = read('src/DesktopDeck/Views/SettingsWindow.xaml')
+model = read('src/CyanDeck/Models/Models.cs')
+xaml = read('src/CyanDeck/Views/SettingsWindow.xaml')
 checks = {
     'no indiscriminate updater install dir wipe': 'Get-ChildItem -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue | Remove-Item' not in up,
-    'updater has only explicit owned file list': '$managedNames = @(' in up and "'DesktopDeck.exe'" in up,
+    'updater has only explicit owned file list': '$managedNames = @(' in up and "'CyanDeck.exe'" in up,
     'only managed items may be replaced': 'if ($Name -cnotin $managedNames)' in up,
-    'atomic replacement of existing app-owned leaf file': '[IO.File]::Replace($staging, $target, $replaceBackup)' in up and '.DesktopDeck-replace-' in up,
+    'atomic replacement of existing app-owned leaf file': '[IO.File]::Replace($staging, $target, $replaceBackup)' in up and '.CyanDeck-replace-' in up,
     'updater snapshot is application-owned only': 'function Copy-ManagedSnapshot' in up and 'Copy-ManagedSnapshot $InstallDir $safety' in up,
     'rollback must use app snapshot': 'Rollback source must be an application-owned snapshot' in up,
     'updater never force-kills process': 'Stop-Process -Force' not in up,
@@ -55,9 +55,9 @@ checks = {
     'package staging guarded from arbitrary deletion': '$unknown.Count -gt 0' in package and 'Remove-Item $stage -Recurse -Force' not in package,
     'release packaging requires a signing key': 'Production release packaging requires -SigningKeyPath' in package,
     'release verifier rejects unsigned manifest': 'Unsigned update manifest is not permitted' in read('verify-release.ps1'),
-    'schema is preserved': 'Current = 35' in read('src/DesktopDeck/Services/StateSchema.cs'),
+    'schema is preserved': 'Current = 35' in read('src/CyanDeck/Services/StateSchema.cs'),
     'desktop collection Delete protected': 'CollectionDesktopDeleteDialog.Show(this, tiles.Count)' in fence,
-    'local Google events protected': '!x.LocalOnly && !x.Conflict && !x.RemoteReadOnly' in read('src/DesktopDeck/Calendar/GoogleCalendarSync.cs'),
+    'local Google events protected': '!x.LocalOnly && !x.Conflict && !x.RemoteReadOnly' in read('src/CyanDeck/Calendar/GoogleCalendarSync.cs'),
     'Google OAuth user secret not bundled': not (root/'json/client_secret.json').exists(),
 }
 for name, passed in checks.items():

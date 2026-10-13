@@ -1,10 +1,10 @@
 # CyanDeck
 
-CyanDeck(구 DesktopDeck)은 Windows 10/11용 바탕화면 파일 정리와 Google Calendar 연동을 지원하는 WPF/.NET 8 프로그램입니다.
+CyanDeck(구 CyanDeck)은 Windows 10/11용 바탕화면 파일 정리와 Google Calendar 연동을 지원하는 WPF/.NET 8 프로그램입니다.
 
 ## 명칭 변경 및 기존 사용자 호환성
 
-**CyanDeck**은 DesktopDeck의 새 제품 표시명입니다. 1단계에서는 사용자에게 보이는 UI 및 제품 메타데이터를 변경합니다. 기존 사용자 보호를 위해 `DesktopDeck.exe`, 기존 설치 경로, `%APPDATA%\DesktopDeck` 데이터 폴더, 자동 업데이트 채널·파일명·서명 키, GitHub 저장소 주소 및 OAuth 기술 식별자는 유지합니다. 내부 명칭은 별도의 마이그레이션 테스트 후 변경합니다.
+**CyanDeck**은 CyanDeck의 새 제품 표시명입니다. 1단계에서는 사용자에게 보이는 UI 및 제품 메타데이터를 변경합니다. 기존 사용자 보호를 위해 `CyanDeck.exe`, 기존 설치 경로, `%APPDATA%\CyanDeck` 데이터 폴더, 자동 업데이트 채널·파일명·서명 키, GitHub 저장소 주소 및 OAuth 기술 식별자는 유지합니다. 내부 명칭은 별도의 마이그레이션 테스트 후 변경합니다.
 
 ## 기능
 
@@ -22,7 +22,7 @@ CyanDeck(구 DesktopDeck)은 Windows 10/11용 바탕화면 파일 정리와 Goog
 1. Windows 10/11 PC에서 .NET 8 SDK를 설치합니다.
 2. 소스를 내려받아 PowerShell 7에서 `pwsh -File ./build.ps1 -Runtime win-x64` 실행합니다. `build.cmd`도 사용할 수 있습니다.
 3. 설치 가능한 ZIP이 있으면 안전한 새 폴더에 압축을 풀고 `pwsh -File ./install.ps1`을 실행합니다.
-4. 기존 사용자 레이아웃·일정은 `%APPDATA%\DesktopDeck`에서 별도 백업 후 업데이트합니다.
+4. 기존 사용자 레이아웃·일정은 `%APPDATA%\CyanDeck`에서 별도 백업 후 업데이트합니다.
 
 ## 사용 설명
 
@@ -44,12 +44,12 @@ Collection에서 참조만 제거하는 것은 물리적 삭제가 아닙니다.
 ## 개발 및 안전성 검사
 
 ```powershell
-dotnet build src/DesktopDeck/DesktopDeck.csproj -c Release
+dotnet build src/CyanDeck/CyanDeck.csproj -c Release
 python tools/run_v43_safety_regressions.py
 python tools/test_v45_recycle_bin_preflight.py
 ```
 
-Google OAuth 데스크톱 앱용 JSON은 소스 저장소에 **절대로 올리지 마세요**. 배포 빌드용 JSON은 GitHub Actions Secret `DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON`으로 공급합니다. 릴리스 개인 서명 키도 Secret `DESKTOPDECK_UPDATE_SIGNING_KEY_PEM`에 별도로 저장하고 공개하지 않습니다. 클라이언트 ID는 공개될 수 있지만 사용자 토큰은 절대로 공개되면 안 됩니다.
+Google OAuth 데스크톱 앱용 JSON은 소스 저장소에 **절대로 올리지 마세요**. 배포 빌드용 JSON은 GitHub Actions Secret `CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON`으로 공급합니다. 릴리스 개인 서명 키도 Secret `CYANDECK_UPDATE_SIGNING_KEY_PEM`에 별도로 저장하고 공개하지 않습니다. 클라이언트 ID는 공개될 수 있지만 사용자 토큰은 절대로 공개되면 안 됩니다.
 
 GitHub Releases 기반 자동 업데이트는 별도의 **서명된 업데이트 매니페스트/배포 자산**이 게시되어야 동작합니다. 실제 Windows 빌드와 업데이트 동작은 별도 테스트가 필요합니다.
 
@@ -63,17 +63,17 @@ GitHub Releases 기반 자동 업데이트는 별도의 **서명된 업데이트
 ### CyanDeck 포터블 호환성 미리보기 (테스트 전용)
 
 GitHub Actions의 cyandeck-portable-preview-win-x64 / win-arm64 아티팩트에는
-CyanDeck.exe, 호환되는 DesktopDeck.exe, PREVIEW-README.txt가 함께 있습니다.
+CyanDeck.exe, 호환되는 CyanDeck.exe, PREVIEW-README.txt가 함께 있습니다.
 별도 Windows 테스트 계정에서만 CyanDeck.exe로 실행하세요. 같은 계정에서
 다른 폴더에 압축을 푸는 것만으로 사용자 데이터가 격리되지 않습니다.
-본체는 여전히 %APPDATA%\DesktopDeck을 사용하며 기존 설치 경로에
+본체는 여전히 %APPDATA%\CyanDeck을 사용하며 기존 설치 경로에
 덮어쓰면 안 됩니다. 미서명·Google 로그인 미설정 개발용으로 정식 설치
 파일이나 업데이트 또는 마이그레이션 패키지가 아닙니다.
 
 
 ### 전환 준비 상태 점검 (읽기 전용)
 
-DesktopDeck/CyanDeck를 모두 종료하고 소스 폴더에서 다음 명령으로
+CyanDeck/CyanDeck를 모두 종료하고 소스 폴더에서 다음 명령으로
 기존 데이터와 준비된 복사본의 무결성 및 전환 차단 요소를 점검합니다.
 
     pwsh -File tools/check-cyandeck-cutover-readiness.ps1 -Json
@@ -86,7 +86,7 @@ DesktopDeck/CyanDeck를 모두 종료하고 소스 폴더에서 다음 명령으
 ### 독립 실행형 CyanDeck.exe (전체 WPF 본체)
 
 GitHub Actions의 cyandeck-native-preview-win-x64 / win-arm64 파일은 기존
-DesktopDeck.exe를 대신 호출하는 런처가 아니라 전체 WPF 프로그램입니다.
+CyanDeck.exe를 대신 호출하는 런처가 아니라 전체 WPF 프로그램입니다.
 별도 Windows 테스트 계정 전용 미서명 개발판으로 기존 아이콘·IPC·데이터 경로
 및 서명 업데이트 프로토콜은 그대로 사용합니다. 현재 기존 사용자 프로필을
 CyanDeck 경로로 전환하지 않으며 Google 로그인이 제공되지 않습니다.
@@ -106,5 +106,5 @@ Actions 아티팩트에만 보관합니다. 이는 **배포 후보 검증 단계
 기존 설치 경로의 신뢰된 업데이트 공개 키로 후보 패키지를 검증한 뒤,
 새 CyanDeck 폴더에 파일을 복사하는 스테이징을 지원합니다. 기본값은
 읽기 전용 DRY RUN이며 실제 스테이징에는 -Apply가 필요합니다.
-이 과정은 DesktopDeck 데이터·바로가기·자동실행·업데이터를 변경하거나
+이 과정은 CyanDeck 데이터·바로가기·자동실행·업데이터를 변경하거나
 CyanDeck을 실행하지 않습니다. **정식 설치 완료를 의미하지 않습니다.**

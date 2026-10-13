@@ -6,12 +6,12 @@ Does not emulate or claim to test a live Windows WPF compositor.
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / 'src/DesktopDeck/Views/FenceWindow.xaml.cs').read_text(encoding='utf-8-sig')
-native = (ROOT / 'src/DesktopDeck/Interop/NativeMethods.cs').read_text(encoding='utf-8-sig')
-xaml = (ROOT / 'src/DesktopDeck/Views/FenceWindow.xaml').read_text(encoding='utf-8-sig')
-planner = (ROOT / 'src/DesktopDeck/Appearance/WallpaperBackdropSlicePlanner.cs').read_text(encoding='utf-8-sig')
-presenter = (ROOT / 'src/DesktopDeck/Appearance/WallpaperBlurBackdropPresenter.cs').read_text(encoding='utf-8-sig')
-model = (ROOT / 'src/DesktopDeck/Models/Models.cs').read_text(encoding='utf-8-sig')
+source = (ROOT / 'src/CyanDeck/Views/FenceWindow.xaml.cs').read_text(encoding='utf-8-sig')
+native = (ROOT / 'src/CyanDeck/Interop/NativeMethods.cs').read_text(encoding='utf-8-sig')
+xaml = (ROOT / 'src/CyanDeck/Views/FenceWindow.xaml').read_text(encoding='utf-8-sig')
+planner = (ROOT / 'src/CyanDeck/Appearance/WallpaperBackdropSlicePlanner.cs').read_text(encoding='utf-8-sig')
+presenter = (ROOT / 'src/CyanDeck/Appearance/WallpaperBlurBackdropPresenter.cs').read_text(encoding='utf-8-sig')
+model = (ROOT / 'src/CyanDeck/Models/Models.cs').read_text(encoding='utf-8-sig')
 
 def method_body(name, next_name):
     return source.split(name, 1)[1].split(next_name, 1)[0]

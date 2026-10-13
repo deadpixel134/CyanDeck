@@ -4,7 +4,7 @@ import re, sys, json
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / 'src' / 'DesktopDeck'
+SRC = ROOT / 'src' / 'CyanDeck'
 fail=[]; passed=0
 
 def check(cond,msg):
@@ -93,7 +93,7 @@ if dups:
     for k,v in list(dups.items())[:20]: print(' DUP',k,[str(x.relative_to(ROOT)) for x in v])
 
 # Version/schema consistency.
-csproj=(SRC/'DesktopDeck.csproj').read_text(encoding='utf-8')
+csproj=(SRC/'CyanDeck.csproj').read_text(encoding='utf-8')
 models=(SRC/'Models/Models.cs').read_text(encoding='utf-8')
 schema=(SRC/'Services/StateSchema.cs').read_text(encoding='utf-8')
 package=(ROOT/'package.ps1').read_text(encoding='utf-8')

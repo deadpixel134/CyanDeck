@@ -6,10 +6,10 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 read = lambda path: (root / path).read_text(encoding='utf-8-sig')
-host = read('src/DesktopDeck/Services/DesktopHost.cs')
-module = read('src/DesktopDeck/Calendar/CalendarModule.cs')
-window = read('src/DesktopDeck/Calendar/CalendarWindow.cs')
-controller = read('src/DesktopDeck/Services/AppController.cs')
+host = read('src/CyanDeck/Services/DesktopHost.cs')
+module = read('src/CyanDeck/Calendar/CalendarModule.cs')
+window = read('src/CyanDeck/Calendar/CalendarWindow.cs')
+controller = read('src/CyanDeck/Services/AppController.cs')
 checks = [
     ('hidden helper guard and class allow list', 'IsHiddenOwnProcessShellHelper' in host and 'GDI+ Hook Window Class' in host and 'WindowsForms10.Window.0.app.' in host),
     ('no blanket PID exemption', 'surfacePid == 0 || surfacePid != candidatePid' in host),
@@ -41,7 +41,7 @@ checks = [
     ('standalone not offered in safe mode', 'if (!_safeMode && _state.Settings.EnableCalendar)' in controller),
     ('Google and local-only store retained', 'new GoogleCalendarSync(_events, _preferences' in module and 'CalendarEventStore _events = new()' in module),
     ('no global keyboard hooks added', 'WH_KEYBOARD_LL' not in module and 'WH_KEYBOARD_LL' not in host),
-    ('no app setting migration', 'public bool TryOpenStandaloneWindow()' in module and '_standaloneWindowMode' not in read('src/DesktopDeck/Models/Models.cs')),
+    ('no app setting migration', 'public bool TryOpenStandaloneWindow()' in module and '_standaloneWindowMode' not in read('src/CyanDeck/Models/Models.cs')),
 ]
 failed = []
 for label, ok in checks:

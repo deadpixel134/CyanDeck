@@ -1,4 +1,4 @@
-using DesktopDeck.Services;
+using CyanDeck.Services;
 using System.IO;
 
 static void Check(bool condition, string description)
@@ -7,7 +7,7 @@ static void Check(bool condition, string description)
     Console.WriteLine("PASS " + description);
 }
 
-var scratch = Path.Combine(Path.GetTempPath(), "desktopdeck-watch-harness-" + Guid.NewGuid().ToString("N"));
+var scratch = Path.Combine(Path.GetTempPath(), "cyandeck-watch-harness-" + Guid.NewGuid().ToString("N"));
 var first = Path.Combine(scratch, "first");
 var second = Path.Combine(scratch, "second");
 Directory.CreateDirectory(first);

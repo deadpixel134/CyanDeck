@@ -7,26 +7,26 @@
     <LangVersion>12.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarEventStore.cs" Link="CalendarEventStore.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarEventMovePolicy.cs" Link="CalendarEventMovePolicy.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/WeekBarLayout.cs" Link="WeekBarLayout.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarWeekSizingPolicy.cs" Link="CalendarWeekSizingPolicy.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarViewportPolicy.cs" Link="CalendarViewportPolicy.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarHeaderPolicy.cs" Link="CalendarHeaderPolicy.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/GoogleCalendarCatalogRefreshPolicy.cs" Link="GoogleCalendarCatalogRefreshPolicy.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarSyncIntervalPolicy.cs" Link="CalendarSyncIntervalPolicy.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/GoogleEventReconciliation.cs" Link="GoogleEventReconciliation.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/GoogleUploadReconciliation.cs" Link="GoogleUploadReconciliation.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarPreferences.cs" Link="CalendarPreferences.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/KoreanHolidayCalendars.cs" Link="KoreanHolidayCalendars.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/GoogleOAuthClientConfiguration.cs" Link="GoogleOAuthClientConfiguration.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/CalendarBackupRestorer.cs" Link="CalendarBackupRestorer.cs" />
-    <Compile Include="../../src/DesktopDeck/Calendar/VerifiedCredentialCheckpoint.cs" Link="VerifiedCredentialCheckpoint.cs" />
-    <Compile Include="../../src/DesktopDeck/Services/FeatureSwitchCheckpoint.cs" Link="FeatureSwitchCheckpoint.cs" />
-    <Compile Include="../../src/DesktopDeck/Services/DataRootPaths.cs" Link="DataRootPaths.cs" />
-    <Compile Include="../../src/DesktopDeck/Services/CyanDeckCutoverJournal.cs" Link="CyanDeckCutoverJournal.cs" />
-    <Compile Include="../../src/DesktopDeck/Services/LegacyProfileWriterGate.cs" Link="LegacyProfileWriterGate.cs" />
-    <Compile Include="../../src/DesktopDeck/Services/LegacySingleInstanceGate.cs" Link="LegacySingleInstanceGate.cs" />
-    <Compile Include="../../src/DesktopDeck/Services/UpdatePackageLayoutPolicy.cs" Link="UpdatePackageLayoutPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarEventStore.cs" Link="CalendarEventStore.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarEventMovePolicy.cs" Link="CalendarEventMovePolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/WeekBarLayout.cs" Link="WeekBarLayout.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarWeekSizingPolicy.cs" Link="CalendarWeekSizingPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarViewportPolicy.cs" Link="CalendarViewportPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarHeaderPolicy.cs" Link="CalendarHeaderPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/GoogleCalendarCatalogRefreshPolicy.cs" Link="GoogleCalendarCatalogRefreshPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarSyncIntervalPolicy.cs" Link="CalendarSyncIntervalPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/GoogleEventReconciliation.cs" Link="GoogleEventReconciliation.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/GoogleUploadReconciliation.cs" Link="GoogleUploadReconciliation.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarPreferences.cs" Link="CalendarPreferences.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/KoreanHolidayCalendars.cs" Link="KoreanHolidayCalendars.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/GoogleOAuthClientConfiguration.cs" Link="GoogleOAuthClientConfiguration.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarBackupRestorer.cs" Link="CalendarBackupRestorer.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/VerifiedCredentialCheckpoint.cs" Link="VerifiedCredentialCheckpoint.cs" />
+    <Compile Include="../../src/CyanDeck/Services/FeatureSwitchCheckpoint.cs" Link="FeatureSwitchCheckpoint.cs" />
+    <Compile Include="../../src/CyanDeck/Services/DataRootPaths.cs" Link="DataRootPaths.cs" />
+    <Compile Include="../../src/CyanDeck/Services/CyanDeckCutoverJournal.cs" Link="CyanDeckCutoverJournal.cs" />
+    <Compile Include="../../src/CyanDeck/Services/LegacyProfileWriterGate.cs" Link="LegacyProfileWriterGate.cs" />
+    <Compile Include="../../src/CyanDeck/Services/CyanDeckSingleInstanceGate.cs" Link="CyanDeckSingleInstanceGate.cs" />
+    <Compile Include="../../src/CyanDeck/Services/UpdatePackageLayoutPolicy.cs" Link="UpdatePackageLayoutPolicy.cs" />
   </ItemGroup>
 </Project>

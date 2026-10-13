@@ -4,10 +4,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$installDir = Join-Path $env:LOCALAPPDATA 'Programs\DesktopDeck'
-$startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\DesktopDeck.lnk'
-$cyanStartMenuShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\CyanDeck.lnk'
-$desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DesktopDeck.lnk'
+$installDir = Join-Path $env:LOCALAPPDATA 'Programs\CyanDeck'
+$startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\CyanDeck.lnk'
+$desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'CyanDeck.lnk'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 # Reject junctions for the managed install directory to avoid deleting files
 # in unrelated directories that have the same filenames.
@@ -19,31 +18,9 @@ if (Test-Path -LiteralPath $installDir -PathType Container) {
 
 # This legacy uninstaller must not remove a program or profile after an
 # explicit CyanDeck cutover. Never interpret malformed/directory fences as absent.
-function Assert-LegacyWriterFenceAbsent {
-  $fencePath = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'DesktopDeck\migration\legacy-writer-fenced.json'))
-  $cursor = $fencePath
-  while ($cursor) {
-    $attributes = $null
-    try { $attributes = [IO.File]::GetAttributes($cursor) }
-    catch [IO.FileNotFoundException] { }
-    catch [IO.DirectoryNotFoundException] { }
-    if ($null -ne $attributes) {
-      if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "Unsafe CyanDeck legacy profile fence path: $cursor"
-      }
-      if ([string]::Equals($cursor, $fencePath, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'CyanDeck profile cutover fence is present. Legacy uninstall and purge are blocked.'
-      }
-    }
-    $parent = [IO.Path]::GetDirectoryName($cursor.TrimEnd('\', '/'))
-    if (-not $parent -or $parent -eq $cursor) { break }
-    $cursor = $parent
-  }
-}
-
 # Take the same old/new writer locks used by app, installer, updater and
 # migration. Never remove binaries while either version is still writing.
-$legacyUninstallMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
+$legacyUninstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
 $writerUninstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
 $ownsLegacyUninstallMutex = $false
 $ownsWriterUninstallMutex = $false
@@ -51,10 +28,10 @@ try {
   try { $ownsLegacyUninstallMutex = $legacyUninstallMutex.WaitOne(0) }
   catch [Threading.AbandonedMutexException] {
     $ownsLegacyUninstallMutex = $true
-    throw 'DesktopDeck stopped unexpectedly; inspect data before uninstalling.'
+    throw 'CyanDeck stopped unexpectedly; inspect data before uninstalling.'
   }
   if (-not $ownsLegacyUninstallMutex) {
-    throw 'DesktopDeck is running or another profile operation is active. Uninstall cancelled.'
+    throw 'CyanDeck is running or another profile operation is active. Uninstall cancelled.'
   }
   try { $ownsWriterUninstallMutex = $writerUninstallMutex.WaitOne(0) }
   catch [Threading.AbandonedMutexException] {
@@ -64,24 +41,20 @@ try {
   if (-not $ownsWriterUninstallMutex) {
     throw 'Another CyanDeck writer or data migration owns the profile. Uninstall cancelled.'
   }
-  Assert-LegacyWriterFenceAbsent
 # Graceful exit is a prerequisite, not a forced Stop-Process. This avoids
 # corrupting a pending layout or calendar save during uninstallation.
-if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+if (@(Get-Process -Name CyanDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is running. Exit from the tray menu before uninstalling.'
 }
 
 if ($PurgeData -and -not $ConfirmPurgeData) {
   throw 'Deleting user data requires both -PurgeData and -ConfirmPurgeData. A backup will be retained.'
 }
-if ($PurgeData -and (Test-Path -LiteralPath (Join-Path $env:APPDATA 'CyanDeck'))) {
-  throw 'A CyanDeck candidate profile exists. Refusing to purge only DesktopDeck data while the second copy remains.'
-}
 if ($PurgeData) {
-  $backupRoot = Join-Path $env:LOCALAPPDATA 'DesktopDeck-uninstall-backups'
+  $backupRoot = Join-Path $env:LOCALAPPDATA 'CyanDeck-uninstall-backups'
   $backupDir = Join-Path $backupRoot ([Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-  foreach ($folder in @((Join-Path $env:APPDATA 'DesktopDeck'), (Join-Path $env:LOCALAPPDATA 'DesktopDeck'))) {
+  foreach ($folder in @((Join-Path $env:APPDATA 'CyanDeck'), (Join-Path $env:LOCALAPPDATA 'CyanDeck'))) {
     if (Test-Path -LiteralPath $folder -PathType Container) {
       # Inspect subdirectories without -Recurse: Windows PowerShell 5.1 may
       # follow directory junctions before they can be rejected.
@@ -112,11 +85,11 @@ if ($PurgeData) {
 # Remove only links pointing to the installed application. Do not delete
 # user-created shortcuts with a coincidentally matching filename.
 $wsh = New-Object -ComObject WScript.Shell
-foreach ($shortcut in @($startMenuShortcut, $cyanStartMenuShortcut, $desktopShortcut)) {
+foreach ($shortcut in @($startMenuShortcut, $desktopShortcut)) {
   if (Test-Path -LiteralPath $shortcut -PathType Leaf) {
     try {
       $link = $wsh.CreateShortcut($shortcut)
-      $expected = [IO.Path]::GetFullPath((Join-Path $installDir 'DesktopDeck.exe'))
+      $expected = [IO.Path]::GetFullPath((Join-Path $installDir 'CyanDeck.exe'))
       if ([string]::Equals([IO.Path]::GetFullPath($link.TargetPath), $expected, [StringComparison]::OrdinalIgnoreCase)) {
         Remove-Item -LiteralPath $shortcut -Force -ErrorAction Stop
       }
@@ -124,18 +97,18 @@ foreach ($shortcut in @($startMenuShortcut, $cyanStartMenuShortcut, $desktopShor
   }
 }
 
-$runValue = (Get-ItemProperty -Path $runKey -Name 'DesktopDeck' -ErrorAction SilentlyContinue).DesktopDeck
+$runValue = (Get-ItemProperty -Path $runKey -Name 'CyanDeck' -ErrorAction SilentlyContinue).CyanDeck
 if (-not [string]::IsNullOrWhiteSpace($runValue) -and
-    $runValue.Trim('"') -ieq (Join-Path $installDir 'DesktopDeck.exe')) {
-  Remove-ItemProperty -Path $runKey -Name 'DesktopDeck' -ErrorAction SilentlyContinue
+    $runValue.Trim('"') -ieq (Join-Path $installDir 'CyanDeck.exe')) {
+  Remove-ItemProperty -Path $runKey -Name 'CyanDeck' -ErrorAction SilentlyContinue
 }
-Remove-Item -LiteralPath 'HKCU:\Software\Classes\DesktopBackground\Shell\DesktopDeck.RecoverGroups' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'HKCU:\Software\Classes\DesktopBackground\Shell\CyanDeck.RecoverGroups' -Recurse -Force -ErrorAction SilentlyContinue
 
 # Remove known application files only; never recursively remove the entire
 # install directory (portable installs may contain unrelated user files).
-$owned = @('DesktopDeck.exe','apply-update.ps1','recover-desktop-icons.ps1','install.ps1','uninstall.ps1',
-           'verify-release.ps1','desktopdeck-google-client-id.txt',
-           'DesktopDeck.update-public-key.pem')
+$owned = @('CyanDeck.exe','apply-update.ps1','recover-desktop-icons.ps1','install.ps1','uninstall.ps1',
+           'verify-release.ps1','cyandeck-google-client-id.txt',
+           'CyanDeck.update-public-key.pem')
 foreach ($name in $owned) {
   $path = Join-Path $installDir $name
   if (Test-Path -LiteralPath $path -PathType Leaf) {
@@ -155,14 +128,14 @@ if ((Test-Path -LiteralPath $installDir -PathType Container) -and
 }
 
 if ($PurgeData) {
-  foreach ($folder in @((Join-Path $env:APPDATA 'DesktopDeck'), (Join-Path $env:LOCALAPPDATA 'DesktopDeck'))) {
+  foreach ($folder in @((Join-Path $env:APPDATA 'CyanDeck'), (Join-Path $env:LOCALAPPDATA 'CyanDeck'))) {
     if (Test-Path -LiteralPath $folder -PathType Container) {
       Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
     }
   }
 }
 Write-Host 'CyanDeck was uninstalled (unrelated files preserved).'
-if (-not $PurgeData) { Write-Host 'Your settings were preserved in %APPDATA%\DesktopDeck.' }
+if (-not $PurgeData) { Write-Host 'Your settings were preserved in %APPDATA%\CyanDeck.' }
 
 } finally {
   if ($ownsWriterUninstallMutex) { $writerUninstallMutex.ReleaseMutex() }

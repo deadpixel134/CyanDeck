@@ -3,11 +3,11 @@
 from pathlib import Path
 import sys
 r=Path(__file__).resolve().parents[1]
-f=(r/'src/DesktopDeck/Views/FenceWindow.xaml.cs').read_text(encoding='utf-8')
-k=(r/'src/DesktopDeck/Views/FenceWindow.Keyboard.cs').read_text(encoding='utf-8')
-l=(r/'src/DesktopDeck/Services/LooseDesktopIconHost.cs').read_text(encoding='utf-8')
-s=(r/'src/DesktopDeck/Services/DesktopRecycleService.cs').read_text(encoding='utf-8')
-resolver=(r/'src/DesktopDeck/Services/DesktopDirectoryService.cs').read_text(encoding='utf-8')
+f=(r/'src/CyanDeck/Views/FenceWindow.xaml.cs').read_text(encoding='utf-8')
+k=(r/'src/CyanDeck/Views/FenceWindow.Keyboard.cs').read_text(encoding='utf-8')
+l=(r/'src/CyanDeck/Services/LooseDesktopIconHost.cs').read_text(encoding='utf-8')
+s=(r/'src/CyanDeck/Services/DesktopRecycleService.cs').read_text(encoding='utf-8')
+resolver=(r/'src/CyanDeck/Services/DesktopDirectoryService.cs').read_text(encoding='utf-8')
 collection=f[f.index('private void RemoveCollectionReferences('):f.index('private void DeleteItems(')]
 normal=f[f.index('private void DeleteItems('): f.index('private static bool IsProtectedDeletionTarget(')]
 explicit=f[f.index('private void RecycleActualDesktopCollectionItems('):f.index('private void RemoveCollectionReferences(')]

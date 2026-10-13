@@ -5,18 +5,18 @@ from xml.etree import ElementTree as ET
 import sys
 base=Path(__file__).resolve().parents[1]
 def read(name): return (base/name).read_text(encoding='utf-8')
-f=read('src/DesktopDeck/Views/FenceWindow.xaml.cs')
-k=read('src/DesktopDeck/Views/FenceWindow.Keyboard.cs')
-a=read('src/DesktopDeck/Services/AppController.cs')
-x=read('src/DesktopDeck/Views/SettingsWindow.xaml')
-c=read('src/DesktopDeck/Views/SettingsWindow.xaml.cs')
-store=read('src/DesktopDeck/Services/StateStore.cs')
-model=read('src/DesktopDeck/Models/Models.cs')
-shell=read('src/DesktopDeck/Services/ShellContextMenuService.cs')
+f=read('src/CyanDeck/Views/FenceWindow.xaml.cs')
+k=read('src/CyanDeck/Views/FenceWindow.Keyboard.cs')
+a=read('src/CyanDeck/Services/AppController.cs')
+x=read('src/CyanDeck/Views/SettingsWindow.xaml')
+c=read('src/CyanDeck/Views/SettingsWindow.xaml.cs')
+store=read('src/CyanDeck/Services/StateStore.cs')
+model=read('src/CyanDeck/Models/Models.cs')
+shell=read('src/CyanDeck/Services/ShellContextMenuService.cs')
 zone=f[f.index('private void DeleteItems('): f.index('private void OpenItem(')]
 remove=f[f.index('private void RemoveCollectionReferences('): f.index('private void DeleteItems(')]
 rename=f[f.index('private void RenameItem('):f.index('private void DeleteItem(')]
-reset=a[a.index('private bool ResetDesktopDeckToDefaults()'):a.index('private void ReplaceState(')]
+reset=a[a.index('private bool ResetCyanDeckToDefaults()'):a.index('private void ReplaceState(')]
 checks={
 'collection Delete routed to ref removal before File IO':zone.index('RemoveCollectionReferences(tiles)')<zone.index('FileSystem.DeleteFile'),
 'collection deletion remains guarded from Portal and other paths': 'if (SelectedTab?.Kind == DeckTabKind.Collection)' in zone and 'if (SelectedTab?.Kind != DeckTabKind.FolderPortal) return;' in zone and 'return;' in zone,
@@ -44,7 +44,7 @@ checks={
 'factory reset button present': 'x:Name="FactoryResetButton"' in x,
 'factory reset button handler present': 'Click="FactoryReset_Click"' in x and 'private void FactoryReset_Click(' in c,
 'factory reset navigation present': 'Tag="AboutTab|FactoryResetSection"' in x,
-'factory reset handler wired to controller': 'ResetDesktopDeckToDefaults);' in a and 'private readonly Func<bool> _factoryReset;' in c,
+'factory reset handler wired to controller': 'ResetCyanDeckToDefaults);' in a and 'private readonly Func<bool> _factoryReset;' in c,
 'reset requires user confirmation': 'MessageBoxButton.YesNo' in reset and "'초기화'" in reset,
 'reset refuses safe mode/read-only': 'if (_compatibilityReadOnly || _safeMode) return false;' in reset,
 'reset enforces managed policy': 'EnsureManagedCapability("Settings.EditGeneral"' in reset,

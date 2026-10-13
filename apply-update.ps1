@@ -10,12 +10,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 # SAFETY: Never remove the contents of InstallDir. Portable users can keep other
-# files alongside DesktopDeck.exe. Only these application-owned leaf files may
+# files alongside CyanDeck.exe. Only these application-owned leaf files may
 # be backed up or replaced by the updater/rollback.
 $managedNames = @(
-  'DesktopDeck.exe', 'apply-update.ps1','recover-desktop-icons.ps1', 'install.ps1', 'uninstall.ps1',
-  'verify-release.ps1', 'desktopdeck-google-client-id.txt',
-  'DesktopDeck.update-public-key.pem'
+  'CyanDeck.exe', 'apply-update.ps1','recover-desktop-icons.ps1', 'install.ps1', 'uninstall.ps1',
+  'verify-release.ps1', 'cyandeck-google-client-id.txt',
+  'CyanDeck.update-public-key.pem'
 )
 
 function Assert-OrdinaryDirectory([string]$Path, [string]$Label) {
@@ -87,11 +87,11 @@ function Restore-PendingUpdate([string]$Journal) {
   $snapshot = Assert-OrdinaryDirectory $record.snapshot 'Recovery snapshot'
   $root = [IO.Path]::GetFullPath($rollbackRoot).TrimEnd('\','/')
   if (-not $snapshot.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Recovery snapshot is outside DesktopDeck-owned backup storage.'
+    throw 'Recovery snapshot is outside CyanDeck-owned backup storage.'
   }
-  $originalExe = Assert-ManagedFile $snapshot 'DesktopDeck.exe'
+  $originalExe = Assert-ManagedFile $snapshot 'CyanDeck.exe'
   if (-not (Test-Path -LiteralPath $originalExe -PathType Leaf)) {
-    throw 'Recovery snapshot is missing DesktopDeck.exe; no installation files were changed.'
+    throw 'Recovery snapshot is missing CyanDeck.exe; no installation files were changed.'
   }
   Install-ManagedFiles $snapshot $InstallDir
   foreach ($name in $managedNames) {
@@ -110,7 +110,7 @@ function Restore-PendingUpdate([string]$Journal) {
   Write-Host 'CyanDeck recovery verified. Original managed files restored; other files untouched.'
 }
 
-function Wait-DesktopDeckProcess([int]$ProcessId) {
+function Wait-CyanDeckProcess([int]$ProcessId) {
   if ($ProcessId -le 0) { return }
   try { $p = Get-Process -Id $ProcessId -ErrorAction Stop }
   catch { return }
@@ -150,7 +150,7 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
     $source = Assert-ManagedFile $SourceDir $name
     $target = Assert-ManagedFile $DestinationDir $name
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
-    $staging = Join-Path $DestinationDir ('.DesktopDeck-stage-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    $staging = Join-Path $DestinationDir ('.CyanDeck-stage-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     try {
       [IO.File]::Copy($source, $staging, $false)
       if (Test-Path -LiteralPath $target -PathType Leaf) {
@@ -158,7 +158,7 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
         # empty. File.Replace then fails AFTER the recovery journal exists.
         # Use a unique, app-owned NTFS backup name and remove it after a
         # verified atomic replacement; the durable snapshot is elsewhere.
-        $replaceBackup = Join-Path $DestinationDir ('.DesktopDeck-replace-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+        $replaceBackup = Join-Path $DestinationDir ('.CyanDeck-replace-' + [Guid]::NewGuid().ToString('N') + '.tmp')
         try {
           [IO.File]::Replace($staging, $target, $replaceBackup)
         } finally {
@@ -179,63 +179,30 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
 # after a future CyanDeck data cutover. Treat any existing fence (including a
 # directory, malformed file, or symlink) as blocking until a compatible updater
 # explicitly handles the new storage contract.
-function Assert-LegacyWriterFenceAbsent {
-  $fencePath = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'DesktopDeck\migration\legacy-writer-fenced.json'))
-  $cursor = $fencePath
-  while ($cursor) {
-    $attributes = $null
-    try { $attributes = [IO.File]::GetAttributes($cursor) }
-    catch [IO.FileNotFoundException] { }
-    catch [IO.DirectoryNotFoundException] { }
-    if ($null -ne $attributes) {
-      if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "Unsafe CyanDeck legacy profile fence path: $cursor"
-      }
-      if ([string]::Equals($cursor, $fencePath, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'CyanDeck profile cutover fence is present. Legacy update, rollback and recovery are blocked.'
-      }
-    }
-    $parent = [IO.Path]::GetDirectoryName($cursor.TrimEnd('\', '/'))
-    if (-not $parent -or $parent -eq $cursor) { break }
-    $cursor = $parent
-  }
-}
-
 # Wait until the requesting application has exited before taking both locks.
 # Keep both owned until installation/rollback/recovery finishes, then relaunch.
-Wait-DesktopDeckProcess $WaitForPid
-$legacyUpdateMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
-$writerUpdateMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
+Wait-CyanDeckProcess $WaitForPid
+$legacyUpdateMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
 $ownsLegacyUpdateMutex = $false
-$ownsWriterUpdateMutex = $false
 try {
   try { $ownsLegacyUpdateMutex = $legacyUpdateMutex.WaitOne(0) }
   catch [Threading.AbandonedMutexException] {
     $ownsLegacyUpdateMutex = $true
-    throw 'DesktopDeck stopped unexpectedly; inspect its data before updating or recovering.'
+    throw 'CyanDeck stopped unexpectedly; inspect its data before updating or recovering.'
   }
   if (-not $ownsLegacyUpdateMutex) {
-    throw 'DesktopDeck is running or another update owns its profile. Update cancelled.'
+    throw 'CyanDeck is running or another update owns its profile. Update cancelled.'
   }
-  try { $ownsWriterUpdateMutex = $writerUpdateMutex.WaitOne(0) }
-  catch [Threading.AbandonedMutexException] {
-    $ownsWriterUpdateMutex = $true
-    throw 'CyanDeck writer lease was abandoned; inspect profile data before updating.'
-  }
-  if (-not $ownsWriterUpdateMutex) {
-    throw 'A CyanDeck writer or data migration owns the legacy profile. Update cancelled.'
-  }
-  Assert-LegacyWriterFenceAbsent
-# Manual recovery must not replace files while another DesktopDeck instance is running.
-if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+# Manual recovery must not replace files while another CyanDeck instance is running.
+if (@(Get-Process -Name CyanDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is still running. Exit all instances normally before updating or recovering.'
 }
 $InstallDir = Assert-OrdinaryDirectory $InstallDir 'Install directory'
-$installedExe = Assert-ManagedFile $InstallDir 'DesktopDeck.exe'
+$installedExe = Assert-ManagedFile $InstallDir 'CyanDeck.exe'
 if (-not $RecoverPending -and -not (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
-  throw 'DesktopDeck.exe was not found in the installation directory; update cancelled.'
+  throw 'CyanDeck.exe was not found in the installation directory; update cancelled.'
 }
-$updatesRoot = Join-Path $env:LOCALAPPDATA 'DesktopDeck\updates'
+$updatesRoot = Join-Path $env:LOCALAPPDATA 'CyanDeck\updates'
 $rollbackRoot = Join-Path $updatesRoot 'rollback'
 New-Item -ItemType Directory -Path $rollbackRoot -Force | Out-Null
 $rollbackRoot = Assert-OrdinaryDirectory $rollbackRoot 'Rollback storage'
@@ -244,10 +211,10 @@ if ($RecoverPending) {
   Restore-PendingUpdate $journal
 } else {
 if (Test-Path -LiteralPath $journal) {
-  throw "Previous update has an unresolved recovery journal: $journal. Run apply-update.ps1 -RecoverPending -InstallDir <directory> after closing DesktopDeck."
+  throw "Previous update has an unresolved recovery journal: $journal. Run apply-update.ps1 -RecoverPending -InstallDir <directory> after closing CyanDeck."
 }
 $marker = Join-Path $updatesRoot 'last-rollback.txt'
-$tempRoot = Join-Path $env:TEMP ('DesktopDeck-update-' + [Guid]::NewGuid().ToString('N'))
+$tempRoot = Join-Path $env:TEMP ('CyanDeck-update-' + [Guid]::NewGuid().ToString('N'))
 $operation = if ($RollbackDir) { 'rollback' } else { 'update' }
 $safety = $null
 $changed = $false
@@ -259,8 +226,8 @@ try {
     if (-not $RollbackDir.StartsWith($rollbackRootFull + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
       throw 'Rollback source must be an application-owned snapshot.'
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $RollbackDir 'DesktopDeck.exe') -PathType Leaf)) {
-      throw 'The rollback snapshot is missing DesktopDeck.exe.'
+    if (-not (Test-Path -LiteralPath (Join-Path $RollbackDir 'CyanDeck.exe') -PathType Leaf)) {
+      throw 'The rollback snapshot is missing CyanDeck.exe.'
     }
     $safety = Join-Path $rollbackRoot ('pre-rollback-' + [Guid]::NewGuid().ToString('N'))
     Copy-ManagedSnapshot $InstallDir $safety
@@ -338,14 +305,14 @@ try {
             throw 'Update ZIP contains multiple payload directories.'
           }
         }
-        if ($name -ceq 'DesktopDeck.exe') { $exeCount++ }
+        if ($name -ceq 'CyanDeck.exe') { $exeCount++ }
         if ($entry.Length -lt 0 -or $entry.Length -gt 1000000000 -or
             $totalSize -gt (1500000000 - $entry.Length)) {
           throw 'Update ZIP expanded size limit exceeded.'
         }
         $totalSize += $entry.Length
       }
-      if ($exeCount -ne 1) { throw 'The package must contain exactly one DesktopDeck.exe.' }
+      if ($exeCount -ne 1) { throw 'The package must contain exactly one CyanDeck.exe.' }
       if ($rootFiles -and $null -ne $payloadPrefix) {
         throw 'Update ZIP mixes root files and a nested payload.'
       }
@@ -356,8 +323,8 @@ try {
     } finally { $archive.Dispose() }
     New-Item -ItemType Directory -Path $tempRoot -ErrorAction Stop | Out-Null
     Expand-Archive -LiteralPath $Package -DestinationPath $tempRoot -ErrorAction Stop
-    $exes = @(Get-ChildItem -LiteralPath $tempRoot -Filter DesktopDeck.exe -File -Recurse)
-    if ($exes.Count -ne 1) { throw 'The package must contain exactly one DesktopDeck.exe.' }
+    $exes = @(Get-ChildItem -LiteralPath $tempRoot -Filter CyanDeck.exe -File -Recurse)
+    if ($exes.Count -ne 1) { throw 'The package must contain exactly one CyanDeck.exe.' }
     $payloadDir = if ($null -ne $payloadPrefix) { Join-Path $tempRoot $payloadPrefix } else { $tempRoot }
     # Ensure extraction produced exactly the validated root; reject ignored
     # sibling directories and reparse points, not just files inside payloadDir.
@@ -417,14 +384,12 @@ try {
 }
 } # Completed normal update/rollback branch.
 } finally {
-  if ($ownsWriterUpdateMutex) { $writerUpdateMutex.ReleaseMutex() }
-  $writerUpdateMutex.Dispose()
   if ($ownsLegacyUpdateMutex) { $legacyUpdateMutex.ReleaseMutex() }
   $legacyUpdateMutex.Dispose()
 }
 
 # A relaunched EXE must not race its own updater's still-held mutex.
 if ($Relaunch) {
-  $exe = Join-Path $InstallDir 'DesktopDeck.exe'
+  $exe = Join-Path $InstallDir 'CyanDeck.exe'
   if (Test-Path -LiteralPath $exe -PathType Leaf) { Start-Process -FilePath $exe }
 }
