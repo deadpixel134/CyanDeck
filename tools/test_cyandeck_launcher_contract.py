@@ -38,3 +38,32 @@ for label, passed in checks.items():
 print(f"CyanDeck launcher contract: {sum(checks.values())}/{len(checks)}")
 if not all(checks.values()):
     raise SystemExit(1)
+
+
+# Preserve the separate unsigned portable-pair preview while the signed
+# legacy updater intentionally rejects an additional executable.
+portable_script = read("tools/build-cyandeck-portable-preview.ps1")
+portable_test = read("tools/test_cyandeck_portable_preview.ps1")
+portable_checks = {
+    "portable preview compiles both entry points":
+        "build-cyandeck-launcher-preview.ps1" in portable_script
+        and "dotnet publish" in portable_script and "'DesktopDeck.exe'" in portable_script,
+    "portable preview refuses OAuth credential embedding":
+        "json/client_secret.json" in portable_script and "throw 'Portable preview refuses" in portable_script,
+    "portable preview refuses existing output":
+        "Portable preview output already exists" in portable_script,
+    "portable preview protects installation and profile directories":
+        "Programs/DesktopDeck" in portable_script and "'CyanDeck'" in portable_script
+        and "ReparsePoint" in portable_script,
+    "portable validator checks versions and exact three files":
+        "FileVersionInfo" in portable_test and "PREVIEW-README.txt" in portable_test
+        and "entries.Count -ne" in portable_test,
+    "CI artifact includes both executables and unsigned warning":
+        "cyandeck-portable-preview-" in preview_workflow
+        and "/DesktopDeck.exe" in preview_workflow
+        and "Upload unsigned portable preview" in preview_workflow,
+}
+for label, passed in portable_checks.items():
+    print(("PASS" if passed else "FAIL") + ": " + label)
+if not all(portable_checks.values()):
+    raise SystemExit(1)

@@ -182,3 +182,23 @@ implemented and verified before an installed executable cutover is enabled.
 
 This document is a contract for a future release, not a claim that the
 runtime or installed executable has already moved to CyanDeck paths.
+
+
+## Unsigned paired portable preview (implemented; TEST ACCOUNT only)
+
+CI publishes a portable compatibility artifact named cyandeck-portable-preview-win-x64
+or cyandeck-portable-preview-win-arm64, containing BOTH CyanDeck.exe (entry
+point) and matching DesktopDeck.exe (companion), plus PREVIEW-README.txt.
+Both executable versions are validated against the project version;
+unexpected bundle files and directories are rejected.
+Run the preview builder with:
+    pwsh -File tools/build-cyandeck-portable-preview.ps1 -Runtime win-x64
+from a clean checkout with no OAuth credential JSON.
+
+CRITICAL: This is an unsigned, OAuth-unprovisioned test artifact, not a
+signed installer/update. The companion still reads/writes the live legacy
+roaming/local data roots. Use ONLY a separate Windows TEST ACCOUNT with
+disposable desktop files and calendar data. A different extraction directory
+inside a production account DOES NOT isolate its profile. Never copy the
+artifact into the installed DesktopDeck directory. The legacy signed release,
+application icon, update ZIP and original data paths have not changed.

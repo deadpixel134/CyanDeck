@@ -54,16 +54,20 @@ jobs:
         if: matrix.runtime == 'win-x64'
         shell: pwsh
         run: ./tools/test_cyandeck_launcher_preview.ps1
-      - name: Build CyanDeck launcher preview for ${{ matrix.runtime }}
+      - name: Build CyanDeck portable compatibility preview for ${{ matrix.runtime }}
         shell: pwsh
-        run: ./tools/build-cyandeck-launcher-preview.ps1 -Runtime '${{ matrix.runtime }}' -OutputDirectory "${{ runner.temp }}/cyandeck-preview/${{ matrix.runtime }}"
-      - name: Upload unsigned preview launcher for manual testing
+        run: ./tools/build-cyandeck-portable-preview.ps1 -Runtime '${{ matrix.runtime }}' -OutputDirectory "${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}"
+      - name: Verify CyanDeck portable preview contents and versions
+        shell: pwsh
+        run: ./tools/test_cyandeck_portable_preview.ps1 -BundleDirectory "${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}"
+      - name: Upload unsigned portable preview for isolated manual testing
         uses: actions/upload-artifact@v4
         with:
-          name: cyandeck-launcher-preview-${{ matrix.runtime }}
+          name: cyandeck-portable-preview-${{ matrix.runtime }}
           path: |
-            ${{ runner.temp }}/cyandeck-preview/${{ matrix.runtime }}/CyanDeck.exe
-            ${{ runner.temp }}/cyandeck-preview/${{ matrix.runtime }}/PREVIEW-README.txt
+            ${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}/CyanDeck.exe
+            ${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}/DesktopDeck.exe
+            ${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}/PREVIEW-README.txt
           if-no-files-found: error
           retention-days: 7
       - name: Calendar domain tests
