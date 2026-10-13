@@ -92,6 +92,18 @@ try {
     throw 'Migration could not recover after mutex contention.'
   }
   & $script -VerifyPrepared -DestinationRoot $invalidDestination
+  # Aborting only changes the journal; it must never delete either profile.
+  & $script -AbortPreparation
+  $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+  if ($entry.Phase -ne 'aborted') { throw 'Abort phase was not recorded.' }
+  & $script -AbortPreparation
+  if (-not (Test-Path -LiteralPath (Join-Path $legacy 'layout.json')) -or
+      -not (Test-Path -LiteralPath (Join-Path $cyan 'layout.json'))) {
+    throw 'Abort removed source or candidate data.'
+  }
+  $rejected = $false
+  try { & $script -Apply -AbortPreparation } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Conflicting abort and apply flags were accepted.' }
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
 finally {
