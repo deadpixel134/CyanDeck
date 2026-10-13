@@ -55,6 +55,25 @@ try {
   if (-not (Test-Path -LiteralPath (Join-Path $legacy 'calendar-events.json.bak'))) {
     throw 'Migration removed the malformed original backup.'
   }
+  # Reject malformed event entries in primary files and recovery candidates.
+  # Top-level JSON arrays decode differently in Windows PowerShell 5.1 and 7.
+  foreach ($badEventJson in @('[null]', '[7]', '["text"]', '[[]]', '{"wrong":"shape"}')) {
+    Set-Content -LiteralPath (Join-Path $legacy 'calendar-events.json') -Value $badEventJson -Encoding UTF8
+    $rejected = $false
+    try { & $script -Apply -DestinationRoot $invalidDestination } catch { $rejected = $true }
+    if (-not $rejected -or (Test-Path -LiteralPath $invalidDestination)) {
+      throw "Migration accepted invalid calendar: $badEventJson"
+    }
+  }
+  Set-Content -LiteralPath (Join-Path $legacy 'calendar-events.json') -Value '[]' -Encoding UTF8
+  Set-Content -LiteralPath (Join-Path $legacy 'calendar-events.json.tmp') -Value '[null]' -Encoding UTF8
+  $rejected = $false
+  try { & $script -Apply -DestinationRoot $invalidDestination } catch { $rejected = $true }
+  if (-not $rejected -or (Test-Path -LiteralPath $invalidDestination)) {
+    throw 'Migration accepted null calendar event in recovery candidate.'
+  }
+  Remove-Item -LiteralPath (Join-Path $legacy 'calendar-events.json.tmp') -Force
+
   # Simulate a running DesktopDeck by owning the same named mutex.
   # A second thread cannot enter the migration critical section.
   Remove-Item -LiteralPath (Join-Path $legacy 'calendar-events.json.bak') -Force
