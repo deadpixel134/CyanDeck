@@ -105,6 +105,36 @@ try {
     if ($held) { $heldMutex.ReleaseMutex() }
     $heldMutex.Dispose()
   }
+  # A future CyanDeck.exe may use a different single-instance mutex.
+  # Its stable legacy-profile writer lease must independently block migration.
+  $writerMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
+  $writerHeld = $false
+  try {
+    $writerHeld = $writerMutex.WaitOne(0)
+    if (-not $writerHeld) { throw 'Could not acquire shared writer lease for the test.' }
+    $blocked = $false
+    $job = Start-Job -ScriptBlock {
+      param($scriptPath, $appData, $candidate)
+      $env:APPDATA = $appData
+      & $scriptPath -Apply -DestinationRoot $candidate
+    } -ArgumentList $script, $root, $invalidDestination
+    try {
+      if (-not (Wait-Job -Job $job -Timeout 30)) {
+        Stop-Job -Job $job
+        throw 'Writer lease contention test timed out.'
+      }
+      if ($job.State -eq 'Failed') { $blocked = $true }
+      Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
+    } finally {
+      Remove-Job -Job $job -Force
+    }
+    if (-not $blocked -or (Test-Path -LiteralPath $invalidDestination)) {
+      throw 'Migration proceeded despite a competing CyanDeck writer lease.'
+    }
+  } finally {
+    if ($writerHeld) { $writerMutex.ReleaseMutex() }
+    $writerMutex.Dispose()
+  }
   # Once the other instance exits, a fresh migration must be able to
   # acquire the lock and prepare a clean copy without manual cleanup.
   & $script -Apply -DestinationRoot $invalidDestination
