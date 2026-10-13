@@ -63,6 +63,12 @@ CI 개발 빌드는 Google 인증 설정을 포함하지 않습니다. 배포용
 `.github/workflows/beta-release.yml`에서 자동 빌드, 테스트, 서명 및 공개 GitHub Prerelease 업로드가 실행됩니다.
 게시된 베타 자산은 덮어쓰지 않습니다.
 
+## 8.0.2 정식 릴리스와 8.0.3 베타
+
+- **정식:** https://github.com/deadpixel134/CyanDeck/releases/tag/v8.0.2
+- **베타:** 8.0.3 이상은 새 버전마다 자동으로 GitHub Prerelease로 배포됩니다. 베타 옵션은 명시적으로 켜야 하며, 정식 채널로 돌아와도 자동 다운그레이드는 수행하지 않습니다.
+- **추가 안정화:** 다른 업데이트가 복구 대기 중일 때 수동 설치를 차단해 롤백 체크포인트를 보존합니다. 베타/정식 선택에 따라 현재 채널이 화면에 표시됩니다.
+
 ## CyanDeck v8.0.0 다운로드와 설치
 
 - 정식 릴리스: https://github.com/deadpixel134/CyanDeck/releases/tag/v8.0.0

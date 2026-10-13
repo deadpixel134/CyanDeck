@@ -14,7 +14,7 @@
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64;ARM64</Platforms>
     <LangVersion>12.0</LangVersion>
-    <Version>8.0.2</Version>
+    <Version>8.0.3</Version>
   </PropertyGroup>
   <!-- Native Desktop OAuth is public-client application metadata; never a user token.
        The distributor provisions this once. Release users need no JSON next to EXE. -->

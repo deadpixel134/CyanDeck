@@ -444,7 +444,19 @@
                         <CheckBox x:Name="AutomaticUpdateCheck" Content="프로그램 실행 시 GitHub Releases 업데이트 확인" />
                         <CheckBox x:Name="InstallUpdatesAutomaticallyCheck" Content="검증된 새 버전 자동 설치 후 재시작" Margin="0,4,0,4"/>
                          <CheckBox x:Name="BetaUpdateChannelCheck" Content="베타 채널 업데이트 활성화 (시험판 수신)" Margin="0,5,0,4"/>
-                         <TextBlock Foreground="#E6BE7A" TextWrapping="Wrap" Margin="0,0,0,8" Text="베타 채널은 공개된 정식·베타 릴리스 중 높은 버전을 받습니다. RSA-PSS 서명과 SHA-256 검증은 동일하게 적용됩니다. 선택하면 아래 사용자 지정 매니페스트 주소보다 베타 채널을 우선합니다."/>
+                         <TextBlock Foreground="#E6BE7A" TextWrapping="Wrap" Margin="0,0,0,8" Text="베타 채널은 공개된 정식·베타 릴리스 중 높은 버전을 받습니다. RSA-PSS 서명과 SHA-256 검증은 동일하게 적용됩니다. 선택하면 아래 사용자 지정 매니페스트 주소보다 베타 채널을 우선합니다. 베타에서 정식으로 전환해도 이전 버전으로 자동 다운그레이드하지 않습니다."/>
+                         <TextBlock Foreground="#B7DCE8" FontWeight="SemiBold" Margin="0,0,0,9">
+                             <TextBlock.Style>
+                                 <Style TargetType="TextBlock">
+                                     <Setter Property="Text" Value="현재 선택 채널: 정식 (안정판)"/>
+                                     <Style.Triggers>
+                                         <DataTrigger Binding="{Binding IsChecked, ElementName=BetaUpdateChannelCheck}" Value="True">
+                                             <Setter Property="Text" Value="현재 선택 채널: 베타 (시험판 포함)"/>
+                                         </DataTrigger>
+                                     </Style.Triggers>
+                                 </Style>
+                             </TextBlock.Style>
+                         </TextBlock>
                         <TextBlock Text="업데이트 매니페스트 URL/로컬 경로 (비우면 GitHub Releases 기본 채널)"/>
                         <TextBox x:Name="UpdateManifestSourceBox" Margin="0,4,0,6" Padding="7,5" Background="#20242B" Foreground="#F2F4F8" BorderBrush="#3A424E"/>
                         <CheckBox x:Name="RequireSignedUpdateCheck" Content="RSA-PSS 서명 검증 필수 (보안 정책, 해제 불가)" IsEnabled="False" IsChecked="True" Margin="0,2,0,4"/>

@@ -4758,6 +4758,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (System.Windows.MessageBox.Show($"CyanDeck {check.LatestVersion}을(를) 사용할 수 있습니다.\n\n지금 업데이트를 다운로드하고 검증하시겠습니까?{notes}", "CyanDeck 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
+            // Installing while an earlier update awaits rollback/recovery could
+            // overwrite its checkpoint or corrupt the in-place application ZIP.
+            if (UpdateService.HasPendingRecovery())
+                throw new InvalidOperationException("이전 업데이트 복구가 완료되지 않았습니다. 앱을 정상적으로 다시 시작하거나 업데이트 복구 후 다시 시도하세요.");
             var staged = await UpdateService.StagePackageAsync(check);
             _store.SaveRecoveryCheckpoint(_state, $"before-update-{check.LatestVersion}");
             var verification = "업데이트 매니페스트 RSA-PSS 서명과 패키지 SHA-256을 검증했습니다.";
