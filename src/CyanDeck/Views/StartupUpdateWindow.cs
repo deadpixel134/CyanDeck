@@ -22,7 +22,9 @@ public sealed class StartupUpdateWindow : Window
         MaxWidth = 460;
         ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        WindowStyle = WindowStyle.SingleBorderWindow;
+        // The only user-dismissal path is the explicit Skip action, which cancels
+        // the current network/download operation before opening the desktop.
+        WindowStyle = WindowStyle.None;
         ShowInTaskbar = true;
         ShowActivated = false;
         Background = new SolidColorBrush(Color.FromRgb(26, 30, 38));
