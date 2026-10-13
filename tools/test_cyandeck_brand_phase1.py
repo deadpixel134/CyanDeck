@@ -64,9 +64,13 @@ checks.update({
 installer = source("install.ps1")
 uninstaller = source("uninstall.ps1")
 checks.update({
-    "installer shortcut description is CyanDeck": installer.count('$link.Description = "CyanDeck desktop organizer"') == 2,
+    "installer shortcut description is CyanDeck": installer.count('$link.Description = "CyanDeck desktop organizer"') == 2 and '$cyanLink.Description = "CyanDeck desktop organizer"' in installer,
     "installer confirmation displays CyanDeck": 'Write-Host "Installed CyanDeck to: $installDir"' in installer,
     "uninstaller confirmation displays CyanDeck": "Write-Host 'CyanDeck was uninstalled" in uninstaller,
+    "new CyanDeck Start Menu entry is separate": '"CyanDeck.lnk"' in installer and "'CyanDeck.lnk'" in uninstaller,
+    "new shortcut ownership is checked before file copy": installer.index("Assert-ShortcutBelongsToDesktopDeck $cyanShortcut $expectedExe") < installer.index("Copy-Item $source"),
+    "legacy and new Start Menu entries share EXE": '$cyanLink.TargetPath = Join-Path $installDir "DesktopDeck.exe"' in installer,
+    "uninstaller only removes owned CyanDeck shortcut": '@($startMenuShortcut, $cyanStartMenuShortcut, $desktopShortcut)' in uninstaller and 'OrdinalIgnoreCase' in uninstaller,
     "legacy start menu shortcut filename preserved": '"DesktopDeck.lnk"' in installer and "'DesktopDeck.lnk'" in uninstaller,
     "legacy startup registry value preserved": '-Name "DesktopDeck"' in installer and "-Name 'DesktopDeck'" in uninstaller,
     "legacy install folder preserved": 'Programs\\DesktopDeck' in installer and 'Programs\\DesktopDeck' in uninstaller,

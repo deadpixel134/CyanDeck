@@ -10,6 +10,7 @@ if (-not (Test-Path $source)) { throw "DesktopDeck.exe was not found next to ins
 $installDir = Join-Path $env:LOCALAPPDATA "Programs\DesktopDeck"
 $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
 $shortcut = Join-Path $startMenuDir "DesktopDeck.lnk"
+$cyanShortcut = Join-Path $startMenuDir "CyanDeck.lnk"
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) "DesktopDeck.lnk"
 
 # A fixed per-user directory is not sufficient protection: a parent component,
@@ -39,6 +40,7 @@ foreach ($name in @('desktopdeck-google-client-id.txt','DesktopDeck.update-publi
 # Source must be a regular EXE rather than a link into another location.
 Assert-NoReparseAncestors $source
 Assert-NoReparseAncestors $shortcut
+Assert-NoReparseAncestors $cyanShortcut
 if ($CreateDesktopShortcut) { Assert-NoReparseAncestors $desktopShortcut }
 
 # Do not overwrite a user's unrelated shortcut with the same filename.
@@ -56,6 +58,7 @@ function Assert-ShortcutBelongsToDesktopDeck([string]$Path, [string]$ExpectedExe
 }
 $expectedExe = Join-Path $installDir 'DesktopDeck.exe'
 Assert-ShortcutBelongsToDesktopDeck $shortcut $expectedExe
+Assert-ShortcutBelongsToDesktopDeck $cyanShortcut $expectedExe
 if ($CreateDesktopShortcut) { Assert-ShortcutBelongsToDesktopDeck $desktopShortcut $expectedExe }
 
 # Do not terminate the process while layout/calendar writes may be in flight.
@@ -87,6 +90,14 @@ $link.WorkingDirectory = $installDir
 $link.Description = "CyanDeck desktop organizer"
 $link.Save()
 
+# Preserve the legacy shortcut for existing pins and upgrades. Add a separate
+# CyanDeck Start Menu entry only after validating ownership and reparse safety.
+$cyanLink = $wsh.CreateShortcut($cyanShortcut)
+$cyanLink.TargetPath = Join-Path $installDir "DesktopDeck.exe"
+$cyanLink.WorkingDirectory = $installDir
+$cyanLink.Description = "CyanDeck desktop organizer"
+$cyanLink.Save()
+
 if ($CreateDesktopShortcut) {
   $link = $wsh.CreateShortcut($desktopShortcut)
   $link.TargetPath = Join-Path $installDir "DesktopDeck.exe"
@@ -102,4 +113,4 @@ if ($StartWithWindows) {
 }
 
 Write-Host "Installed CyanDeck to: $installDir"
-Write-Host "Start Menu shortcut: $shortcut"
+Write-Host "Start Menu shortcut: $cyanShortcut (legacy: $shortcut)"

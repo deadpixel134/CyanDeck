@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $installDir = Join-Path $env:LOCALAPPDATA 'Programs\DesktopDeck'
 $startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\DesktopDeck.lnk'
+$cyanStartMenuShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\CyanDeck.lnk'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DesktopDeck.lnk'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 # Reject junctions for the managed install directory to avoid deleting files
@@ -60,7 +61,7 @@ if ($PurgeData) {
 # Remove only links pointing to the installed application. Do not delete
 # user-created shortcuts with a coincidentally matching filename.
 $wsh = New-Object -ComObject WScript.Shell
-foreach ($shortcut in @($startMenuShortcut, $desktopShortcut)) {
+foreach ($shortcut in @($startMenuShortcut, $cyanStartMenuShortcut, $desktopShortcut)) {
   if (Test-Path -LiteralPath $shortcut -PathType Leaf) {
     try {
       $link = $wsh.CreateShortcut($shortcut)
