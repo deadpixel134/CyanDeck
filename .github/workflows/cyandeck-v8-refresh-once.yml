@@ -1,0 +1,111 @@
+name: CyanDeck v8 draft refresh (one time)
+on:
+  push:
+    branches: [main]
+    paths: ['tools/v8-draft-refresh.trigger']
+permissions:
+  contents: write
+jobs:
+  sign:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [win-x64, win-arm64]
+    env:
+      CYANDECK_UPDATE_SIGNING_KEY_PEM: ${{ secrets.CYANDECK_UPDATE_SIGNING_KEY_PEM || secrets.DESKTOPDECK_UPDATE_SIGNING_KEY_PEM }}
+      CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON: ${{ secrets.CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON || secrets.DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate release identity and credentials
+        shell: pwsh
+        run: |
+          if (-not $env:CYANDECK_UPDATE_SIGNING_KEY_PEM -or -not $env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON) { throw 'Missing signing key or Desktop OAuth JSON.' }
+          [xml]$p=Get-Content src/CyanDeck/CyanDeck.csproj -Raw
+          if ('v8.0.0' -cne ('v'+[string]$p.Project.PropertyGroup.Version)) { throw 'Draft candidate version must match CyanDeck source.' }
+          try {
+            $oauth=$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON | ConvertFrom-Json
+            if (-not $oauth.installed.client_id -or -not $oauth.installed.client_secret) { throw 'Invalid Desktop OAuth JSON.' }
+          } catch { throw 'Invalid Google Desktop OAuth JSON.' }
+      - name: Safety and calendar tests
+        shell: pwsh
+        run: |
+          python tools/run_v43_safety_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Safety regression failed.' }
+          python tools/test_v45_recycle_bin_preflight.py
+          if ($LASTEXITCODE -ne 0) { throw 'Recycle regression failed.' }
+          python tools/test_cyandeck_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'Identity regression failed.' }
+          dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Calendar regression failed.' }
+          dotnet run --project tests/WatcherLifetimeHarness/WatcherLifetimeHarness.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Watcher regression failed.' }
+          dotnet run --project tests/FenceVisibilityHarness/FenceVisibilityHarness.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Fence visibility regression failed.' }
+      - name: Sign and independently verify CyanDeck package
+        shell: pwsh
+        run: |
+          $privateKey=Join-Path $env:RUNNER_TEMP ('cyandeck-sign-'+[Guid]::NewGuid().ToString('N')+'.pem')
+          $desktopOAuth='json/client_secret.json'
+          try {
+            [IO.File]::WriteAllText($privateKey,$env:CYANDECK_UPDATE_SIGNING_KEY_PEM,[Text.UTF8Encoding]::new($false))
+            New-Item -ItemType Directory -Path json -Force | Out-Null
+            [IO.File]::WriteAllText($desktopOAuth,$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON,[Text.UTF8Encoding]::new($false))
+            ./package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $privateKey
+            $version=([xml](Get-Content src/CyanDeck/CyanDeck.csproj -Raw)).Project.PropertyGroup.Version
+            ./verify-release.ps1 -ManifestPath "dist/CyanDeck-$version-${{ matrix.runtime }}.update.json"
+          } finally {
+            if (Test-Path $desktopOAuth) { Remove-Item -LiteralPath $desktopOAuth -Force }
+            if (Test-Path $privateKey) { Remove-Item -LiteralPath $privateKey -Force }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-${{ matrix.runtime }}
+          path: |
+            dist/CyanDeck-*.zip
+            dist/CyanDeck-*.update.json
+          if-no-files-found: error
+  refresh-private-draft:
+    needs: sign
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 8d221bf580da99473a66313a67ccc8b54c196374
+      TAG: v8.0.0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: signed-*
+          path: release-assets
+          merge-multiple: true
+      - name: Check draft safety and source integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = "true" || {
+            echo "::error::v8.0.0 release is not a private draft. Refusing to replace assets."; exit 1;
+          }
+          test "$(git diff --name-only "$SOURCE_SHA" HEAD -- src tests README.md *.ps1 .gitignore | wc -l)" -eq 0 || {
+            echo "::error::Build contents differ from the expected release source revision."; exit 1;
+          }
+          test "$(find release-assets -name '*.update.json' | wc -l)" -eq 2
+          test "$(find release-assets -name '*.zip' | wc -l)" -eq 2
+          git archive --format=zip --output "release-assets/CyanDeck-${TAG}-full-source.zip" "$SOURCE_SHA"
+          (cd release-assets && sha256sum -- *.zip > SHA256SUMS.txt)
+      - name: Replace assets only in private CyanDeck v8 draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" release-assets/*.zip release-assets/*.update.json release-assets/SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets --jq '{draft:.isDraft,assetNames:[.assets[].name]}'
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = "true"
