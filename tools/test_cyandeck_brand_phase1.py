@@ -288,6 +288,29 @@ checks.update({
         "CyanDeck migration compatibility gate" in release_workflow
         and "CyanDeck migration Windows PowerShell 5.1 gate" in release_workflow,
 })
+writer_gate = source("src/DesktopDeck/Services/LegacyProfileWriterGate.cs")
+checks.update({
+    "cross-executable writer mutex name matches migration tool":
+        'MutexName = @"Local\\CyanDeck.LegacyProfileWriter.v1"' in writer_gate
+        and "'Local\\CyanDeck.LegacyProfileWriter.v1'" in migration_script,
+    "app acquires shared lease before persistent stores open":
+        startup.index("LegacyProfileWriterGate.Acquire()") <
+        startup.index("CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();") <
+        startup.index("_controller = new AppController("),
+    "app retains lease through controller shutdown":
+        startup.index("try { _controller?.Dispose(); }") <
+        startup.index("try { _legacyWriterGate?.Dispose(); }"),
+    "migration acquires both legacy and cross-executable locks":
+        "$migrationMutex.WaitOne(0)" in migration_script
+        and "$writerLeaseMutex.WaitOne(0)" in migration_script
+        and "if ($ownsWriterLease) { $writerLeaseMutex.ReleaseMutex() }" in migration_script,
+    "cross-executable gate rejects crashed and competing writers":
+        "catch (AbandonedMutexException ex)" in writer_gate
+        and "if (!mutex.WaitOne(0))" in writer_gate,
+    "calendar harness tests shared mutex exclusion":
+        "LegacyProfileWriterGate.Acquire()" in source("tests/CalendarDomainHarness/Program.cs")
+        and "LegacyProfileWriterGate.cs" in source("tests/CalendarDomainHarness/CalendarDomainHarness.csproj"),
+})
 startup = source("src/DesktopDeck/App.xaml.cs")
 checks.update({
     "unsupported profile activation fails before single-instance IPC":
