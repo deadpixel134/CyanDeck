@@ -112,7 +112,7 @@ s=s.replace("$writerUpdateMutex = [Threading.Mutex]::new($false, 'Local\\CyanDec
 s=s.replace("$ownsWriterUpdateMutex = $false\n","")
 begin=s.find("  try { $ownsWriterUpdateMutex = $writerUpdateMutex.WaitOne(0) }")
 if begin>=0:
-    end=s.index(" # Manual recovery",begin)
+    end=s.index("# Manual recovery",begin)
     s=s[:begin]+s[end:]
 s=s.replace("  if ($ownsWriterUpdateMutex) { $writerUpdateMutex.ReleaseMutex() }\n","")
 s=s.replace("  $writerUpdateMutex.Dispose()\n","")
@@ -124,9 +124,6 @@ installer=ROOT/"install.ps1"
 s=installer.read_text(encoding="utf8")
 s=re.sub(r"(?s)function Assert-LegacyWriterFenceAbsent \{.*?\n\}\n\n", "", s)
 s=s.replace("  Assert-LegacyWriterFenceAbsent\n","")
-s=re.sub(r"(?m)^.*\$writerInstallMutex.*\n","",s)
-s=re.sub(r"(?m)^.*\$ownsWriterInstallMutex.*\n","",s)
-s=re.sub(r"(?s)  try \{ \$ownsWriterInstallMutex = \$writerInstallMutex.WaitOne\(0\) \}.*?  Assert-LegacyWriterFenceAbsent\n","",s)
 # Strip the second identical shortcut introduced for migration.
 s=s.replace('$cyanShortcut = Join-Path $startMenuDir "CyanDeck.lnk"\n',"")
 s=s.replace("Assert-NoReparseAncestors $cyanShortcut\n","")
@@ -142,8 +139,6 @@ s=s.replace("  Assert-LegacyWriterFenceAbsent\n","")
 s=re.sub(r"(?s)if \(\$PurgeData -and \(Test-Path -LiteralPath \(Join-Path \$env:APPDATA 'CyanDeck'\)\)\) \{.*?\n\}\n","",s)
 s=s.replace("$cyanStartMenuShortcut = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\CyanDeck.lnk'\n","")
 s=s.replace("@($startMenuShortcut, $cyanStartMenuShortcut, $desktopShortcut)","@($startMenuShortcut, $desktopShortcut)")
-s=re.sub(r"(?m)^.*\$writerUninstallMutex.*\n","",s)
-s=re.sub(r"(?m)^.*\$ownsWriterUninstallMutex.*\n","",s)
 uninstaller.write_text(s,encoding="utf8")
 
 # Core deployment files and signed update names are already globally renamed.
