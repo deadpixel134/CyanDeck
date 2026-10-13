@@ -51,6 +51,32 @@ An existing `CyanDeck` folder by itself is *not proof* of an interrupted
 preparation. Use recovery only if you intentionally prepared that exact copy;
 the tool never adopts a different folder or activates it automatically.
 
+## Legacy-profile writer lease (implemented; cutover still disabled)
+
+Current DesktopDeck builds now hold **two named Windows mutexes** for the
+entire active writer lifetime:
+
+- `Local\\DesktopDeck.SingleInstance` retains compatibility with older
+  DesktopDeck executables.
+- `Local\\CyanDeck.LegacyProfileWriter.v1` is a stable cross-executable
+  legacy-profile **writer lease**. A future `CyanDeck.exe` must acquire the
+  same lease before reading/writing any shared legacy data.
+
+The migration tool holds **both** leases while checking and copying a
+profile, including during `-RecoverPreparation`, `-VerifyPrepared`, and
+journal updates. The application acquires the new lease before opening the
+state/calendar controller and releases it only *after* controller shutdown,
+so another cooperative writer cannot start during a pending save.
+
+**Important limitation:** Older published DesktopDeck binaries do not
+acquire the *new* writer lease. The migration tool also holds the original
+singleton mutex to exclude those older running processes during preparation,
+but a stray portable older executable could be launched after a future
+profile cutover. A complete safe activation still requires a coordinated
+installer/updater handoff, downgrade prevention, old-binary compatibility
+strategy, and tested rollback. A preparation journal or a writer lease is
+not permission to activate CyanDeck storage.
+
 ## Future cutover (not yet implemented)
 
 1. Freeze writes and stop all DesktopDeck processes.
