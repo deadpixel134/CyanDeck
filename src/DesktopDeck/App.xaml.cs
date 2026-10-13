@@ -38,6 +38,15 @@ public partial class App : Application
             return;
         }
 
+        // Keep the legacy profile authoritative until the old/new writer fence
+        // and downgrade path are implemented. A verified migration journal alone
+        // must never trigger an automatic profile switch.
+        if (CyanDeckCutoverJournal.IsSafeToActivateAtStartup())
+        {
+            throw new InvalidOperationException(
+                "CyanDeck profile activation requires coordinated writer fencing.");
+        }
+
         _controller = new AppController(Dispatcher, safeMode, ignoreCrashLoop, managedPolicyPath);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
