@@ -227,6 +227,11 @@ checks.update({
     "migration abort is idempotent inside lock": "phase == Aborted && (previous is null || previous.Phase == Aborted)" in journal_review,
     "migration prevents overlapping preparations": "phase == Prepared && previous is not null && previous.Phase != Aborted" in journal_review,
 })
+checks.update({
+    "migration journal rejects linked metadata": "(info.Attributes & FileAttributes.ReparsePoint) != 0" in journal_review,
+    "migration journal bounds metadata size": "info.Length > 16 * 1024" in journal_review,
+    "migration journal rejects invalid JSON": "catch (JsonException error)" in journal_review,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
