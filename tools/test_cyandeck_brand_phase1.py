@@ -232,6 +232,12 @@ checks.update({
     "migration journal bounds metadata size": "info.Length > 16 * 1024" in journal_review,
     "migration journal rejects invalid JSON": "catch (JsonException error)" in journal_review,
 })
+migration_script = source("tools/prepare-cyandeck-data-migration.ps1")
+checks.update({
+    "migration script checks links before descent": "function Get-SafeTree" in migration_script and "if ($entry.PSIsContainer) { $pending.Push($entry.FullName) }" in migration_script,
+    "migration script avoids unsafe recursive traversal": "-Recurse -Force" not in migration_script,
+    "migration script verifies both trees safely": "Get-SafeTree $destination" in migration_script and "Get-SafeTree $legacy" in migration_script,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
