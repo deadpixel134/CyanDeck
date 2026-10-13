@@ -187,6 +187,11 @@ checks.update({
     "runtime checks staged copy directory count": "sourceDirs.Length != targetDirs.Length" in root_readiness,
     "runtime keeps legacy active root": "ActiveRoaming => LegacyRoaming" in root_readiness,
 })
+checks.update({
+    "runtime rejects linked directories before traversal": "HasOnlyRegularEntries(source) || !HasOnlyRegularEntries(target)" in root_readiness,
+    "runtime inspects each directory level": "current.EnumerateFileSystemInfos()" in root_readiness,
+    "runtime refuses reparse points": "(entry.Attributes & FileAttributes.ReparsePoint) != 0" in root_readiness,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
