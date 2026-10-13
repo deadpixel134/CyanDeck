@@ -150,7 +150,9 @@ Windows CI tests the real executable forwarding to a disposable fake
 `DesktopDeck.exe`, including Korean/spaced policy paths, precise argument
 boundaries, independent working-directory resolution, and a non-launching
 read-only diagnostic. It publishes unsigned preview-only CI artifacts for
-win-x64 and win-arm64, retained for 7 days.
+win-x64 and win-arm64, retained for 7 days. The preview derives its
+file version from the DesktopDeck project and includes an explicit
+`PREVIEW-README.txt` declaring it unsigned and non-production.
 
 The legacy installer, signed `package.ps1`, `apply-update.ps1` and GitHub
 Releases intentionally **do not include the launcher**. Old updaters reject

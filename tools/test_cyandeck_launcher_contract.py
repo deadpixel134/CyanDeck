@@ -13,6 +13,8 @@ package = read("package.ps1")
 updater = read("apply-update.ps1")
 rootpaths = read("src/DesktopDeck/Services/DataRootPaths.cs")
 build = read("build.ps1")
+preview_builder = read("tools/build-cyandeck-launcher-preview.ps1")
+preview_workflow = read(".github/workflows/build.yml")
 checks = {
     "launcher is CyanDeck.exe": "<AssemblyName>CyanDeck</AssemblyName>" in project,
     "launcher uses original product icon": "<ApplicationIcon>../DesktopDeck/AppIcon.ico</ApplicationIcon>" in project,
@@ -24,6 +26,11 @@ checks = {
     "signed package remains legacy-only": "'DesktopDeck.exe'" in package and 'CyanDeck.Launcher' not in package and 'CyanDeck.exe' not in package,
     "legacy updater refuses uncoordinated CyanDeck.exe": "Update ZIP includes a non-application file." in updater and "'DesktopDeck.exe'" in updater and "'CyanDeck.exe'" not in updater,
     "original build unchanged": "src\\DesktopDeck\\DesktopDeck.csproj" in build and "CyanDeck.Launcher" not in build,
+    "unsigned preview carries a version-matched warning":
+        'src/DesktopDeck/DesktopDeck.csproj' in preview_builder
+        and '"-p:Version=$legacyVersion"' in preview_builder
+        and 'PREVIEW-README.txt' in preview_builder
+        and 'PREVIEW-README.txt' in preview_workflow,
     "legacy roaming/local storage unchanged": "ActiveRoaming => LegacyRoaming" in rootpaths and "ActiveLocal => LegacyLocal" in rootpaths,
 }
 for label, passed in checks.items():

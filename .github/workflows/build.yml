@@ -61,7 +61,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cyandeck-launcher-preview-${{ matrix.runtime }}
-          path: ${{ runner.temp }}/cyandeck-preview/${{ matrix.runtime }}/CyanDeck.exe
+          path: |
+            ${{ runner.temp }}/cyandeck-preview/${{ matrix.runtime }}/CyanDeck.exe
+            ${{ runner.temp }}/cyandeck-preview/${{ matrix.runtime }}/PREVIEW-README.txt
           if-no-files-found: error
           retention-days: 7
       - name: Calendar domain tests
