@@ -4,33 +4,30 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http;
 
-// A legacy build must refuse a coordinated writer fence before opening stores.
-// Use an isolated LOCALAPPDATA so this test never touches a real user profile.
-var originalLocalAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA");
-var isolatedLocalAppData = Path.Combine(Path.GetTempPath(), "cyandeck-fence-" + Guid.NewGuid().ToString("N"));
+// Validate writer-fence refusal in an isolated directory, never user data.
+var fenceRoot = Path.Combine(Path.GetTempPath(), "cyandeck-fence-" + Guid.NewGuid().ToString("N"));
 try
 {
-    Environment.SetEnvironmentVariable("LOCALAPPDATA", isolatedLocalAppData);
-    // SpecialFolder.LocalApplicationData can be cached by the runtime, so
-    // exercise the resolved path and only create a fence in the test root.
-    var fencePath = CyanDeckCutoverJournal.LegacyWriterFencePath;
-    if (fencePath.StartsWith(isolatedLocalAppData, StringComparison.OrdinalIgnoreCase))
-    {
-        CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
-        Directory.CreateDirectory(Path.GetDirectoryName(fencePath)!);
-        File.WriteAllText(fencePath, "{}");
-        var refused = false;
-        try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(); }
-        catch (InvalidOperationException) { refused = true; }
-        Assert.That(refused, "legacy writer fence blocks startup");
-        File.Delete(fencePath);
-        CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
-    }
+    CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot);
+    var fenceDirectory = Path.Combine(fenceRoot, "migration");
+    Directory.CreateDirectory(fenceDirectory);
+    var fencePath = Path.Combine(fenceDirectory, "legacy-writer-fenced.json");
+    File.WriteAllText(fencePath, "{}");
+    var refused = false;
+    try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot); }
+    catch (InvalidOperationException) { refused = true; }
+    Assert.That(refused, "legacy writer fence blocks startup");
+    File.WriteAllText(fencePath, new string('X', 4097));
+    var oversizedRefused = false;
+    try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot); }
+    catch (InvalidDataException) { oversizedRefused = true; }
+    Assert.That(oversizedRefused, "oversized writer fence fails closed");
+    File.Delete(fencePath);
+    CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot);
 }
 finally
 {
-    Environment.SetEnvironmentVariable("LOCALAPPDATA", originalLocalAppData);
-    if (Directory.Exists(isolatedLocalAppData)) Directory.Delete(isolatedLocalAppData, recursive: true);
+    if (Directory.Exists(fenceRoot)) Directory.Delete(fenceRoot, recursive: true);
 }
 
 Assert.That(CalendarHeaderPolicy.FormatToday(new DateTime(2026, 10, 9)) == "2026.10.09 (금)",
