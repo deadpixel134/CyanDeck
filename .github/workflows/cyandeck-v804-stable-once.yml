@@ -1,0 +1,82 @@
+name: CyanDeck v8.0.4 stable promotion (one time)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/v804-stable-promotion.trigger']
+permissions:
+  contents: write
+
+jobs:
+  promote-tested-beta:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v8.0.4
+      TESTED_COMMIT: ce3899b661d4fb2b107ebb5a46e85bcbc9ec79c8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify signed binary provenance, tests and existing release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          current_tag_sha="$(gh api "repos/$repo/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
+          test "$current_tag_sha" = "$TESTED_COMMIT" || { echo "::error::Tag no longer points to tested commit."; exit 1; }
+          release="$(gh api "repos/$repo/releases/tags/$RELEASE_TAG")"
+          test "$(jq -r '.draft' <<<"$release")" = false
+          test "$(jq -r '.prerelease' <<<"$release")" = true
+          test "$(jq -r '.target_commitish' <<<"$release")" = "$TESTED_COMMIT"
+          test "$(jq -r '.assets|length' <<<"$release")" = 6
+          for name in CyanDeck-8.0.4-win-x64.zip CyanDeck-8.0.4-win-arm64.zip \
+            CyanDeck-8.0.4-win-x64.update.json CyanDeck-8.0.4-win-arm64.update.json \
+            CyanDeck-v8.0.4-full-source.zip SHA256SUMS.txt; do
+            test "$(jq --arg n "$name" '[.assets[] | select(.name==$n and .size>0)] | length' <<<"$release")" = 1 || {
+              echo "::error::Missing tested release asset: $name"; exit 1;
+            }
+          done
+          for run in 38408409094 38408409389; do
+            test "$(gh api "repos/$repo/actions/runs/$run" --jq '.conclusion')" = success || {
+              echo "::error::Signed beta and Windows test runs must both pass"; exit 1;
+            }
+            test "$(gh api "repos/$repo/actions/runs/$run" --jq '.head_sha')" = "$TESTED_COMMIT" || {
+              echo "::error::Test run commit differs from signed release"; exit 1;
+            }
+          done
+          echo "Validated: unchanged packages, tag and successful x64/arm64 tests."
+      - name: Promote existing release to official stable (no asset replacement)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/stable-release-notes.md <<'NOTES'
+          ## CyanDeck v8.0.4 — 정식 릴리스
+
+          ### 수정 사항
+          - 캘린더 크기를 조절할 때 날짜·주간 그리드에 불필요한 세로 스크롤바가 표시되지 않도록 변경
+          - 일정이 많을 때는 마우스 휠·트랙패드·터치 스크롤을 계속 지원하여 일정을 숨기거나 삭제하지 않음
+          - 다른 날짜 범위로 이동 시 달력의 스크롤 위치를 맨 위로 초기화
+          - 일정 편집 및 캘린더 환경설정에 필요한 스크롤 기능은 유지
+
+          ### 이전 버전에서 포함된 개선
+          - 환경설정에서 정식/베타 업데이트 채널 선택, 업데이트 확인 및 설치
+          - 바탕화면 아이콘 그룹이 다른 창에 가려질 때 회복 동작 개선
+          - 업데이트 파일 RSA-PSS 서명 및 SHA-256 검증, 롤백 보호
+
+          ### 설치
+          - 일반 Windows Intel/AMD PC: `CyanDeck-8.0.4-win-x64.zip`
+          - Windows ARM PC: `CyanDeck-8.0.4-win-arm64.zip`
+          - 압축을 해제하고 `CyanDeck.exe`를 실행하거나 `install.ps1`을 사용하세요.
+
+          이 릴리스는 공개 베타 v8.0.4에서 실제 설치 테스트를 통과한 **동일한 서명 배포 파일**을 정식으로 승격한 것입니다.
+          기존 아이콘, 사용자의 CyanDeck 데이터 및 DesktopDeck 데이터는 이동하거나 삭제하지 않습니다.
+          NOTES
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "CyanDeck v8.0.4" \
+            --prerelease=false --draft=false --latest \
+            --notes-file /tmp/stable-release-notes.md
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          test "$(jq -r '.draft' <<<"$release")" = false
+          test "$(jq -r '.prerelease' <<<"$release")" = false
+          test "$(jq -r '.assets|length' <<<"$release")" = 6
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+          test "$latest" = "$RELEASE_TAG" || { echo "::error::latest stable tag is $latest"; exit 1; }
+          echo "PROMOTED: https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
