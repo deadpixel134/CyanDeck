@@ -42,8 +42,6 @@ public static class CyanDeckCutoverJournal
     // the legacy profile remains active throughout the current release.
     public static void AbortPreparation()
     {
-        var previous = Read();
-        if (previous is null || previous.Phase == Aborted) return;
         Record(Aborted);
     }
 
@@ -57,6 +55,10 @@ public static class CyanDeckCutoverJournal
         using var gate = new FileStream(JournalPath + ".lock", FileMode.OpenOrCreate,
             FileAccess.ReadWrite, FileShare.None);
         var previous = Read();
+        // Enforce transitions while holding the lock; abort is idempotent.
+        if (phase == Aborted && (previous is null || previous.Phase == Aborted)) return;
+        if (phase == Prepared && previous is not null && previous.Phase != Aborted)
+            throw new InvalidOperationException("An existing migration must be aborted before preparing again.");
         if (phase == Verified)
         {
             if (previous is null || previous.Phase != Prepared)
@@ -64,8 +66,6 @@ public static class CyanDeckCutoverJournal
             if (!DataRootPaths.IsPreparedCopyIdentical())
                 throw new InvalidOperationException("Prepared profile no longer matches legacy data.");
         }
-        if (phase == Aborted && previous is null)
-            throw new InvalidOperationException("Cannot abort a migration that has not been prepared.");
         var temporary = JournalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
