@@ -34,8 +34,8 @@ if (-not (Test-Path -LiteralPath $legacy -PathType Container)) {
   Write-Host 'No legacy DesktopDeck data directory found; nothing to prepare.'
   return
 }
-if (@(Get-Process -Name DesktopDeck -ErrorAction SilentlyContinue).Count -gt 0) {
-  throw 'Exit CyanDeck completely before preparing a data migration.'
+if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+  throw 'Exit all DesktopDeck and CyanDeck processes before preparing a data migration.'
 }
 if (Test-Path -LiteralPath $destination) {
   throw "Destination already exists; refusing to merge or overwrite: $destination"
