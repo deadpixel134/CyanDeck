@@ -238,3 +238,23 @@ roots, OAuth resource identity and signed update protocol remain unchanged.
 Only run in a separate Windows TEST ACCOUNT. A different extraction directory
 does NOT isolate legacy roaming/local data. The native artifact is unsigned and
 Google OAuth-unprovisioned; it is NOT an installed executable cutover.
+
+
+## Phase 4 signed native candidate / independent verification
+
+A domain-separated RSA-PSS-SHA256 signed CyanDeck *release candidate* can be
+built from the complete WPF CyanDeck.exe using:
+
+    pwsh -File tools/package-cyandeck-native-candidate.ps1 -Runtime win-x64 -NativeExecutable <CyanDeck.exe> -SigningKeyPath <PRIVATE_PEM> -OutputDirectory <new_folder>
+    pwsh -File tools/verify-cyandeck-native-candidate.ps1 -ManifestPath <new_folder>/candidate-manifest.json
+
+The signed candidate contains only CyanDeck.exe and CANDIDATE-NOTICE.txt.
+The detached manifest binds runtime, source version, ZIP SHA-256 and public
+key ID, using a separate CyanDeck.NativeCandidate.v1 signature domain.
+Windows CI signs with a throwaway key and verifies tamper rejection.
+Future tag-triggered release jobs also create an OAuth-provisioned signed
+candidate with the protected release key, but keep it in a temporary
+GitHub Actions artifact. The public signed DesktopDeck update ZIP/manifest
+and existing auto-updaters are unchanged. No candidate is installed,
+published as an end-user release asset, or activated as CyanDeck storage.
+A signed candidate is NOT a safe install/update/migration by itself.

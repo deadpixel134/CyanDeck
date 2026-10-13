@@ -96,6 +96,11 @@ jobs:
             New-Item -ItemType Directory -Force -Path 'json' | Out-Null
             [IO.File]::WriteAllText($oauth, $env:DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON, [Text.UTF8Encoding]::new($false))
             .\package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $key
+            $nativeOut = Join-Path $env:RUNNER_TEMP 'cyandeck-native-provisioned'
+            dotnet publish src/DesktopDeck/DesktopDeck.csproj -c Release -r '${{ matrix.runtime }}' --self-contained true -p:CyanDeckNative=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o $nativeOut
+            if ($LASTEXITCODE -ne 0) { throw 'Provisioned CyanDeck native publish failed.' }
+            .\tools\package-cyandeck-native-candidate.ps1 -Runtime '${{ matrix.runtime }}' -NativeExecutable (Join-Path $nativeOut 'CyanDeck.exe') -SigningKeyPath $key -OutputDirectory "dist/native-candidates/${{ matrix.runtime }}"
+            .\tools\verify-cyandeck-native-candidate.ps1 -ManifestPath "dist/native-candidates/${{ matrix.runtime }}/candidate-manifest.json"
             $version = ([xml](Get-Content src/DesktopDeck/DesktopDeck.csproj -Raw)).Project.PropertyGroup.Version
             .\verify-release.ps1 -ManifestPath "dist/DesktopDeck-$version-${{ matrix.runtime }}.update.json"
           } finally {
@@ -109,6 +114,14 @@ jobs:
             dist/DesktopDeck-*.zip
             dist/DesktopDeck-*.update.json
           if-no-files-found: error
+
+      # Private Actions artifact only: NOT attached to the public release.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-signed-candidate-${{ matrix.runtime }}
+          path: dist/native-candidates/${{ matrix.runtime }}/*
+          if-no-files-found: error
+          retention-days: 7
 
   publish:
     needs: signed-build
