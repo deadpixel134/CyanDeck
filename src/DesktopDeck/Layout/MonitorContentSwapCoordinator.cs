@@ -57,7 +57,7 @@ public sealed class MonitorContentSwapCoordinator
         {
             return new MonitorContentSwapResult(
                 MonitorContentSwapStatus.CaptureFailed,
-                "DesktopDeck could not confirm that the display topology is stable.",
+                "CyanDeck could not confirm that the display topology is stable.",
                 Error: ex);
         }
 
@@ -86,7 +86,7 @@ public sealed class MonitorContentSwapCoordinator
             _diagnostic?.Invoke($"Monitor content swap capture failed: {ex.Message}");
             return new MonitorContentSwapResult(
                 MonitorContentSwapStatus.CaptureFailed,
-                "DesktopDeck could not capture the current monitor/content layout, so no changes were applied.",
+                "CyanDeck could not capture the current monitor/content layout, so no changes were applied.",
                 Error: ex);
         }
 
@@ -94,7 +94,7 @@ public sealed class MonitorContentSwapCoordinator
         {
             return new MonitorContentSwapResult(
                 MonitorContentSwapStatus.NoChanges,
-                "No movable DesktopDeck content is assigned to the selected monitors.",
+                "No movable CyanDeck content is assigned to the selected monitors.",
                 plan);
         }
 
@@ -104,7 +104,7 @@ public sealed class MonitorContentSwapCoordinator
             {
                 return new MonitorContentSwapResult(
                     MonitorContentSwapStatus.CheckpointFailed,
-                    "DesktopDeck could not create the required undo checkpoint, so no layout changes were applied.",
+                    "CyanDeck could not create the required undo checkpoint, so no layout changes were applied.",
                     plan);
             }
         }
@@ -113,7 +113,7 @@ public sealed class MonitorContentSwapCoordinator
             _diagnostic?.Invoke($"Monitor content swap checkpoint failed: {ex.Message}");
             return new MonitorContentSwapResult(
                 MonitorContentSwapStatus.CheckpointFailed,
-                "DesktopDeck could not create the required undo checkpoint, so no layout changes were applied.",
+                "CyanDeck could not create the required undo checkpoint, so no layout changes were applied.",
                 plan,
                 ex);
         }
@@ -130,7 +130,7 @@ public sealed class MonitorContentSwapCoordinator
             _diagnostic?.Invoke($"Monitor content swap topology recheck failed: {ex.Message}");
             return new MonitorContentSwapResult(
                 MonitorContentSwapStatus.CaptureFailed,
-                "DesktopDeck could not re-confirm the monitor topology, so no layout changes were applied.",
+                "CyanDeck could not re-confirm the monitor topology, so no layout changes were applied.",
                 plan,
                 ex);
         }
@@ -162,7 +162,7 @@ public sealed class MonitorContentSwapCoordinator
 
                 return new MonitorContentSwapResult(
                     MonitorContentSwapStatus.ApplyFailed,
-                    "The swap failed and DesktopDeck restored the original positions. The failed state was not saved.",
+                    "The swap failed and CyanDeck restored the original positions. The failed state was not saved.",
                     plan,
                     applyError);
             }

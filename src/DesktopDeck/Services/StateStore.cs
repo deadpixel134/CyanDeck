@@ -363,7 +363,7 @@ public sealed class StateStore
     {
         lock (_gate)
         {
-            var state = TryLoad(path, throwOnUnsupported: true) ?? throw new InvalidDataException("The selected DesktopDeck backup could not be read.");
+            var state = TryLoad(path, throwOnUnsupported: true) ?? throw new InvalidDataException("The selected CyanDeck backup could not be read.");
             Normalize(state);
             return state;
         }

@@ -28,6 +28,38 @@ checks = {
     "signed update still requires DesktopDeck.exe": 'The update ZIP does not contain DesktopDeck.exe.' in source("src/DesktopDeck/Services/UpdateService.cs"),
     "GitHub update channel is preserved": 'github-release://deadpixel134/DesktopDeck' in source("src/DesktopDeck/Services/GitHubReleaseSource.cs"),
 }
+# Phase 1.5: inspect direct UI/error copy, without renaming on-disk or IPC identities.
+controller = source("src/DesktopDeck/Services/AppController.cs")
+fence_menu = source("src/DesktopDeck/Views/FenceWindow.ContextMenu.cs")
+swap = source("src/DesktopDeck/Layout/MonitorContentSwapCoordinator.cs")
+state_schema = source("src/DesktopDeck/Services/StateSchema.cs")
+state_store = source("src/DesktopDeck/Services/StateStore.cs")
+calendar_backup_ui = source("src/DesktopDeck/Calendar/CalendarWindow.cs")
+checks.update({
+    "fence context settings item displays CyanDeck": 'MakeItem("CyanDeck 설정…"' in fence_menu and 'MakeItem("DesktopDeck 설정…"' not in fence_menu,
+    "managed policy notice displays CyanDeck": "현재 CyanDeck 관리 정책에 의해" in controller and "현재 DesktopDeck 관리 정책에 의해" not in controller,
+    "monitor swap user notices display CyanDeck": "교환할 CyanDeck 내용이 없습니다." in controller and "교환할 DesktopDeck 내용이 없습니다." not in controller,
+    "feature toggle error displays CyanDeck": 'ReportFeatureSwitchSaveFailure("CyanDeck", ex)' in controller,
+    "pending update recovery notice displays CyanDeck": "이전 CyanDeck 업데이트가 완료되지 않아" in controller and "이전 DesktopDeck 업데이트가 완료되지 않아" not in controller,
+    "checkpoint restore notice displays CyanDeck": "이 CyanDeck 복구 체크포인트를 복원하시겠습니까?" in controller,
+    "swap coordinator result copy displays CyanDeck": all(fragment in swap for fragment in (
+        "CyanDeck could not confirm", "CyanDeck could not capture", "No movable CyanDeck content",
+        "CyanDeck could not create", "CyanDeck could not re-confirm",
+        "The swap failed and CyanDeck restored"))
+        and not any(fragment in swap for fragment in (
+        "DesktopDeck could not", "No movable DesktopDeck content", "DesktopDeck restored")),
+    "unsupported state exception displays CyanDeck": "This CyanDeck configuration uses state schema" in state_schema
+        and "Update CyanDeck before importing it." in state_schema
+        and "public const int Current = 35;" in state_schema,
+    "import error displays CyanDeck": "The selected CyanDeck backup could not be read." in state_store,
+    "calendar backup note keeps exact legacy folder": r"CyanDeck의 기존 데이터 폴더(%APPDATA%\\DesktopDeck)" in calendar_backup_ui
+        and r'"DesktopDeck", "calendar-events.json"' in calendar_backup_ui,
+    "Windows taskbar AppUserModelID remains unchanged": '"DesktopDeck.Peek"' in source("src/DesktopDeck/Peek/WpfPeekTaskbarButtonWindow.cs"),
+    "Google token path remains legacy DesktopDeck": '"DesktopDeck", "calendar-google-token.dat"' in source("src/DesktopDeck/Calendar/GoogleCalendarSync.cs"),
+    "manual smoke checklist exists": "Windows 수동 스모크 테스트" in source("docs/CYANDECK_PHASE15_WINDOWS_SMOKE_KO.md"),
+    "calendar LocalOnly behavior remains protected": 'LocalOnly' in source("src/DesktopDeck/Calendar/CalendarEventStore.cs")
+        and 'LocalOnly' in source("src/DesktopDeck/Calendar/GoogleCalendarSync.cs"),
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")

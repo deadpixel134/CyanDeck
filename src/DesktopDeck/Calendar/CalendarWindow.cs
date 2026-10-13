@@ -1331,7 +1331,7 @@ public sealed class CalendarWindow : Window
         var confirmation = MessageBox.Show(this,
             "읽기 전용 백업은 최신 일정이 아닐 수 있습니다. 손상된 원본은 별도 파일로 보존하고 "
             + "기존 .bak은 유지합니다. Google 동기화 토큰을 초기화하여 전체 재동기화합니다. "
-            + "기존 DesktopDeck 데이터 폴더를 별도로 백업한 후 복원을 진행하시겠습니까?",
+            + "CyanDeck의 기존 데이터 폴더(%APPDATA%\\DesktopDeck)를 별도로 백업한 후 복원을 진행하시겠습니까?",
             "캘린더 백업 복원 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning,
             MessageBoxResult.No);
         if (confirmation != MessageBoxResult.Yes) return;

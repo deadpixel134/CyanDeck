@@ -398,7 +398,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (showNotice)
         {
             System.Windows.MessageBox.Show(
-                $"'{actionLabel}' 기능은 현재 DesktopDeck 관리 정책에 의해 비활성화되어 있습니다.",
+                $"'{actionLabel}' 기능은 현재 CyanDeck 관리 정책에 의해 비활성화되어 있습니다.",
                 "CyanDeck 관리 정책",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -3085,7 +3085,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             MonitorContentSwapStatus.Success =>
                 ($"화면 내용을 교환했습니다.\n\n그룹 {result.Plan?.GroupMoveCount ?? 0}개 · 그룹 밖 아이콘 {result.Plan?.LooseIconMoveCount ?? 0}개", MessageBoxImage.Information),
             MonitorContentSwapStatus.NoChanges =>
-                ("교환할 DesktopDeck 내용이 없습니다.", MessageBoxImage.Information),
+                ("교환할 CyanDeck 내용이 없습니다.", MessageBoxImage.Information),
             MonitorContentSwapStatus.DisplayUnstable =>
                 ("디스플레이 구성이 변경 중입니다. 화면이 안정된 뒤 다시 시도하세요.", MessageBoxImage.Information),
             MonitorContentSwapStatus.CheckpointFailed =>
@@ -3851,7 +3851,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             value => _state.Settings.EnableDesktopDeck = value,
             enabled,
             () => PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true),
-            ex => ReportFeatureSwitchSaveFailure("DesktopDeck", ex));
+            ex => ReportFeatureSwitchSaveFailure("CyanDeck", ex));
         if (result != FeatureSwitchCheckpoint.Outcome.Applied) return;
 
         AuditSettingsChanges("DesktopDeck module toggle");
@@ -3898,7 +3898,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (!UpdateService.HasPendingRecovery()) return;
         var answer = System.Windows.MessageBox.Show(
-            "이전 DesktopDeck 업데이트가 완료되지 않아 복구 기록이 남아 있습니다.\n" +
+            "이전 CyanDeck 업데이트가 완료되지 않아 복구 기록이 남아 있습니다.\n" +
             "프로그램을 종료하고 백업한 실행 파일을 복원하시겠습니까?\n" +
             "캘린더 일정과 사용자 파일은 변경하지 않습니다. 복구를 연기하면 새 업데이트가 차단됩니다.",
             "CyanDeck 업데이트 복구", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes);
@@ -5040,7 +5040,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             }
             var targetState = _store.Import(path);
             var diff = RecoveryDiffService.Compare(_state, targetState);
-            var prompt = $"이 DesktopDeck 복구 체크포인트를 복원하시겠습니까? 먼저 현재 상태를 체크포인트로 저장합니다.\n\n{diff.ToDisplayString()}";
+            var prompt = $"이 CyanDeck 복구 체크포인트를 복원하시겠습니까? 먼저 현재 상태를 체크포인트로 저장합니다.\n\n{diff.ToDisplayString()}";
             if (System.Windows.MessageBox.Show(prompt, "CyanDeck 복구", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return false;
             _store.SaveRecoveryCheckpoint(_state, "before-recovery-restore");

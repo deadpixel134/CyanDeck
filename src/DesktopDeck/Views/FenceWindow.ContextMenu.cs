@@ -505,7 +505,7 @@ public partial class FenceWindow
         var newFenceItem = MakeItem("새 그룹", () => NewFenceRequested?.Invoke());
         newFenceItem.IsEnabled = CapabilityAllowed("Layout.CreateDeleteGroups");
         menu.Items.Add(newFenceItem);
-        menu.Items.Add(MakeItem("DesktopDeck 설정…", () => SettingsRequested?.Invoke()));
+        menu.Items.Add(MakeItem("CyanDeck 설정…", () => SettingsRequested?.Invoke()));
         var deleteFenceItem = MakeItem("그룹 삭제", () => DeleteRequested?.Invoke(this));
         deleteFenceItem.IsEnabled = CapabilityAllowed("Layout.CreateDeleteGroups");
         menu.Items.Add(deleteFenceItem);
