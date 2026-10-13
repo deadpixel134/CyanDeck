@@ -150,6 +150,13 @@ checks.update({
     "migration rejects changed source file set": "Source file set changed during migration" in migration_preflight,
     "migration verifies before publish": migration_preflight.index("Source file set changed during migration") < migration_preflight.index("Move-Item -LiteralPath $staging"),
 })
+google_sync_contract = source("src/DesktopDeck/Calendar/GoogleCalendarSync.cs")
+root_contract = source("src/DesktopDeck/Services/DataRootPaths.cs")
+checks.update({
+    "google token follows shared root": 'Path.Combine(DataRootPaths.ActiveRoaming, "calendar-google-token.dat")' in google_sync_contract,
+    "google owner follows shared root": 'Path.Combine(DataRootPaths.ActiveRoaming, "calendar-google-owner.dat")' in google_sync_contract,
+    "migration does not activate new roaming root": "ActiveRoaming => LegacyRoaming" in root_contract,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
