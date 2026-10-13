@@ -238,7 +238,8 @@ foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
   if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
   try {
     $raw = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 -ErrorAction Stop
-    $parsed = ConvertFrom-Json -InputObject $raw -NoEnumerate -ErrorAction Stop
+    $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+    if ($name -ne 'layout.json' -and $raw.TrimStart() -notmatch '^\\[') { throw 'Calendar must be an array.' }
     if ($name.StartsWith('layout.json', [StringComparison]::OrdinalIgnoreCase)) {
       if ($null -eq $parsed -or $parsed -isnot [pscustomobject]) { throw 'Layout must be an object.' }
       if ($null -ne $parsed.Version) {
