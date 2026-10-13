@@ -389,7 +389,13 @@ try {
   }
   if (Test-Path -LiteralPath $destination) { throw 'Destination appeared during migration; refusing overwrite.' }
   Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop
-  Write-CutoverJournal 'prepared'
+  try {
+    Write-CutoverJournal 'prepared'
+  } catch {
+    # The candidate is already published; deleting it to "roll back" could
+    # discard a user's data. Keep both profiles and explain explicit repair.
+    throw "CyanDeck copy was published but its preparation journal could not be written. Do not delete either profile or rerun -Apply. After resolving the journal error, use -RecoverPreparation: $_"
+  }
   Write-Host 'Verified CyanDeck data copy prepared. Original DesktopDeck data remains untouched.'
   Write-Host 'The application still reads legacy paths; this command does NOT activate the new location.'
 } finally {
