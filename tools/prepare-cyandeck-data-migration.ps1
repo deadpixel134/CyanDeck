@@ -57,6 +57,8 @@ function Write-CutoverJournal([string]$Phase) {
     if (Test-Path -LiteralPath $journal -PathType Leaf) {
       $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
       if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
+      -not $previous.RecordedAtUtc -or
+          -not $previous.RecordedAtUtc -or
           -not [string]::Equals($previous.LegacyRoot, $legacy, [StringComparison]::OrdinalIgnoreCase) -or
           -not [string]::Equals($previous.CandidateRoot, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Unrecognized existing migration journal.'
