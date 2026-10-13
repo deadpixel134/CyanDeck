@@ -181,6 +181,12 @@ checks.update({
     "cutover checks Google token presence": 'File.Exists(Path.Combine(LegacyRoaming, "calendar-google-token.dat"))' in root_readiness,
     "cutover checks Google account presence": 'File.Exists(Path.Combine(LegacyRoaming, "calendar-google-owner.dat"))' in root_readiness,
 })
+checks.update({
+    "runtime checks staged copy SHA256": "IsPreparedCopyIdentical()" in root_readiness and "SHA256.HashData" in root_readiness,
+    "runtime checks staged copy file count": "sourceFiles.Length != targetFiles.Length" in root_readiness,
+    "runtime checks staged copy directory count": "sourceDirs.Length != targetDirs.Length" in root_readiness,
+    "runtime keeps legacy active root": "ActiveRoaming => LegacyRoaming" in root_readiness,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
