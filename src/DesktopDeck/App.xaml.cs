@@ -38,6 +38,16 @@ public partial class App : Application
             return;
         }
 
+        // A command-line activation request must never be silently ignored:
+        // otherwise a launcher could claim CyanDeck was activated while all
+        // stores continue writing to the legacy profile. Fail before startup.
+        if (e.Args.Any(a => string.Equals(a, "--activate-cyandeck", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                "CyanDeck profile activation is not supported by this build. " +
+                "The legacy DesktopDeck profile remains authoritative.");
+        }
+
         // Keep the legacy profile authoritative until the old/new writer fence
         // and downgrade path are implemented. A verified migration journal alone
         // must never trigger an automatic profile switch.
