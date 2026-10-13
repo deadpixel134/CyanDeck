@@ -16,8 +16,8 @@ public sealed class GoogleCalendarSync : IDisposable
     private readonly CalendarEventStore _store;
     private readonly CalendarPreferencesStore _preferences;
     private readonly Func<string> _clientId;
-    private readonly string _tokenPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DesktopDeck", "calendar-google-token.dat");
-    private readonly string _accountPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DesktopDeck", "calendar-google-owner.dat");
+    private readonly string _tokenPath = Path.Combine(DataRootPaths.ActiveRoaming, "calendar-google-token.dat");
+    private readonly string _accountPath = Path.Combine(DataRootPaths.ActiveRoaming, "calendar-google-owner.dat");
     private string? _boundCalendarId;
     private bool _accountBindingUnreadable;
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
