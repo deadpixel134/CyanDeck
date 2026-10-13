@@ -2,15 +2,14 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>CyanDeck</AssemblyName>
+    <RootNamespace>CyanDeck.Launcher</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>12.0</LangVersion>
-    <Version>7.49.6</Version>
-    <Product>CyanDeck</Product>
-    <Title>CyanDeck Compatibility Launcher (Preview)</Title>
-    <AssemblyName>CyanDeck</AssemblyName>
-    <RootNamespace>CyanDeck.Launcher</RootNamespace>
     <ApplicationIcon>../DesktopDeck/AppIcon.ico</ApplicationIcon>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Product>CyanDeck</Product>
+    <Title>CyanDeck</Title>
   </PropertyGroup>
 </Project>
