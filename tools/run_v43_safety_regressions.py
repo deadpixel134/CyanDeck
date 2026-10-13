@@ -32,6 +32,12 @@ for name in scripts:
         result = {'script':name, 'passed':False, 'exitCode':None, 'lastLines':['Timed out after 60 seconds']}
     results.append(result)
     print(('PASS' if result['passed'] else 'FAIL'), name, '|', ' / '.join(result['lastLines'][-2:]))
+    if not result['passed']:
+        # Keep actionable assertions in CI logs instead of only the final count.
+        failure_lines = [line for line in output.splitlines()
+                         if line.startswith(('FAIL:', 'FAILURES:', 'Traceback', 'ValueError:', 'AssertionError:'))] if result['exitCode'] is not None else result['lastLines']
+        for line in failure_lines[:40]:
+            print('  ', line)
 report = {'suite':'v43-safe-source-regression', 'windowsRuntimeVerified':False,
           'passed':sum(x['passed'] for x in results), 'total':len(results), 'results':results}
 if args.json_report:
