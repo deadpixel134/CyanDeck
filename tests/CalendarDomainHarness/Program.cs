@@ -4,6 +4,35 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http;
 
+// A legacy build must refuse a coordinated writer fence before opening stores.
+// Use an isolated LOCALAPPDATA so this test never touches a real user profile.
+var originalLocalAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+var isolatedLocalAppData = Path.Combine(Path.GetTempPath(), "cyandeck-fence-" + Guid.NewGuid().ToString("N"));
+try
+{
+    Environment.SetEnvironmentVariable("LOCALAPPDATA", isolatedLocalAppData);
+    // SpecialFolder.LocalApplicationData can be cached by the runtime, so
+    // exercise the resolved path and only create a fence in the test root.
+    var fencePath = CyanDeckCutoverJournal.LegacyWriterFencePath;
+    if (fencePath.StartsWith(isolatedLocalAppData, StringComparison.OrdinalIgnoreCase))
+    {
+        CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
+        Directory.CreateDirectory(Path.GetDirectoryName(fencePath)!);
+        File.WriteAllText(fencePath, "{}");
+        var refused = false;
+        try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(); }
+        catch (InvalidOperationException) { refused = true; }
+        Assert.That(refused, "legacy writer fence blocks startup");
+        File.Delete(fencePath);
+        CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
+    }
+}
+finally
+{
+    Environment.SetEnvironmentVariable("LOCALAPPDATA", originalLocalAppData);
+    if (Directory.Exists(isolatedLocalAppData)) Directory.Delete(isolatedLocalAppData, recursive: true);
+}
+
 Assert.That(CalendarHeaderPolicy.FormatToday(new DateTime(2026, 10, 9)) == "2026.10.09 (금)",
     "Korean calendar header includes zero-padded date and correct weekday");
 Assert.That(CalendarHeaderPolicy.FormatToday(new DateTime(2026, 11, 1)) == "2026.11.01 (일)",
