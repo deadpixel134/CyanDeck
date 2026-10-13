@@ -167,7 +167,7 @@ public static class UpdateService
             throw new InvalidDataException("The update manifest does not contain a SHA-256 package hash.");
 
         var packageSource = ResolveRelativeSource(check.ManifestSource, check.Manifest.PackageUrl);
-        var updatesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopDeck", "updates", "staged");
+        var updatesDir = Path.Combine(DataRootPaths.ActiveLocal, "updates", "staged");
         Directory.CreateDirectory(updatesDir);
         var destination = Path.Combine(updatesDir, $"DesktopDeck-{check.LatestVersion}-{RuntimeId}.zip");
         var temp = destination + ".part";
@@ -196,8 +196,7 @@ public static class UpdateService
         var install = Path.GetFullPath(AppContext.BaseDirectory)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant();
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(install))).ToLowerInvariant();
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "DesktopDeck", "updates", $"pending-{digest}.json");
+        return Path.Combine(DataRootPaths.ActiveLocal, "updates", $"pending-{digest}.json");
     }
 
     public static bool HasPendingRecovery() => File.Exists(PendingRecoveryJournalPath());
@@ -242,7 +241,7 @@ public static class UpdateService
     {
         try
         {
-            var marker = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopDeck", "updates", "last-rollback.txt");
+            var marker = Path.Combine(DataRootPaths.ActiveLocal, "updates", "last-rollback.txt");
             if (!File.Exists(marker)) return null;
             var path = File.ReadAllText(marker).Trim();
             return Directory.Exists(path) ? path : null;
