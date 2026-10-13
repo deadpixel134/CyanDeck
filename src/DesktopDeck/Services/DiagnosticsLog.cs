@@ -5,7 +5,7 @@ namespace DesktopDeck.Services;
 public static class DiagnosticsLog
 {
     private static readonly object Gate = new();
-    private static readonly string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DesktopDeck", "logs");
+    private static readonly string DirectoryPath = Path.Combine(DataRootPaths.ActiveRoaming, "logs");
     private static readonly string CurrentPath = Path.Combine(DirectoryPath, "desktopdeck.log");
     private const long MaxBytes = 1_500_000;
 
