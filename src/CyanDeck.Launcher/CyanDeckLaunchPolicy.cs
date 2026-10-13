@@ -4,6 +4,7 @@ namespace CyanDeck.Launcher;
 // No APPDATA, LOCALAPPDATA, OAuth, updates or profile selection occurs here.
 public static class CyanDeckLaunchPolicy
 {
+    public const string DiagnosticOption = "--handoff-check-only";
     private static readonly HashSet<string> Switches = new(StringComparer.OrdinalIgnoreCase)
     {
         "--peek-toggle", "--safe-mode", "--ignore-crash-loop",
@@ -44,7 +45,7 @@ public static class CyanDeckLaunchPolicy
         return result;
     }
 
-    public static string ResolveLegacyExecutable(string launcherDirectory)
+    public static string ResolveLegacyExecutable(string launcherDirectory, string? isolatedLegacyLocalRoot = null)
     {
         if (string.IsNullOrWhiteSpace(launcherDirectory))
             throw new ArgumentException("Missing CyanDeck launcher directory.", nameof(launcherDirectory));
@@ -66,6 +67,42 @@ public static class CyanDeckLaunchPolicy
         var attributes = File.GetAttributes(target);
         if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
             throw new InvalidDataException("The compatible DesktopDeck executable must be an ordinary file.");
+        if (new FileInfo(target).Length == 0)
+            throw new InvalidDataException("The compatible DesktopDeck executable is empty.");
+
+        // A future profile cutover must stop the companion from launching an
+        // incompatible legacy EXE, including when the fence JSON is malformed.
+        var legacyLocalRoot = isolatedLegacyLocalRoot ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopDeck");
+        AssertLegacyWriterFenceAbsent(legacyLocalRoot);
         return target;
+    }
+
+    public static void AssertLegacyWriterFenceAbsent(string legacyLocalRoot)
+    {
+        var fence = Path.GetFullPath(Path.Combine(legacyLocalRoot, "migration", "legacy-writer-fenced.json"));
+        string? cursor = fence;
+        while (!string.IsNullOrWhiteSpace(cursor))
+        {
+            FileAttributes? attributes;
+            try { attributes = File.GetAttributes(cursor); }
+            catch (FileNotFoundException) { attributes = null; }
+            catch (DirectoryNotFoundException) { attributes = null; }
+
+            if (attributes is not null)
+            {
+                if ((attributes.Value & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException("CyanDeck launcher cutover fence path contains a link.");
+                if (string.Equals(cursor, fence, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "CyanDeck profile cutover fence blocks legacy executable handoff.");
+            }
+
+            var parent = Path.GetDirectoryName(cursor);
+            if (string.IsNullOrWhiteSpace(parent) ||
+                string.Equals(cursor, parent, StringComparison.OrdinalIgnoreCase))
+                break;
+            cursor = parent;
+        }
     }
 }

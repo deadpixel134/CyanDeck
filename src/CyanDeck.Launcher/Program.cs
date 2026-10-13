@@ -9,17 +9,17 @@ internal static class Program
     private static int Main(string[] args)
     {
         var diagnostic = args.Length == 1 && string.Equals(
-            args[0], HandoffPreflight.DiagnosticOption, StringComparison.OrdinalIgnoreCase);
+            args[0], CyanDeckLaunchPolicy.DiagnosticOption, StringComparison.OrdinalIgnoreCase);
         try
         {
             if (!string.Equals(Path.GetFileName(Environment.ProcessPath),
-                    HandoffPreflight.CompanionExecutable, StringComparison.OrdinalIgnoreCase))
+                    "CyanDeck.exe", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The companion executable must be named CyanDeck.exe.");
 
-            HandoffPreflight.ValidateArguments(args);
-            var legacyLocalRoot = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopDeck");
-            var target = HandoffPreflight.ResolveLegacyExecutable(AppContext.BaseDirectory, legacyLocalRoot);
+            // Strict argument validation is shared with the real forwarding
+            // harness. The diagnostic is the only non-forwarded option.
+            var forwarded = diagnostic ? Array.Empty<string>() : CyanDeckLaunchPolicy.ValidateArguments(args).ToArray();
+            var target = CyanDeckLaunchPolicy.ResolveLegacyExecutable(AppContext.BaseDirectory);
             if (diagnostic) return 0;
 
             var start = new ProcessStartInfo(target)
@@ -27,7 +27,7 @@ internal static class Program
                 WorkingDirectory = Path.GetDirectoryName(target)!,
                 UseShellExecute = false
             };
-            foreach (var arg in args)
+            foreach (var arg in forwarded)
                 start.ArgumentList.Add(arg);
             using var process = Process.Start(start)
                 ?? throw new InvalidOperationException("Could not start the compatible DesktopDeck executable.");

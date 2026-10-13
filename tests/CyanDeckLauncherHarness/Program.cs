@@ -31,14 +31,34 @@ var scratch = Path.Combine(Path.GetTempPath(), "cyandeck-launch-policy-" + Guid.
 Directory.CreateDirectory(scratch);
 try
 {
+    var isolatedLocalRoot = Path.Combine(scratch, "local", "DesktopDeck");
     var missingRejected = false;
-    try { CyanDeckLaunchPolicy.ResolveLegacyExecutable(scratch); }
+    try { CyanDeckLaunchPolicy.ResolveLegacyExecutable(scratch, isolatedLocalRoot); }
     catch (FileNotFoundException) { missingRejected = true; }
     Check(missingRejected, "missing legacy EXE cannot fall back to system PATH");
     var legacy = Path.Combine(scratch, "DesktopDeck.exe");
     File.WriteAllText(legacy, "test-only ordinary file");
-    Check(CyanDeckLaunchPolicy.ResolveLegacyExecutable(scratch) == legacy,
+    Check(CyanDeckLaunchPolicy.ResolveLegacyExecutable(scratch, isolatedLocalRoot) == legacy,
         "launcher resolves only its companion executable");
+    Check(!Directory.Exists(isolatedLocalRoot), "read-only launcher check does not create local storage");
+
+    var migration = Path.Combine(isolatedLocalRoot, "migration");
+    Directory.CreateDirectory(migration);
+    var fence = Path.Combine(migration, "legacy-writer-fenced.json");
+    File.WriteAllText(fence, "{invalid");
+    var malformedFenceRejected = false;
+    try { CyanDeckLaunchPolicy.ResolveLegacyExecutable(scratch, isolatedLocalRoot); }
+    catch (InvalidOperationException) { malformedFenceRejected = true; }
+    Check(malformedFenceRejected, "malformed cutover fence blocks handoff");
+    File.Delete(fence);
+    Directory.CreateDirectory(fence);
+    var directoryFenceRejected = false;
+    try { CyanDeckLaunchPolicy.ResolveLegacyExecutable(scratch, isolatedLocalRoot); }
+    catch (InvalidOperationException) { directoryFenceRejected = true; }
+    Check(directoryFenceRejected, "directory-shaped cutover fence blocks handoff");
+    Directory.Delete(fence);
+    Check(CyanDeckLaunchPolicy.ResolveLegacyExecutable(scratch, isolatedLocalRoot) == legacy,
+        "removing test cutover fence restores handoff");
 }
 finally { Directory.Delete(scratch, recursive: true); }
 Console.WriteLine("CyanDeckLauncherHarness: policy assertions passed.");
