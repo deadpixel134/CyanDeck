@@ -42,6 +42,17 @@ function Get-SafeTree([string]$Root) {
 }
 # Mirror the non-activating C# journal format and transition rules. Only the
 # canonical CyanDeck destination is eligible for a shared journal record.
+function Assert-JournalTimestamp($Value) {
+  if (-not $Value) { throw 'Migration journal timestamp is missing.' }
+  $parsed = [DateTimeOffset]::MinValue
+  if (-not [DateTimeOffset]::TryParse([string]$Value,
+      [Globalization.CultureInfo]::InvariantCulture,
+      [Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed) -or
+      $parsed -eq [DateTimeOffset]::MinValue -or
+      $parsed -gt [DateTimeOffset]::UtcNow.AddMinutes(10)) {
+    throw 'Migration journal timestamp is invalid.'
+  }
+}
 function Write-CutoverJournal([string]$Phase) {
   $canonical = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'CyanDeck'))
   if (-not [string]::Equals($destination, $canonical, [StringComparison]::OrdinalIgnoreCase)) { return }
@@ -56,7 +67,9 @@ function Write-CutoverJournal([string]$Phase) {
     $previous = $null
     if (Test-Path -LiteralPath $journal -PathType Leaf) {
       $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
-      if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
+      Assert-JournalTimestamp $previous.RecordedAtUtc
+      Assert-JournalTimestamp $previous.RecordedAtUtc
+  if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
       -not $previous.RecordedAtUtc -or
           -not $previous.RecordedAtUtc -or
           -not [string]::Equals($previous.LegacyRoot, $legacy, [StringComparison]::OrdinalIgnoreCase) -or
