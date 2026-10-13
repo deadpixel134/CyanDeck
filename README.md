@@ -23,6 +23,19 @@ CyanDeck은 Windows 10/11 바탕화면 정리 및 Google Calendar 연동을 위�
 - Google Calendar 다중 캘린더 표시, 업로드 대상 선택, 로컬 전용 일정
 - 파일 삭제 보호, 진단·상태 복구, 서명 검증 업데이트
 
+## 공식 홈페이지 및 Google OAuth 안내
+
+CyanDeck 공식 안내 사이트는 GitHub Pages와 DuckDNS로 운영합니다.
+
+- 홈페이지: https://cyandeck.duckdns.org/
+- 개인정보처리방침: https://cyandeck.duckdns.org/privacy.html
+- 서비스 이용약관: https://cyandeck.duckdns.org/terms.html
+- 웹사이트 소스: https://github.com/deadpixel134/desktopdeck-oauth-site
+
+사이트의 이름 및 도메인이 변경되어 Google Auth Platform의 Branding
+설정도 새 URL과 일치해야 합니다. Google 사용자 데이터 접근 범위와
+로컬 전용 일정에 대한 안내는 개인정보처리방침에서 확인할 수 있습니다.
+
 ## 빌드 및 배포
 
 Windows에서 .NET 8 SDK와 PowerShell을 사용합니다.
