@@ -1773,7 +1773,7 @@ public partial class FenceWindow : Window
         RollButton.IsEnabled = _settings.EnableRollup;
         RollButton.Opacity = _settings.EnableRollup ? 1 : 0.38;
         ResizeGrip.Visibility = Model.RolledUp || Model.Locked || !CapabilityAllowed("Layout.MoveResizeGroups") ? Visibility.Collapsed : Visibility.Visible;
-        Title = $"DesktopDeck - {Model.Title}";
+        Title = $"CyanDeck - {Model.Title}";
         UpdateTitlebarPlacement();
         ApplyTitlebarMode(IsMouseOver);
         UpdateHeaderControls(IsMouseOver);
@@ -3166,7 +3166,7 @@ public partial class FenceWindow : Window
         }
         RefreshItems(IconMovementAnimationContext.ItemSetChanged);
         if (errors.Count > 0)
-            System.Windows.MessageBox.Show(string.Join(Environment.NewLine, errors.Take(6)), "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(string.Join(Environment.NewLine, errors.Take(6)), "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     /// <summary>
@@ -3353,7 +3353,7 @@ public partial class FenceWindow : Window
                 if (tab is null) return;
                 ItemsDetachToDesktopRequested?.Invoke(this, tab.Id, existing.Select(t => t.Source.Id).ToArray(), screen);
             }));
-            extras.Add(new("Remove selected from DesktopDeck group", () =>
+            extras.Add(new("Remove selected from CyanDeck group", () =>
             {
                 var tab = SelectedTab;
                 if (tab is null) return;
@@ -3470,7 +3470,7 @@ public partial class FenceWindow : Window
                 if (tab is null) return;
                 ItemsDetachToDesktopRequested?.Invoke(this, tab.Id, [tile.Source.Id], screen);
             }));
-            extras.Add(new("Remove from DesktopDeck group", () =>
+            extras.Add(new("Remove from CyanDeck group", () =>
             {
                 var tab = SelectedTab;
                 if (tab is null) return;
@@ -3585,7 +3585,7 @@ public partial class FenceWindow : Window
         if (IsProtectedDeletionTarget(tile.Path))
         {
             System.Windows.MessageBox.Show("드라이브 루트와 주요 Windows/사용자 폴더 이름은 여기서 변경할 수 없습니다.",
-                "DesktopDeck — 원본 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "CyanDeck — 원본 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         if (!File.Exists(tile.Path) && !Directory.Exists(tile.Path)) return;
@@ -3594,7 +3594,7 @@ public partial class FenceWindow : Window
         if (string.IsNullOrWhiteSpace(newName) || string.Equals(oldName, newName, StringComparison.Ordinal)) return;
         if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
-            System.Windows.MessageBox.Show("이름에 사용할 수 없는 문자가 포함되어 있습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("이름에 사용할 수 없는 문자가 포함되어 있습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         try
@@ -3611,7 +3611,7 @@ public partial class FenceWindow : Window
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -3631,7 +3631,7 @@ public partial class FenceWindow : Window
         {
             System.Windows.MessageBox.Show(this,
                 "바탕화면에 직접 저장된 파일·폴더만 이 기능으로 휴지통에 보낼 수 있습니다.\n외부 폴더와 드라이브는 그룹에서만 제거할 수 있습니다.",
-                "DesktopDeck — 원본 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "CyanDeck — 원본 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         var name = paths.Length == 1 ? $"'{Path.GetFileName(paths[0])}'" : $"선택한 {paths.Length}개 항목";
@@ -3639,11 +3639,11 @@ public partial class FenceWindow : Window
             $"{name}을(를) 실제 바탕화면에서 휴지통으로 이동하시겠습니까?\n\n" +
             "이는 그룹에서만 제거하는 동작이 아닙니다. 바탕화면 원본 파일·폴더가 휴지통으로 이동합니다.\n" +
             "취소하려면 '아니요'를 선택하세요.",
-            "DesktopDeck — 실제 파일 삭제 확인", MessageBoxButton.YesNo,
+            "CyanDeck — 실제 파일 삭제 확인", MessageBoxButton.YesNo,
             MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
         var result = DesktopRecycleService.RecycleConfirmed(paths, warning =>
             System.Windows.MessageBox.Show(this, warning,
-                "DesktopDeck — 영구 삭제 위험 추가 확인", MessageBoxButton.YesNo,
+                "CyanDeck — 영구 삭제 위험 추가 확인", MessageBoxButton.YesNo,
                 MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes);
         if (result.Recycled.Count != 0)
         {
@@ -3657,7 +3657,7 @@ public partial class FenceWindow : Window
             System.Windows.MessageBox.Show(this,
                 "일부 항목을 휴지통으로 이동하지 못했습니다. 실패 항목의 원본은 건드리지 않았습니다.\n\n" +
                 string.Join(Environment.NewLine, result.Errors.Take(8)),
-                "DesktopDeck — 휴지통 이동 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "CyanDeck — 휴지통 이동 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     /// <summary>
@@ -3673,9 +3673,9 @@ public partial class FenceWindow : Window
         var found = tab.Items.Count(i => ids.Contains(i.Id));
         if (found == 0) return;
         var message = found == 1
-            ? "이 항목을 DesktopDeck 그룹에서만 제거하시겠습니까?\n\n실제 원본 파일·폴더는 삭제하거나 이동하지 않습니다."
-            : $"선택한 {found}개 항목을 DesktopDeck 그룹에서만 제거하시겠습니까?\n\n실제 원본 파일·폴더는 삭제하거나 이동하지 않습니다.";
-        if (!confirmedByChoiceDialog && System.Windows.MessageBox.Show(this, message, "DesktopDeck — 원본 보호",
+            ? "이 항목을 CyanDeck 그룹에서만 제거하시겠습니까?\n\n실제 원본 파일·폴더는 삭제하거나 이동하지 않습니다."
+            : $"선택한 {found}개 항목을 CyanDeck 그룹에서만 제거하시겠습니까?\n\n실제 원본 파일·폴더는 삭제하거나 이동하지 않습니다.";
+        if (!confirmedByChoiceDialog && System.Windows.MessageBox.Show(this, message, "CyanDeck — 원본 보호",
                 MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
         tab.Items.RemoveAll(i => ids.Contains(i.Id));
         ClearFreeSelection();
@@ -3715,19 +3715,19 @@ public partial class FenceWindow : Window
         if (existing.Count == 0) return;
         if (existing.Any(t => IsProtectedDeletionTarget(t.Path)))
         {
-            System.Windows.MessageBox.Show("드라이브 루트 또는 주요 Windows/사용자 폴더는 DesktopDeck에서 삭제할 수 없습니다.\n원본 폴더를 보호하기 위해 이 작업을 취소했습니다.",
-                "DesktopDeck — 원본 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("드라이브 루트 또는 주요 Windows/사용자 폴더는 CyanDeck에서 삭제할 수 없습니다.\n원본 폴더를 보호하기 위해 이 작업을 취소했습니다.",
+                "CyanDeck — 원본 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         var label = existing.Count == 1 ? $"'{existing[0].Name}'" : $"선택한 {existing.Count}개 항목";
-        var result = System.Windows.MessageBox.Show($"{label}을(를) 휴지통으로 이동하시겠습니까?", "DesktopDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        var result = System.Windows.MessageBox.Show($"{label}을(를) 휴지통으로 이동하시겠습니까?", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (result != MessageBoxResult.Yes) return;
         var largeThreshold = Math.Clamp(_settings.LargeBatchOperationThreshold, 5, 500);
         if (_settings.ConfirmLargeBatchOperations && existing.Count >= largeThreshold)
         {
             var second = System.Windows.MessageBox.Show(
                 $"대량 작업입니다({existing.Count}개 항목). 선택한 항목을 모두 휴지통으로 이동하시겠습니까?",
-                "DesktopDeck — 대량 작업 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                "CyanDeck — 대량 작업 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (second != MessageBoxResult.Yes) return;
         }
         // Probe the entire selection, including every accessible descendant of
@@ -3735,7 +3735,7 @@ public partial class FenceWindow : Window
         var recycleRisk = RecycleBinPreflight.Assess(existing.Select(tile => tile.Path));
         if (recycleRisk.NeedsAdditionalConfirmation &&
             System.Windows.MessageBox.Show(this, recycleRisk.Warning,
-                "DesktopDeck — 영구 삭제 위험 추가 확인", MessageBoxButton.YesNo,
+                "CyanDeck — 영구 삭제 위험 추가 확인", MessageBoxButton.YesNo,
                 MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
         var errors = new List<string>();
         var deletedIds = new HashSet<Guid>();
@@ -3762,7 +3762,7 @@ public partial class FenceWindow : Window
         RefreshItems(IconMovementAnimationContext.ItemSetChanged);
         ModelChanged?.Invoke();
         if (errors.Count > 0)
-            System.Windows.MessageBox.Show(string.Join(Environment.NewLine, errors.Take(8)), "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(string.Join(Environment.NewLine, errors.Take(8)), "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private static bool IsProtectedDeletionTarget(string path)
@@ -3845,7 +3845,7 @@ public partial class FenceWindow : Window
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -3862,7 +3862,7 @@ public partial class FenceWindow : Window
     {
         try { ShortcutLaunchService.Open(path); }
         catch (ShortcutLaunchException ex) { ShortcutLaunchService.ReportFailure(ex); }
-        catch (Exception ex) { System.Windows.MessageBox.Show(ex.Message, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { System.Windows.MessageBox.Show(ex.Message, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private static void Reveal(string path)

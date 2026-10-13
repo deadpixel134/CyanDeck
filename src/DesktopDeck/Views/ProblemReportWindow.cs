@@ -18,7 +18,7 @@ internal sealed class ProblemReportWindow : Window
 
     public ProblemReportWindow(string report, bool fatal)
     {
-        Title = "DesktopDeck 문제 발생 — 개발자에게 오류 전달";
+        Title = "CyanDeck 문제 발생 — 개발자에게 오류 전달";
         Width = 620;
         Height = 500;
         MinWidth = 480;
@@ -42,7 +42,7 @@ internal sealed class ProblemReportWindow : Window
 
         var heading = new TextBlock
         {
-            Text = "DesktopDeck에서 문제가 발생했습니다.",
+            Text = "CyanDeck에서 문제가 발생했습니다.",
             FontSize = 19,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,

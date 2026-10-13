@@ -80,7 +80,7 @@ public partial class FenceWindow
                         error =>
                         {
                             if (error is not null)
-                                MessageBox.Show(this, error, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                MessageBox.Show(this, error, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
                             else if (cut) DeckCutClipboardVisualState.Mark(selectedPaths);
                             else DeckCutClipboardVisualState.Clear();
                         });
@@ -108,7 +108,7 @@ public partial class FenceWindow
                     if (!result.Completed)
                     {
                         if (!string.IsNullOrWhiteSpace(result.Error))
-                            MessageBox.Show(this, result.Error, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+                            MessageBox.Show(this, result.Error, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
                         return;
                     }
                     if (result.WasCut) DeckCutClipboardVisualState.Clear();

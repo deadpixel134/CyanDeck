@@ -39,7 +39,7 @@ public sealed class WpfPeekTaskbarButtonWindow : Window
         _togglePeek = togglePeek ?? throw new ArgumentNullException(nameof(togglePeek));
         _debounceMilliseconds = Math.Clamp(debounceMilliseconds, 150, 1000);
 
-        Title = "DesktopDeck Peek";
+        Title = "CyanDeck Peek";
         Width = 240;
         Height = 96;
         Left = -32000;
@@ -75,7 +75,7 @@ public sealed class WpfPeekTaskbarButtonWindow : Window
                 {
                     new TextBlock
                     {
-                        Text = "DesktopDeck Peek",
+                        Text = "CyanDeck Peek",
                         FontWeight = FontWeights.SemiBold,
                         FontSize = 16,
                     },
@@ -103,7 +103,7 @@ public sealed class WpfPeekTaskbarButtonWindow : Window
                 _hwnd,
                 PeekAppUserModelId,
                 relaunchCommand,
-                "DesktopDeck Peek",
+                "CyanDeck Peek",
                 icon.RelaunchIconResource);
         }
         catch

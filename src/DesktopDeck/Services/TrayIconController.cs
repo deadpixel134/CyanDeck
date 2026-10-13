@@ -53,7 +53,7 @@ internal sealed class TrayIconController : IDisposable
         _notify = new Forms.NotifyIcon
         {
             Icon = _ownedIcon ?? SystemIcons.Application,
-            Text = "DesktopDeck",
+            Text = "CyanDeck",
             ContextMenuStrip = _menu,
             Visible = true,
         };

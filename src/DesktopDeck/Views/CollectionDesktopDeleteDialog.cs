@@ -21,7 +21,7 @@ internal sealed class CollectionDesktopDeleteDialog : Window
 
     private CollectionDesktopDeleteDialog(int count)
     {
-        Title = "DesktopDeck — 바탕화면 항목 삭제";
+        Title = "CyanDeck — 바탕화면 항목 삭제";
         Width = 570;
         SizeToContent = SizeToContent.Height;
         MinHeight = 230;
@@ -45,7 +45,7 @@ internal sealed class CollectionDesktopDeleteDialog : Window
         panel.Children.Add(new TextBlock
         {
             Text = "휴지통으로 이동: 실제 바탕화면의 원본 파일·폴더를 휴지통에 넣습니다.\n" +
-                   "그룹에서만 제거: DesktopDeck에서만 숨기고 원본은 그대로 유지합니다.",
+                   "그룹에서만 제거: CyanDeck에서만 숨기고 원본은 그대로 유지합니다.",
             TextWrapping = TextWrapping.Wrap,
             FontSize = 13,
             Foreground = new SolidColorBrush(Color.FromRgb(221, 226, 236)),

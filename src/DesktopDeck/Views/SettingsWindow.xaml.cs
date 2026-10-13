@@ -91,10 +91,10 @@ public partial class SettingsWindow : Window
         Loaded += (_, _) => { if (SettingsNavigation.SelectedItem is null) NavGeneral.IsSelected = true; };
 
         var appVersion = Assembly.GetExecutingAssembly().GetName().Version;
-        AboutVersionText.Text = $"DesktopDeck {appVersion?.Major}.{appVersion?.Minor}.{appVersion?.Build}";
+        AboutVersionText.Text = $"CyanDeck {appVersion?.Major}.{appVersion?.Minor}.{appVersion?.Build}";
         AboutSchemaText.Text = $"설정 스키마: v{state.Version} · 지원: v{StateSchema.Current}";
         AboutModeText.Text = compatibilityReadOnly
-            ? "호환성 보호가 활성화되었습니다. 더 새로운 설정 스키마를 보존했으며, 호환 가능한 백업을 가져오거나 DesktopDeck을 업데이트할 때까지 이 세션에서는 레이아웃 상태를 저장하지 않습니다."
+            ? "호환성 보호가 활성화되었습니다. 더 새로운 설정 스키마를 보존했으며, 호환 가능한 백업을 가져오거나 CyanDeck을 업데이트할 때까지 이 세션에서는 레이아웃 상태를 저장하지 않습니다."
             : safeMode
                 ? "안전 모드가 활성화되었습니다. 바탕화면 Shell 연결, Windows 바탕화면 아이콘 변경, 파일 감시가 비활성화됩니다."
                 : "일반 바탕화면 통합 모드가 활성화되었습니다.";
@@ -636,7 +636,7 @@ public partial class SettingsWindow : Window
             DiagnosticsLog.Error("Settings apply failed", ex);
             MessageBox.Show(this,
                 $"설정 저장 이후 실행 상태 적용에 실패했을 수 있습니다. 값은 임의로 되돌리지 않았습니다. 진단 로그를 확인하고 프로그램을 다시 시작하세요.\n\n{ex.Message}",
-                "DesktopDeck 설정", MessageBoxButton.OK, MessageBoxImage.Error);
+                "CyanDeck 설정", MessageBoxButton.OK, MessageBoxImage.Error);
             // A runtime failure after an already successful commit cannot be
             // rolled back safely here; report it instead of claiming a rollback.
             return false;
@@ -920,7 +920,7 @@ public partial class SettingsWindow : Window
 
     private void ResetMonitorLayouts_Click(object sender, RoutedEventArgs e)
     {
-        var answer = MessageBox.Show(this, "저장된 모니터 레이아웃 기록을 지우시겠습니까? 현재 그룹 위치는 유지되며, 모니터별/비율 조정 모드에서는 현재 배치가 새 기준이 됩니다.", "DesktopDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        var answer = MessageBox.Show(this, "저장된 모니터 레이아웃 기록을 지우시겠습니까? 현재 그룹 위치는 유지되며, 모니터별/비율 조정 모드에서는 현재 배치가 새 기준이 됩니다.", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes) return;
         _resetMonitorLayouts();
     }
@@ -1077,7 +1077,7 @@ public partial class SettingsWindow : Window
     {
         StartupHealthService.Reset();
         StartupHealthText.Text = "최근 비정상 시작이 감지되지 않았습니다.";
-        MessageBox.Show(this, "시작 충돌 반복 기록을 초기화했습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(this, "시작 충돌 반복 기록을 초기화했습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
     }
     private void FactoryReset_Click(object sender, RoutedEventArgs e)
     {
@@ -1352,7 +1352,7 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(this,
                 "해당 위치의 배경화면 색상을 가져오지 못했습니다. 네트워크 배경화면과 지원하지 않는 이미지 형식은 샘플링하지 않습니다.",
-                "DesktopDeck",
+                "CyanDeck",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -1360,7 +1360,7 @@ public partial class SettingsWindow : Window
         {
             MessageBox.Show(this,
                 "호환성 읽기 전용 보호가 활성화된 동안에는 모양 설정을 변경할 수 없습니다.",
-                "DesktopDeck",
+                "CyanDeck",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -1377,7 +1377,7 @@ public partial class SettingsWindow : Window
     private void ClearIconCache_Click(object sender, RoutedEventArgs e)
     {
         _clearIconCache();
-        MessageBox.Show(this, "메모리의 아이콘/미리보기 캐시를 비웠습니다. 표시 중인 그룹은 필요할 때 다시 채웁니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(this, "메모리의 아이콘/미리보기 캐시를 비웠습니다. 표시 중인 그룹은 필요할 때 다시 채웁니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
     }
     private void ValidateConfiguration_Click(object sender, RoutedEventArgs e) => _validateConfiguration();
     private void PageDurationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
