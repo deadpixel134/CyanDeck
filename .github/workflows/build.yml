@@ -25,6 +25,9 @@ jobs:
         run: |
           python tools/run_v43_safety_regressions.py
           python tools/test_v45_recycle_bin_preflight.py
+      - name: CyanDeck migration PowerShell smoke tests
+        shell: pwsh
+        run: ./tools/test_cyandeck_migration_smoke.ps1
       - name: WPF build for ${{ matrix.runtime }}
         run: dotnet build src/DesktopDeck/DesktopDeck.csproj --configuration Release --runtime ${{ matrix.runtime }}
       - name: Calendar domain tests
