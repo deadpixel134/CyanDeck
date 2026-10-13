@@ -270,43 +270,102 @@ try {
     $actualHash = (Get-FileHash -LiteralPath $Package -Algorithm SHA256).Hash
     if ($actualHash -ine $ExpectedSha256) { throw 'Staged update package SHA-256 mismatch. Update cancelled.' }
 
-    # Validate all ZIP entry paths BEFORE extraction. Reject traversal,
-    # device/absolute paths, unknown files, deep trees and oversized archives.
+    # Validate every ZIP entry before extraction: exactly one flat payload or
+    # one wrapped payload directory. Ignoring sibling roots would allow a
+    # signed release to conceal extra files beyond the installed EXE folder.
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($Package)
+    $payloadPrefix = $null
+    $rootFiles = $false
+    $declaredDirs = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $seenEntries = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $allowedZipFiles = @($managedNames) + @('README.md')
     try {
-      if ($archive.Entries.Count -gt 35) { throw 'Unexpectedly large update ZIP file table.' }
+      if ($archive.Entries.Count -eq 0 -or $archive.Entries.Count -gt 35) {
+        throw 'Unexpected update ZIP file table size.'
+      }
       $totalSize = [long]0
+      $exeCount = 0
       foreach ($entry in $archive.Entries) {
         $relative = $entry.FullName.Replace('\', '/')
         if ([string]::IsNullOrWhiteSpace($relative) -or
             $relative.StartsWith('/') -or $relative.Contains(':') -or
-            $relative -match '[\x00-\x1f<>|?*]' -or
-            @($relative.Split('/')) -contains '..' -or
-            @($relative.Split('/')) -contains '.' -or
-            @($relative.TrimEnd('/').Split('/')) -contains '') {
+            $relative -match '[\x00-\x1f<>|?*]') {
           throw 'Unsafe path in update ZIP.'
         }
+        $isDir = $relative.EndsWith('/')
         $parts = @($relative.TrimEnd('/').Split('/'))
-        if ($parts.Count -gt 2) { throw 'Nested paths are forbidden in update ZIP.' }
-        if ($relative.EndsWith('/')) {
-          if ($parts.Count -ne 1) { throw 'Nested directories are forbidden in update ZIP.' }
+        if ($parts.Count -gt 2 -or $parts.Count -eq 0 -or
+            @($parts | Where-Object { $_ -eq '' -or $_ -eq '.' -or $_ -eq '..' -or $_.EndsWith('.') -or $_.EndsWith(' ') }).Count -gt 0 -or
+            ($isDir -and $parts.Count -ne 1)) {
+          throw 'Unexpected path depth in update ZIP.'
+        }
+        if (-not $seenEntries.Add($relative.TrimEnd('/'))) {
+          throw 'Duplicate update ZIP entry (case-insensitive).'
+        }
+        $unixType = (($entry.ExternalAttributes -shr 16) -band 0xF000)
+        $windowsAttrs = (($entry.ExternalAttributes -shr 16) -band 0xFFFF)
+        if ($unixType -eq 0xA000 -or ($windowsAttrs -band [int][IO.FileAttributes]::ReparsePoint) -ne 0) {
+          throw 'Update ZIP includes a link.'
+        }
+        if ($isDir) {
+          if ($entry.Length -ne 0 -or $parts[0] -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') {
+            throw 'Unsafe update ZIP directory.'
+          }
+          [void]$declaredDirs.Add($parts[0])
           continue
         }
-        if ($parts[-1] -cnotin $managedNames -and $parts[-1] -ne 'README.md') {
-          throw 'Update ZIP includes a non-application file.'
+        $name = $parts[-1]
+        if ($name -cnotin $allowedZipFiles) { throw 'Update ZIP includes a non-application file.' }
+        if ($parts.Count -eq 1) {
+          $rootFiles = $true
+        } else {
+          if ($parts[0] -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') {
+            throw 'Unsafe update ZIP root directory.'
+          }
+          if ($null -eq $payloadPrefix) { $payloadPrefix = $parts[0] }
+          elseif (-not [string]::Equals($payloadPrefix, $parts[0], [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Update ZIP contains multiple payload directories.'
+          }
         }
-        $totalSize += $entry.Length
-        if ($entry.Length -gt 1000000000 -or $totalSize -gt 1500000000) {
+        if ($name -ceq 'DesktopDeck.exe') { $exeCount++ }
+        if ($entry.Length -lt 0 -or $entry.Length -gt 1000000000 -or
+            $totalSize -gt (1500000000 - $entry.Length)) {
           throw 'Update ZIP expanded size limit exceeded.'
         }
+        $totalSize += $entry.Length
+      }
+      if ($exeCount -ne 1) { throw 'The package must contain exactly one DesktopDeck.exe.' }
+      if ($rootFiles -and $null -ne $payloadPrefix) {
+        throw 'Update ZIP mixes root files and a nested payload.'
+      }
+      if ($declaredDirs.Count -gt 0 -and ($null -eq $payloadPrefix -or
+          $declaredDirs.Count -ne 1 -or -not $declaredDirs.Contains($payloadPrefix))) {
+        throw 'Update ZIP has an unexpected directory.'
       }
     } finally { $archive.Dispose() }
     New-Item -ItemType Directory -Path $tempRoot -ErrorAction Stop | Out-Null
     Expand-Archive -LiteralPath $Package -DestinationPath $tempRoot -ErrorAction Stop
     $exes = @(Get-ChildItem -LiteralPath $tempRoot -Filter DesktopDeck.exe -File -Recurse)
     if ($exes.Count -ne 1) { throw 'The package must contain exactly one DesktopDeck.exe.' }
-    $payloadDir = Split-Path -Parent $exes[0].FullName
+    $payloadDir = if ($null -ne $payloadPrefix) { Join-Path $tempRoot $payloadPrefix } else { $tempRoot }
+    # Ensure extraction produced exactly the validated root; reject ignored
+    # sibling directories and reparse points, not just files inside payloadDir.
+    foreach ($item in (Get-ChildItem -LiteralPath $tempRoot -Force)) {
+      if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Update ZIP extraction produced a link.'
+      }
+      if ($null -ne $payloadPrefix -and
+          ($item.Name -cne $payloadPrefix -or -not $item.PSIsContainer)) {
+        throw 'Update ZIP extraction produced an unexpected sibling.'
+      }
+      if ($null -eq $payloadPrefix -and $item.PSIsContainer) {
+        throw 'Update ZIP extraction produced an unexpected directory.'
+      }
+    }
+    if (-not [string]::Equals($payloadDir, (Split-Path -Parent $exes[0].FullName), [StringComparison]::OrdinalIgnoreCase)) {
+      throw 'Update ZIP executable escaped the selected payload root.'
+    }
     # Fail closed: no unrecognized content or nested directories in the payload.
     foreach ($item in (Get-ChildItem -LiteralPath $payloadDir -Force)) {
       if ($item.PSIsContainer -or $item.Name -cnotin $managedNames -and $item.Name -ne 'README.md') {

@@ -182,11 +182,10 @@ public static class UpdateService
             throw new InvalidDataException($"Update package SHA-256 mismatch. Expected {expected}; got {actual}.");
         }
 
+        // Reject ambiguous/mixed-root ZIPs before publishing a staged update.
+        // The PowerShell installer validates the layout again after shutdown.
         using (var archive = ZipFile.OpenRead(temp))
-        {
-            if (!archive.Entries.Any(e => string.Equals(Path.GetFileName(e.FullName), "DesktopDeck.exe", StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidDataException("The update ZIP does not contain DesktopDeck.exe.");
-        }
+            UpdatePackageLayoutPolicy.Validate(archive);
         File.Move(temp, destination, true);
         return destination;
     }

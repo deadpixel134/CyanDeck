@@ -114,6 +114,21 @@ mutexes.** These safeguards do not yet permit a safe live profile cutover;
 the future transition must also handle older executables and downgrades
 without trusting that every old copy participates.
 
+## Signed ZIP handoff safety and rollback (implemented; no EXE rename)
+
+The update staging service and PowerShell installer now agree on the signed
+legacy ZIP layout: one flat set of allowlisted files, **or** one wrapper
+directory containing only those files. Multiple sibling roots, root/nested
+mixtures, duplicate case-insensitive paths, links, unsafe paths, and a second
+uncoordinated `CyanDeck.exe` are rejected before replacing the installed EXE.
+The original `DesktopDeck.exe` remains mandatory during this compatibility
+phase. The updater keeps an allowlisted rollback snapshot and a recovery
+journal before any replacement; no unrelated installation files are deleted.
+
+PowerShell 5.1 and 7 CI now execute real disposable ZIP installs, adversarial
+package rejection, and an actual application-file rollback. These tests do
+**not** activate the new profile or constitute a safe cross-EXE cutover.
+
 ## Future cutover (not yet implemented)
 
 1. Freeze writes and stop all DesktopDeck processes.

@@ -1,8 +1,46 @@
 using DesktopDeck.Calendar;
 using DesktopDeck.Services;
 using System.Text.Json;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+
+// ZIP contents are security boundaries even after the manifest signature:
+// reject side-by-side roots, duplicate names, traversal, and alternate EXEs.
+static bool AcceptUpdateZip(params string[] entryNames)
+{
+    using var data = new MemoryStream();
+    using (var writer = new ZipArchive(data, ZipArchiveMode.Create, leaveOpen: true))
+    {
+        foreach (var name in entryNames)
+        {
+            using var stream = writer.CreateEntry(name).Open();
+            if (!name.EndsWith('/'))
+                stream.WriteByte(42);
+        }
+    }
+    data.Position = 0;
+    using var reader = new ZipArchive(data, ZipArchiveMode.Read);
+    try { UpdatePackageLayoutPolicy.Validate(reader); return true; }
+    catch (InvalidDataException) { return false; }
+}
+Assert.That(AcceptUpdateZip("DesktopDeck.exe", "README.md"),
+    "legacy package supports flat signed payload");
+Assert.That(AcceptUpdateZip("DesktopDeck-7.49.6-win-x64/", "DesktopDeck-7.49.6-win-x64/DesktopDeck.exe", "DesktopDeck-7.49.6-win-x64/README.md"),
+    "legacy package supports one wrapped signed payload");
+Assert.That(!AcceptUpdateZip("a/DesktopDeck.exe", "b/README.md"),
+    "signed package refuses sibling payload directories");
+Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "sub/README.md"),
+    "signed package refuses mixed flat and nested content");
+Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "desktopdeck.exe"),
+    "signed package refuses case-insensitive filename collisions");
+Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "DesktopDeck.exe"),
+    "signed package refuses duplicate ZIP entries");
+Assert.That(!AcceptUpdateZip("DesktopDeck.exe", "CyanDeck.exe"),
+    "legacy channel refuses uncoordinated CyanDeck executable handoff");
+Assert.That(!AcceptUpdateZip("nested/../DesktopDeck.exe"),
+    "signed package refuses traversal");
+Assert.That(!AcceptUpdateZip("README.md"), "signed package requires legacy executable");
 
 // Exercise the production singleton lifecycle on a test-only mutex name.
 var singletonName = @"Local\CyanDeck.SingletonLifecycleTest." + Guid.NewGuid().ToString("N");

@@ -65,6 +65,12 @@ jobs:
       - name: CyanDeck installer/updater cutover guards (Windows PowerShell 5.1)
         shell: powershell
         run: ./tools/test_cyandeck_install_update_guards.ps1
+      - name: CyanDeck update ZIP handoff and rollback (PowerShell 7)
+        shell: pwsh
+        run: ./tools/test_cyandeck_update_package_layout.ps1
+      - name: CyanDeck update ZIP handoff and rollback (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tools/test_cyandeck_update_package_layout.ps1
       - name: Execute calendar and desktop regression harnesses
         shell: pwsh
         run: |

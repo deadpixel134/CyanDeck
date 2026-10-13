@@ -40,6 +40,12 @@ jobs:
       - name: CyanDeck installer/updater cutover guards (Windows PowerShell 5.1)
         shell: powershell
         run: ./tools/test_cyandeck_install_update_guards.ps1
+      - name: CyanDeck update ZIP handoff and rollback (PowerShell 7)
+        shell: pwsh
+        run: ./tools/test_cyandeck_update_package_layout.ps1
+      - name: CyanDeck update ZIP handoff and rollback (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tools/test_cyandeck_update_package_layout.ps1
       - name: WPF build for ${{ matrix.runtime }}
         run: dotnet build src/DesktopDeck/DesktopDeck.csproj --configuration Release --runtime ${{ matrix.runtime }}
       - name: Calendar domain tests
