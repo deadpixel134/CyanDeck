@@ -163,6 +163,10 @@ checks.update({
     "prepared root requires layout file": 'File.Exists(Path.Combine(CyanRoaming, "layout.json"))' in prepared_root_contract,
     "prepared root never changes active path": "ActiveRoaming => LegacyRoaming" in prepared_root_contract,
 })
+checks.update({
+    "migration blocks both executable identities": "Get-Process -Name DesktopDeck,CyanDeck" in migration_preflight,
+    "migration retains legacy data": "Original DesktopDeck data remains untouched." in migration_preflight,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
