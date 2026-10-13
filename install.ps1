@@ -74,8 +74,58 @@ Assert-ShortcutBelongsToDesktopDeck $shortcut $expectedExe
 Assert-ShortcutBelongsToDesktopDeck $cyanShortcut $expectedExe
 if ($CreateDesktopShortcut) { Assert-ShortcutBelongsToDesktopDeck $desktopShortcut $expectedExe }
 
+# This installer remains a legacy-profile application. It must not put an
+# old DesktopDeck.exe back on disk after a future CyanDeck profile cutover.
+# Presence of the cutover fence is a hard stop even when JSON is malformed.
+function Assert-LegacyWriterFenceAbsent {
+  $fencePath = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'DesktopDeck\migration\legacy-writer-fenced.json'))
+  $cursor = $fencePath
+  while ($cursor) {
+    $attributes = $null
+    try { $attributes = [IO.File]::GetAttributes($cursor) }
+    catch [IO.FileNotFoundException] { }
+    catch [IO.DirectoryNotFoundException] { }
+    if ($null -ne $attributes) {
+      if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Unsafe CyanDeck legacy profile fence path: $cursor"
+      }
+      if ([string]::Equals($cursor, $fencePath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'CyanDeck profile cutover fence is present. Legacy DesktopDeck reinstall/downgrade is blocked.'
+      }
+    }
+    $parent = [IO.Path]::GetDirectoryName($cursor.TrimEnd('\', '/'))
+    if (-not $parent -or $parent -eq $cursor) { break }
+    $cursor = $parent
+  }
+}
+
+# Acquire in the same order as the application and migration tool. The old
+# mutex excludes released DesktopDeck builds; the new lease spans future EXE
+# renames. Hold both until all installed files and shortcuts are committed.
+$legacyInstallMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
+$writerInstallMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
+$ownsLegacyInstallMutex = $false
+$ownsWriterInstallMutex = $false
+try {
+  try { $ownsLegacyInstallMutex = $legacyInstallMutex.WaitOne(0) }
+  catch [Threading.AbandonedMutexException] {
+    $ownsLegacyInstallMutex = $true
+    throw 'A previous DesktopDeck instance stopped unexpectedly. Inspect its data before installing.'
+  }
+  if (-not $ownsLegacyInstallMutex) {
+    throw 'DesktopDeck is running or another installer is active. Close it before installing.'
+  }
+  try { $ownsWriterInstallMutex = $writerInstallMutex.WaitOne(0) }
+  catch [Threading.AbandonedMutexException] {
+    $ownsWriterInstallMutex = $true
+    throw 'A legacy-profile writer stopped unexpectedly. Inspect its data before installing.'
+  }
+  if (-not $ownsWriterInstallMutex) {
+    throw 'Another CyanDeck writer or data migration holds the legacy profile. Installation cancelled.'
+  }
+  Assert-LegacyWriterFenceAbsent
 # Do not terminate the process while layout/calendar writes may be in flight.
-if (@(Get-Process DesktopDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is running. Please exit from the tray menu and retry the installer.'
 }
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
@@ -127,3 +177,10 @@ if ($StartWithWindows) {
 
 Write-Host "Installed CyanDeck to: $installDir"
 Write-Host "Start Menu shortcut: $cyanShortcut (legacy: $shortcut)"
+
+} finally {
+  if ($ownsWriterInstallMutex) { $writerInstallMutex.ReleaseMutex() }
+  $writerInstallMutex.Dispose()
+  if ($ownsLegacyInstallMutex) { $legacyInstallMutex.ReleaseMutex() }
+  $legacyInstallMutex.Dispose()
+}
