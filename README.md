@@ -69,3 +69,15 @@ CyanDeck.exe, 호환되는 DesktopDeck.exe, PREVIEW-README.txt가 함께 있습�
 본체는 여전히 %APPDATA%\DesktopDeck을 사용하며 기존 설치 경로에
 덮어쓰면 안 됩니다. 미서명·Google 로그인 미설정 개발용으로 정식 설치
 파일이나 업데이트 또는 마이그레이션 패키지가 아닙니다.
+
+
+### 전환 준비 상태 점검 (읽기 전용)
+
+DesktopDeck/CyanDeck를 모두 종료하고 소스 폴더에서 다음 명령으로
+기존 데이터와 준비된 복사본의 무결성 및 전환 차단 요소를 점검합니다.
+
+    pwsh -File tools/check-cyandeck-cutover-readiness.ps1 -Json
+
+점검 결과는 상태와 사유 코드만 출력하며 사용자 일정/토큰/경로는
+출력하지 않습니다. verified-copy 상태도 실제 전환 허가가 아니며,
+기존 파일, 데이터 경로, 실행 프로그램, 마이그레이션 기록을 수정하지 않습니다.

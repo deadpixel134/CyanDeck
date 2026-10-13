@@ -202,3 +202,24 @@ disposable desktop files and calendar data. A different extraction directory
 inside a production account DOES NOT isolate its profile. Never copy the
 artifact into the installed DesktopDeck directory. The legacy signed release,
 application icon, update ZIP and original data paths have not changed.
+
+
+## Phase 2 read-only cutover readiness audit (implemented)
+
+After closing DesktopDeck and CyanDeck, run from the source checkout:
+
+    pwsh -File tools/check-cyandeck-cutover-readiness.ps1 -Json
+
+The audit holds both writer mutexes while checking running processes,
+legacy and candidate profile contents (SHA-256 file comparisons and complete
+directory sets), linked/junction paths, the schema and calendar recovery JSON,
+the version-1 migration journal, and the reserved legacy cutover fence.
+Its output includes only condition and reason codes, never private file
+paths, calendar contents, tokens or user data. No journal or file is written.
+
+Conditions: no-legacy-profile, needs-preparation, needs-verification,
+verified-copy, blocked. Even with verified-copy, CutoverAllowed is ALWAYS
+false: the signed installer/EXE/profile handoff is still not implemented.
+This is an instantaneous audit and does not reserve readiness for a later
+cutover. The CI fixture uses disposable simulated roaming/local profiles in
+PowerShell 7 and Windows PowerShell 5.1; it never uses real user data.

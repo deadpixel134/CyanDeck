@@ -34,6 +34,12 @@ jobs:
       - name: CyanDeck migration Windows PowerShell 5.1 compatibility
         shell: powershell
         run: ./tools/test_cyandeck_migration_smoke.ps1
+      - name: CyanDeck read-only cutover readiness (PowerShell 7)
+        shell: pwsh
+        run: ./tools/test_cyandeck_cutover_readiness.ps1
+      - name: CyanDeck read-only cutover readiness (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tools/test_cyandeck_cutover_readiness.ps1
       - name: CyanDeck installer/updater cutover guards (PowerShell 7)
         shell: pwsh
         run: ./tools/test_cyandeck_install_update_guards.ps1
