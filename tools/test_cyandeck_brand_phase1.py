@@ -216,6 +216,12 @@ checks.update({
     "migration abort preserves profile data": "Record(Aborted);" in journal_review and "previous.Phase == Aborted" in journal_review,
     "migration abort does not activate candidate": "ActiveRoaming => LegacyRoaming" in root_readiness,
 })
+checks.update({
+    "migration journal serializes writers": 'FileShare.None' in journal_review and 'JournalPath + ".lock"' in journal_review,
+    "migration journal requires prepared verification": "previous.Phase != Prepared" in journal_review,
+    "migration journal flushes before rename": "output.Flush(flushToDisk: true)" in journal_review,
+    "migration journal uses atomic rename": "File.Move(temporary, JournalPath, overwrite: true)" in journal_review,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
