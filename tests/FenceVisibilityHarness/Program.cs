@@ -43,6 +43,31 @@ foreach (var attached in new[] { false, true })
 }
 Console.WriteLine($"PASS: {nativeRecoveryScenarios} Show Desktop visibility combinations");
 
+// Regression: Explorer WorkerW can obscure all groups without minimizing or
+// hiding a single HWND. Older builds attempted one repair and then permanently
+// suppressed retries until the desktop became healthy on its own.
+var now = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
+var last = now.AddMinutes(-3);
+static bool ShouldRepair(bool missing, bool hidden, int count, DateTime now, DateTime last, bool queued = false)
+    => DesktopShowDesktopRecoveryPolicy.ShouldSchedulePersistentRepair(missing, hidden, count, now, last, queued);
+if (ShouldRepair(false, false, 10, now, last) ||
+    ShouldRepair(true, false, 1, now, last) ||
+    ShouldRepair(true, false, 2, now, last))
+    throw new Exception("Healthy or transient desktop-band probes must never trigger a Z-order change.");
+if (!ShouldRepair(true, false, 3, now, last))
+    throw new Exception("Three persistent displaced-but-visible probes must permit a repair.");
+if (ShouldRepair(true, false, 10, now, now.AddSeconds(-29)) ||
+    ShouldRepair(true, false, 10, now, last, queued: true))
+    throw new Exception("Persistent repairs must respect the 30-second throttle and pending timer.");
+if (!ShouldRepair(true, false, 10, now.AddSeconds(31), now))
+    throw new Exception("Still missing after one repair must be retried after the cooldown.");
+if (!ShouldRepair(true, true, 1, now, last))
+    throw new Exception("Native hidden/minimized HWND should be repaired without the displacement debounce.");
+if (ShouldRepair(false, true, 20, now, last))
+    throw new Exception("Intentionally hidden quick-hide/page surfaces must never be auto-restored.");
+Console.WriteLine("PASS: persistent displaced-window recovery debounce and retry safety");
+
+
 
 // Standalone icons and the Recycle Bin have independently configurable opacity.
 // No WPF or native HWND is needed to test this decision policy.

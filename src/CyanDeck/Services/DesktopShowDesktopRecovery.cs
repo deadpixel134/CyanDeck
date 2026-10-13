@@ -7,7 +7,7 @@ using CyanDeck.Interop;
 namespace CyanDeck.Services;
 
 /// <summary>
-/// One-shot, non-activating recovery for desktop-only WPF surfaces minimized/hidden
+/// Rate-limited, non-activating recovery for desktop-only WPF surfaces minimized/hidden
 /// by Windows Show Desktop (Win+D / taskbar corner). Native watchdog ticks are
 /// read-only when healthy; no Explorer messages or focus-activation retries.
 /// A caller-supplied policy excludes intentional page/quick-hide and failed calendar
@@ -20,7 +20,7 @@ internal sealed class DesktopShowDesktopRecovery : IDisposable
     private readonly Action _restoreDesktopBand;
     private readonly Func<bool> _isInDesktopBand;
     private readonly DispatcherTimer _nativeProbe;
-    private bool _incidentAttempted;
+    private int _unhealthyProbeCount;
     private readonly DispatcherTimer _timer;
     private DateTime _lastAttemptUtc = DateTime.MinValue;
     private bool _disposed;
@@ -78,22 +78,28 @@ internal sealed class DesktopShowDesktopRecovery : IDisposable
         // Ordinary application focus changes must never initiate a desktop Z-order move.
         // Native hidden/minimized state, however, is an observable Show Desktop failure.
         var shellForeground = IsExplorerDesktopOrTaskbarForeground();
+        var nativeVisible = NativeMethods.IsWindowVisible(hwnd);
+        var nativeMinimized = NativeMethods.IsIconic(hwnd);
+        var wpfMinimized = _window.WindowState == WindowState.Minimized;
         var displaced = shellForeground && !_isInDesktopBand();
-        if (!DesktopShowDesktopRecoveryPolicy.NeedsRecovery(true, _window.IsVisible,
-            _window.WindowState == WindowState.Minimized, NativeMethods.IsWindowVisible(hwnd),
-            NativeMethods.IsIconic(hwnd), shellForeground, !displaced))
+        var needsRecovery = DesktopShowDesktopRecoveryPolicy.NeedsRecovery(
+            true, _window.IsVisible, wpfMinimized, nativeVisible,
+            nativeMinimized, shellForeground, !displaced);
+        if (!needsRecovery)
         {
-            _incidentAttempted = false;
+            _unhealthyProbeCount = 0;
             return;
         }
 
-        // Exactly one automatically scheduled repair per observed incident, and
-        // at least 30s between native watchdog attempts. No repaint/focus loop.
-        if (_incidentAttempted || DateTime.UtcNow - _lastAttemptUtc < TimeSpan.FromSeconds(30)) return;
-        _incidentAttempted = true;
-        DiagnosticsLog.Info($"Show Desktop read-only probe detected missing surface: minimized={NativeMethods.IsIconic(hwnd)}, "
-            + $"nativeVisible={NativeMethods.IsWindowVisible(hwnd)}, wpfVisible={_window.IsVisible}, "
-            + $"desktopForeground={shellForeground}, displaced={displaced}");
+        _unhealthyProbeCount = Math.Min(10, _unhealthyProbeCount + 1);
+        var hidden = !nativeVisible || nativeMinimized || !_window.IsVisible || wpfMinimized;
+        if (!DesktopShowDesktopRecoveryPolicy.ShouldSchedulePersistentRepair(
+            needsRecovery, hidden, _unhealthyProbeCount, DateTime.UtcNow,
+            _lastAttemptUtc, _timer.IsEnabled)) return;
+        DiagnosticsLog.Info($"Show Desktop read-only probe detected missing surface: minimized={nativeMinimized}, "
+            + $"nativeVisible={nativeVisible}, wpfVisible={_window.IsVisible}, "
+            + $"desktopForeground={shellForeground}, displaced={displaced}; "
+            + $"unhealthyProbes={_unhealthyProbeCount}; recovery=rate-limited");
         Schedule();
     }
 
@@ -142,6 +148,17 @@ internal sealed class DesktopShowDesktopRecovery : IDisposable
             // Realign only after a native disappearance, not on normal focus changes.
             // DesktopHost no-ops if the HWND is already in the desktop band.
             _restoreDesktopBand();
+            // A successful call does not guarantee Explorer kept the window in
+            // its band. Leave the incident retryable if Windows reordered hosts.
+            if (_window.IsVisible && _window.WindowState != WindowState.Minimized &&
+                NativeMethods.IsWindowVisible(hwnd) && !NativeMethods.IsIconic(hwnd) &&
+                _isInDesktopBand())
+            {
+                _unhealthyProbeCount = 0;
+                DiagnosticsLog.Info("Show Desktop automatic desktop-band recovery verified");
+            }
+            else
+                DiagnosticsLog.Warn("Show Desktop recovery attempted; surface still outside desktop band or hidden");
         }
         catch (Exception ex)
         {
