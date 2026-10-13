@@ -19,6 +19,19 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Reject unsupported cutover requests even when an instance is already
+        // running. Otherwise the second instance would send an activation IPC
+        // and exit successfully without ever examining the invalid option.
+        if (e.Args.Any(a => string.Equals(a, "--activate-cyandeck", StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(
+                "이 버전은 CyanDeck 데이터 저장 경로 전환을 지원하지 않습니다.\\n" +
+                "기존 데이터는 변경되지 않았습니다.",
+                "CyanDeck - 데이터 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(-1);
+            return;
+        }
+
         WaitForPriorInstanceIfRequested(e.Args);
         var safeMode = e.Args.Any(a => string.Equals(a, "--safe-mode", StringComparison.OrdinalIgnoreCase));
         var ignoreCrashLoop = e.Args.Any(a => string.Equals(a, "--ignore-crash-loop", StringComparison.OrdinalIgnoreCase));
@@ -38,28 +51,24 @@ public partial class App : Application
             return;
         }
 
-        // Refuse startup if an external migration has installed a writer fence.
-        // Keep the legacy mutex held while checking so a cooperating cutover
-        // cannot race this startup. This build never activates CyanDeck itself.
-        CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
-
-        // A command-line activation request must never be silently ignored:
-        // otherwise a launcher could claim CyanDeck was activated while all
-        // stores continue writing to the legacy profile. Fail before startup.
-        if (e.Args.Any(a => string.Equals(a, "--activate-cyandeck", StringComparison.OrdinalIgnoreCase)))
+        // Hold the legacy singleton mutex while checking the cutover fence.
+        // Never start any persistent store if the fence is present or unsafe.
+        try
         {
-            throw new InvalidOperationException(
-                "CyanDeck profile activation is not supported by this build. " +
-                "The legacy DesktopDeck profile remains authoritative.");
+            CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
+            // A verified journal is not sufficient to activate a data root.
+            if (CyanDeckCutoverJournal.IsSafeToActivateAtStartup())
+                throw new InvalidOperationException(
+                    "CyanDeck profile activation requires coordinated writer fencing.");
         }
-
-        // Keep the legacy profile authoritative until the old/new writer fence
-        // and downgrade path are implemented. A verified migration journal alone
-        // must never trigger an automatic profile switch.
-        if (CyanDeckCutoverJournal.IsSafeToActivateAtStartup())
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
         {
-            throw new InvalidOperationException(
-                "CyanDeck profile activation requires coordinated writer fencing.");
+            MessageBox.Show(
+                "데이터 저장소 보호 검사로 인해 CyanDeck 실행을 중단했습니다.\\n" +
+                "데이터는 변경하지 않았습니다. 호환 버전 또는 전환 상태를 확인하세요.\\n\\n" + ex.Message,
+                "CyanDeck - 데이터 보호", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(-1);
+            return;
         }
 
         _controller = new AppController(Dispatcher, safeMode, ignoreCrashLoop, managedPolicyPath);
