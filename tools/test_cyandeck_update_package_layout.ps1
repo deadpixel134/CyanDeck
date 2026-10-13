@@ -37,8 +37,15 @@ try {
 
   function Invoke-Update([string]$Zip, [bool]$ShouldSucceed) {
     $hash = (Get-FileHash -LiteralPath $Zip -Algorithm SHA256).Hash
-    $result = & $shell -NoProfile -ExecutionPolicy Bypass -File $script -InstallDir $installed -Package $Zip -ExpectedSha256 $hash 2>&1 | Out-String
-    $exitCode = $LASTEXITCODE
+    # Windows PowerShell 5.1 reports native stderr as NativeCommandError.
+    # A deliberately rejected ZIP must be observed via exit code, not raise
+    # a terminating exception before the test can assert no files changed.
+    $savedPreference = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = 'Continue'
+      $result = & $shell -NoProfile -ExecutionPolicy Bypass -File $script -InstallDir $installed -Package $Zip -ExpectedSha256 $hash 2>&1 | Out-String
+      $exitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $savedPreference }
     if (($exitCode -eq 0) -ne $ShouldSucceed) {
       throw "Unexpected updater result for $Zip (exit=$exitCode): $result"
     }
