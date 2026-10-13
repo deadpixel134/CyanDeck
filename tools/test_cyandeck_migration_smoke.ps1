@@ -25,6 +25,18 @@ try {
   if ($entry.Phase -ne 'verified' -or $entry.Version -ne 1) {
     throw 'Verified migration journal was not recorded.'
   }
+  # Do not certify corrupt calendars merely because both copies match.
+  $primaryEvents = Join-Path $legacy 'calendar-events.json'
+  $copiedEvents = Join-Path $cyan 'calendar-events.json'
+  Set-Content -LiteralPath $primaryEvents -Value '[null]' -Encoding utf8
+  Set-Content -LiteralPath $copiedEvents -Value '[null]' -Encoding utf8
+  $rejected = $false
+  try { & $script -VerifyPrepared } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Verification certified matching invalid calendar entries.' }
+  Set-Content -LiteralPath $primaryEvents -Value '[]' -Encoding utf8
+  Set-Content -LiteralPath $copiedEvents -Value '[]' -Encoding utf8
+  & $script -VerifyPrepared
+
   Add-Content -LiteralPath (Join-Path $legacy 'layout.json') -Value ' '
   $rejected = $false
   try { & $script -VerifyPrepared } catch { $rejected = $true }

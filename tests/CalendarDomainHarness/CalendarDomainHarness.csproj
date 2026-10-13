@@ -26,5 +26,6 @@
     <Compile Include="../../src/DesktopDeck/Services/DataRootPaths.cs" Link="DataRootPaths.cs" />
     <Compile Include="../../src/DesktopDeck/Services/CyanDeckCutoverJournal.cs" Link="CyanDeckCutoverJournal.cs" />
     <Compile Include="../../src/DesktopDeck/Services/LegacyProfileWriterGate.cs" Link="LegacyProfileWriterGate.cs" />
+    <Compile Include="../../src/DesktopDeck/Services/LegacySingleInstanceGate.cs" Link="LegacySingleInstanceGate.cs" />
   </ItemGroup>
 </Project>

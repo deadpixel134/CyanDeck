@@ -311,6 +311,8 @@ if ($RecoverPreparation) {
 }
 if ($VerifyPrepared) {
   if ($Apply) { throw 'Use -VerifyPrepared or -Apply, not both.' }
+  # Identical bytes can still be invalid data in both profiles.
+  Assert-MigrationJsonCandidates
   Assert-PreparedCopyIdentical
   Write-CutoverJournal 'verified'
   Write-Host 'Prepared copy matches the current legacy data. No files were changed.'

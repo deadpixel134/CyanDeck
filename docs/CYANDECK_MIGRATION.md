@@ -39,7 +39,8 @@ pwsh -File tools/prepare-cyandeck-data-migration.ps1 -VerifyPrepared
 Recovery is allowed **only for the canonical CyanDeck destination**, with a
 missing or explicitly aborted preparation journal. It validates the existing
 copy's full file and directory set, SHA-256 file hashes, primary JSON and
-recovery candidates against the current legacy profile. Any difference, unsafe
+recovery candidates against the current legacy profile. Verification likewise
+rejects corrupt JSON even if both profile copies are byte-for-byte identical. Any difference, unsafe
 link, malformed journal, running application, or conflicting switch aborts the
 operation without replacing or deleting either profile. It restores only the
 non-activating `prepared` journal phase; the separate `-VerifyPrepared` step
@@ -61,6 +62,11 @@ entire active writer lifetime:
 - `Local\\CyanDeck.LegacyProfileWriter.v1` is a stable cross-executable
   legacy-profile **writer lease**. A future `CyanDeck.exe` must acquire the
   same lease before reading/writing any shared legacy data.
+
+Normal application exit explicitly releases ownership of the legacy
+singleton mutex before closing its handle. Otherwise the next migration
+would mistake a clean shutdown for an abandoned writer. The domain harness
+checks both exclusivity and reacquisition after normal disposal.
 
 The migration tool holds **both** leases while checking and copying a
 profile, including during `-RecoverPreparation`, `-VerifyPrepared`, and

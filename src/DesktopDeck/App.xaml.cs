@@ -10,7 +10,7 @@ namespace DesktopDeck;
 public partial class App : Application
 {
     private const string ActivationPipeName = "DesktopDeck.Activation.v1";
-    private Mutex? _mutex;
+    private LegacySingleInstanceGate? _instanceGate;
     private LegacyProfileWriterGate? _legacyWriterGate;
     private AppController? _controller;
     private CancellationTokenSource? _activationCts;
@@ -42,8 +42,8 @@ public partial class App : Application
         var recoveryMonitor = recoverGroups ? Forms.Screen.FromPoint(Forms.Cursor.Position).DeviceName : null;
         var managedPolicyPath = GetOptionValue(e.Args, "--managed-policy");
 
-        _mutex = new Mutex(true, @"Local\DesktopDeck.SingleInstance", out var isFirst);
-        if (!isFirst)
+        _instanceGate = LegacySingleInstanceGate.TryAcquire();
+        if (!_instanceGate.IsFirst)
         {
             NotifyExistingInstance(recoverGroups && recoveryMonitor is not null
                 ? "recover-groups|" + recoveryMonitor
@@ -191,7 +191,9 @@ public partial class App : Application
             finally
             {
                 _activationCts?.Dispose();
-                _mutex?.Dispose();
+                // Release the legacy singleton on a clean exit, not merely its
+                // owned handle: an abandoned mutex would block migration.
+                _instanceGate?.Dispose();
                 base.OnExit(e);
             }
         }

@@ -4,6 +4,22 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http;
 
+// Exercise the production singleton lifecycle on a test-only mutex name.
+var singletonName = @"Local\CyanDeck.SingletonLifecycleTest." + Guid.NewGuid().ToString("N");
+using (var primary = LegacySingleInstanceGate.TryAcquire(singletonName))
+{
+    Assert.That(primary.IsFirst, "first process owns the legacy singleton");
+    var secondaryRejected = Task.Run(() =>
+    {
+        using var secondary = LegacySingleInstanceGate.TryAcquire(singletonName);
+        return !secondary.IsFirst;
+    }).GetAwaiter().GetResult();
+    Assert.That(secondaryRejected, "secondary process cannot steal singleton ownership");
+}
+using (var restarted = LegacySingleInstanceGate.TryAcquire(singletonName))
+{
+    Assert.That(restarted.IsFirst, "clean shutdown releases singleton for next application");
+}
 // The second gate is independent of executable names and remains exclusive
 // across threads/processes, including a future differently named CyanDeck.exe.
 using (var firstWriter = LegacyProfileWriterGate.Acquire())
