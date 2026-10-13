@@ -68,7 +68,9 @@ function Write-CutoverJournal([string]$Phase) {
   try {
     $previous = $null
     if (Test-Path -LiteralPath $journal -PathType Leaf) {
-      $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ((Get-Item -LiteralPath $journal -Force).Length -gt 16384) { throw 'Migration journal exceeds 16 KiB.' }
+      if ((Get-Item -LiteralPath $journal -Force).Length -gt 16384) { throw 'Migration journal exceeds 16 KiB.' }
+  $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
       Assert-JournalTimestamp $previous.RecordedAtUtc
       if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
           -not $previous.RecordedAtUtc -or
