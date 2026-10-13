@@ -20,7 +20,20 @@ public static class CyanDeckCutoverJournal
     public static Entry? Read()
     {
         if (!File.Exists(JournalPath)) return null;
-        var entry = JsonSerializer.Deserialize<Entry>(File.ReadAllText(JournalPath));
+        // A journal is metadata, never a profile or arbitrary external file.
+        // Reject links and oversized/corrupt records before deserialization.
+        var info = new FileInfo(JournalPath);
+        if ((info.Attributes & FileAttributes.ReparsePoint) != 0 || info.Length > 16 * 1024)
+            throw new InvalidDataException("Unsafe CyanDeck migration journal.");
+        Entry? entry;
+        try
+        {
+            entry = JsonSerializer.Deserialize<Entry>(File.ReadAllText(JournalPath));
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException("Malformed CyanDeck migration journal.", error);
+        }
         if (entry is null || entry.Version != CurrentVersion || !IsKnownPhase(entry.Phase) ||
             !string.Equals(entry.LegacyRoot, DataRootPaths.LegacyRoaming, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(entry.CandidateRoot, DataRootPaths.CyanRoaming, StringComparison.OrdinalIgnoreCase))
