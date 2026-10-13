@@ -225,7 +225,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         var cachePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "DesktopDeck",
+            "CyanDeck",
             "managed-policy-cache.json");
 
         _managedPolicy = new ManagedPolicyCoordinator(
@@ -306,7 +306,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             {
                 _managedPolicyLastError = ex.Message;
                 if (interactive)
-                    System.Windows.MessageBox.Show(_managedPolicyLastError, "DesktopDeck 관리 정책", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    System.Windows.MessageBox.Show(_managedPolicyLastError, "CyanDeck 관리 정책", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return ManagedPolicyApplyResult.Failed(_managedPolicyLastError, _managedPolicy.ActivePolicySha256);
             }
         }
@@ -315,7 +315,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             _managedPolicyLastError = "구성된 관리 정책 파일이 없습니다.";
             if (interactive)
-                System.Windows.MessageBox.Show(_managedPolicyLastError, "DesktopDeck 관리 정책", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show(_managedPolicyLastError, "CyanDeck 관리 정책", MessageBoxButton.OK, MessageBoxImage.Information);
             return ManagedPolicyApplyResult.NoChange(_managedPolicy.ActivePolicySha256);
         }
 
@@ -330,7 +330,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var text = result.Success
                 ? result.Changed ? "관리 정책을 다시 불러와 적용했습니다." : "관리 정책이 이미 최신 상태입니다."
                 : $"관리 정책을 다시 불러오지 못했습니다. 현재 적용 중인 정책은 유지됩니다.\n\n{result.Error}";
-            System.Windows.MessageBox.Show(text, "DesktopDeck 관리 정책", MessageBoxButton.OK,
+            System.Windows.MessageBox.Show(text, "CyanDeck 관리 정책", MessageBoxButton.OK,
                 result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
         RefreshOpenManagedPolicyUi();
@@ -399,7 +399,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             System.Windows.MessageBox.Show(
                 $"'{actionLabel}' 기능은 현재 DesktopDeck 관리 정책에 의해 비활성화되어 있습니다.",
-                "DesktopDeck 관리 정책",
+                "CyanDeck 관리 정책",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -566,7 +566,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (existing is not null)
         {
             System.Windows.MessageBox.Show("Windows 기본 아이콘이 이미 그룹에 있습니다. 기존 그룹과 배치를 유지합니다.",
-                "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+                "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         var work = SystemParameters.WorkArea;
@@ -1033,7 +1033,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 {
                     var answer = System.Windows.MessageBox.Show(
                         $"Combine '{source.Model.Title}' with '{target.Window.Model.Title}' as tabs?",
-                        "DesktopDeck",
+                        "CyanDeck",
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Question);
                     if (answer != MessageBoxResult.Yes)
@@ -1213,7 +1213,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var existing = _state.Templates.FirstOrDefault(t => string.Equals(t.Name, name.Trim(), StringComparison.CurrentCultureIgnoreCase));
         if (existing is not null)
         {
-            var replace = System.Windows.MessageBox.Show($"기존 템플릿 '{existing.Name}'을(를) 바꾸시겠습니까?", "DesktopDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var replace = System.Windows.MessageBox.Show($"기존 템플릿 '{existing.Name}'을(를) 바꾸시겠습니까?", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (replace != MessageBoxResult.Yes) return;
             _state.Templates.Remove(existing);
         }
@@ -1273,7 +1273,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.CreateDeleteGroups", "그룹 삭제")) return;
         if (_state.Fences.Count <= 1)
         {
-            System.Windows.MessageBox.Show("그룹은 최소 하나 이상 남아 있어야 합니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("그룹은 최소 하나 이상 남아 있어야 합니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         RemoveFenceWindow(window);
@@ -1441,7 +1441,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             {
                 System.Windows.MessageBox.Show(
                     "빠른 숨김을 끄기 전에 바탕화면을 정상 표시 상태로 복구하지 못했습니다. 빠른 숨김 설정은 기존 상태로 유지됩니다.",
-                    "DesktopDeck",
+                    "CyanDeck",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
@@ -1513,13 +1513,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             System.Windows.MessageBox.Show(
                 "Windows 기본 바탕화면 아이콘의 표시를 복구했습니다. 저장된 설정은 변경하지 않았습니다.\n" +
                 "실행 중 중복 아이콘이 보일 수 있습니다. 다음 실행에서는 기존 아이콘 숨김 설정이 다시 적용됩니다.",
-                "DesktopDeck Explorer 아이콘 복구", MessageBoxButton.OK, MessageBoxImage.Information);
+                "CyanDeck Explorer 아이콘 복구", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Emergency Explorer native icons restoration failed", ex);
             System.Windows.MessageBox.Show("복구에 실패했습니다. 별도 recover-desktop-icons.ps1을 실행할 수 있습니다.\n" + ex.Message,
-                "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -2203,7 +2203,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_looseQuickHideCoordinator is null) return;
         var result = await _looseQuickHideCoordinator.SetExcludedAsync(ids.Select(id => id.ToString("D")), excluded);
         if (result.Status == LooseIconExclusionEditStatus.PersistFailed)
-            System.Windows.MessageBox.Show("빠른 숨김 제외 설정을 저장하지 못했습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("빠른 숨김 제외 설정을 저장하지 못했습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private DesktopIconFlickOptions GetTouchIconFlickOptions()
@@ -2979,13 +2979,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.SwapScreenContents", "화면 내용 교환")) return;
         if (_safeMode)
         {
-            System.Windows.MessageBox.Show("안전 모드에서는 화면 내용 교환을 사용할 수 없습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("안전 모드에서는 화면 내용 교환을 사용할 수 없습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         if (_compatibilityReadOnly)
         {
-            System.Windows.MessageBox.Show("호환성 보호 모드에서는 레이아웃을 변경할 수 없습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("호환성 보호 모드에서는 레이아웃을 변경할 수 없습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -2993,7 +2993,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             System.Windows.MessageBox.Show(
                 "현재 디스플레이 구성이 변경 중이거나 Peek/Desktop Display가 활성화되어 있습니다. 화면이 안정된 뒤 다시 시도하세요.",
-                "DesktopDeck",
+                "CyanDeck",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
             return;
@@ -3009,13 +3009,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Failed to capture screen-content swap preview", ex);
-            System.Windows.MessageBox.Show("현재 모니터 배치를 읽지 못했습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("현재 모니터 배치를 읽지 못했습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         if (monitors.Count < 2)
         {
-            System.Windows.MessageBox.Show("화면 내용 교환에는 연결된 모니터가 두 대 이상 필요합니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("화면 내용 교환에는 연결된 모니터가 두 대 이상 필요합니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -3045,7 +3045,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
         if (!preview.HasChanges)
         {
-            System.Windows.MessageBox.Show("선택한 두 화면에 교환할 DesktopDeck 그룹 또는 그룹 밖 아이콘이 없습니다.", "화면 내용 교환", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("선택한 두 화면에 교환할 CyanDeck 그룹 또는 그룹 밖 아이콘이 없습니다.", "화면 내용 교환", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -3150,7 +3150,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.MoveResizeGroups", "자동 레이아웃")) return;
         if (System.Windows.MessageBox.Show(
                 "바탕화면을 기본 앱 / 작업 / 미디어 구성으로 다시 정리하시겠습니까?\n\n먼저 전체 복구 체크포인트를 저장합니다. 현재 레이아웃의 그룹별 사용자 지정과 Folder Portal은 기본 구성으로 교체됩니다.",
-                "DesktopDeck 자동 레이아웃", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                "CyanDeck 자동 레이아웃", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
 
         try
         {
@@ -3171,7 +3171,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Automatic layout failed", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 자동 레이아웃 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 자동 레이아웃 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -3202,7 +3202,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint))
             {
                 DiagnosticsLog.Warn("Group monitor recovery cancelled: checkpoint not saved.");
-                _trayController?.ShowBalloonTip(5000, "DesktopDeck 그룹 이동 취소",
+                _trayController?.ShowBalloonTip(5000, "CyanDeck 그룹 이동 취소",
                     "복구용 백업을 저장하지 못해 기존 그룹 배치를 유지했습니다.", Forms.ToolTipIcon.Warning);
                 return;
             }
@@ -3235,7 +3235,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             RecoverDesktopVisibility();
             Persist();
             RebuildTrayMenu();
-            _trayController?.ShowBalloonTip(4500, "DesktopDeck 그룹 위치 복구",
+            _trayController?.ShowBalloonTip(4500, "CyanDeck 그룹 위치 복구",
                 plan.OverlapUnavoidable
                     ? "이 모니터로 모든 그룹을 옮겼습니다. 그룹 수가 많아 일부 창이 겹칠 수 있습니다."
                     : "모든 그룹을 이 모니터로 배치했습니다. 이전 배치는 레이아웃 스냅샷에서 복원할 수 있습니다.",
@@ -3826,14 +3826,14 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (enabled)
         {
             if (_safeMode)
-                _trayController?.ShowBalloonTip(5000, "DesktopDeck 캘린더",
+                _trayController?.ShowBalloonTip(5000, "CyanDeck 캘린더",
                     "안전 모드에서는 캘린더가 표시되지 않습니다. 일반 모드로 다시 시작하세요.",
                     Forms.ToolTipIcon.Warning);
             else
             {
                 StartCalendarModule();
                 if (_calendar?.IsSurfaceVisible != true)
-                    _trayController?.ShowBalloonTip(5000, "DesktopDeck 캘린더",
+                    _trayController?.ShowBalloonTip(5000, "CyanDeck 캘린더",
                         "캘린더가 바탕화면에 연결되지 않았습니다. 트레이의 '캘린더 표시 복구'를 실행하세요.",
                         Forms.ToolTipIcon.Warning);
             }
@@ -3901,7 +3901,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             "이전 DesktopDeck 업데이트가 완료되지 않아 복구 기록이 남아 있습니다.\n" +
             "프로그램을 종료하고 백업한 실행 파일을 복원하시겠습니까?\n" +
             "캘린더 일정과 사용자 파일은 변경하지 않습니다. 복구를 연기하면 새 업데이트가 차단됩니다.",
-            "DesktopDeck 업데이트 복구", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes);
+            "CyanDeck 업데이트 복구", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes);
         if (answer == MessageBoxResult.Yes) LaunchPendingUpdateRecovery();
     }
 
@@ -3917,7 +3917,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             DiagnosticsLog.Error("Could not start pending update recovery", ex);
             System.Windows.MessageBox.Show("업데이트 복구를 실행하지 못했습니다.\n" + ex.Message,
-                "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -3931,7 +3931,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         menu.Items.Clear();
         // Always-visible build identity: old running instances will not show this line.
-        menu.Items.Add(new Forms.ToolStripMenuItem("DesktopDeck · Calendar v26 여러 캘린더/저장 대상 · v42 PC 복구") { Enabled = false });
+        menu.Items.Add(new Forms.ToolStripMenuItem("CyanDeck · Calendar v45") { Enabled = false });
         menu.Items.Add(new Forms.ToolStripMenuItem("캘린더 상태: " +
             (_safeMode ? "안전 모드" : !_state.Settings.EnableCalendar ? "설정 꺼짐"
                 : _calendar?.GetTrayDisplayStatus() ?? "시작 대기/상태 확인 필요")) { Enabled = false });
@@ -3951,7 +3951,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         menu.Items.Add(new Forms.ToolStripSeparator());
         if (!_safeMode)
         {
-            var deckSwitch = new Forms.ToolStripMenuItem("DesktopDeck 그룹·아이콘 관리 사용")
+            var deckSwitch = new Forms.ToolStripMenuItem("CyanDeck 그룹·아이콘 관리 사용")
             {
                 Checked = _state.Settings.EnableDesktopDeck,
                 Enabled = !_compatibilityReadOnly
@@ -4028,7 +4028,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var deleteTemplatesItem = templates.DropDownItems.Add("모든 템플릿 삭제", null, (_, _) => _dispatcher.Invoke(() =>
             {
                 if (!EnsureManagedCapability("Templates.Edit", "모든 템플릿 삭제")) return;
-                if (System.Windows.MessageBox.Show("저장된 그룹 템플릿을 모두 삭제하시겠습니까?", "DesktopDeck", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                if (System.Windows.MessageBox.Show("저장된 그룹 템플릿을 모두 삭제하시겠습니까?", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
                 _state.Templates.Clear();
                 Persist();
                 RebuildTrayMenu();
@@ -4174,7 +4174,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_trayController is null) return;
         var status = _desktopDisplay.IsActive ? "Desktop Display" : _quickHidden ? "숨김" : _peek ? "Peek" : $"페이지 {_state.CurrentPage + 1}";
-        _trayController.SetText($"DesktopDeck - {status}");
+        _trayController.SetText($"CyanDeck - {status}");
     }
 
     // Opening a modal WPF dialog directly inside a WinForms ToolStrip click
@@ -4207,7 +4207,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             + "복구는 한번만 실행하세요. 실패하면 반복하지 말고 진단 로그를 확인하세요.\n"
             + "로그: %APPDATA%\\DesktopDeck\\logs\\desktopdeck.log";
         DiagnosticsLog.Info("Calendar diagnostics viewed: " + currentState);
-        System.Windows.MessageBox.Show(message, "DesktopDeck 캘린더 상태", MessageBoxButton.OK, MessageBoxImage.Information);
+        System.Windows.MessageBox.Show(message, "CyanDeck 캘린더 상태", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void ResetCalendarPositionAndRepair()
@@ -4215,13 +4215,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_safeMode)
         {
             System.Windows.MessageBox.Show("안전 모드에서는 캘린더가 실행되지 않습니다. 일반 모드로 재시작하세요.",
-                "DesktopDeck 캘린더", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "CyanDeck 캘린더", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         if (!_state.Settings.EnableCalendar)
         {
             System.Windows.MessageBox.Show("현재 캘린더 활성화 설정이 저장되어 있지 않습니다. 설정에서 켜고 적용한 뒤 실행하세요.",
-                "DesktopDeck 캘린더", MessageBoxButton.OK, MessageBoxImage.Information);
+                "CyanDeck 캘린더", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         StartCalendarModule();
@@ -4238,7 +4238,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_calendar?.TryOpenStandaloneWindow() == true)
             DiagnosticsLog.Info("Calendar standalone window fallback selected from tray");
         else
-            _trayController?.ShowBalloonTip(5000, "DesktopDeck 캘린더",
+            _trayController?.ShowBalloonTip(5000, "CyanDeck 캘린더",
                 "일반 창 열기에 실패했습니다. 편집 중인 작업을 마친 뒤 로그를 확인하세요.",
                 Forms.ToolTipIcon.Warning);
         RebuildTrayMenu();
@@ -4248,7 +4248,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_safeMode)
         {
-            _trayController?.ShowBalloonTip(5000, "DesktopDeck 캘린더",
+            _trayController?.ShowBalloonTip(5000, "CyanDeck 캘린더",
                 "안전 모드에서는 캘린더를 표시할 수 없습니다. 일반 모드로 다시 시작하세요.",
                 Forms.ToolTipIcon.Warning);
             return;
@@ -4257,7 +4257,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_calendar?.TryRepairVisibleSurface() == true)
             DiagnosticsLog.Info("Calendar manually restored from tray");
         else
-            _trayController?.ShowBalloonTip(5000, "DesktopDeck 캘린더",
+            _trayController?.ShowBalloonTip(5000, "CyanDeck 캘린더",
                 "연결 실패 또는 재시도 제한입니다. 연속 클릭하지 말고 캘린더 상태 진단에서 원인을 확인하세요.",
                 Forms.ToolTipIcon.Warning);
     }
@@ -4330,7 +4330,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             if (_compatibilityReadOnly)
             {
-                System.Windows.MessageBox.Show($"더 새로운 스키마로 만든 설정을 호환성 폴더에 보존했습니다. 덮어쓰기를 막기 위해 현재 안전 모드 세션은 읽기 전용입니다. 먼저 DesktopDeck을 업데이트하거나 호환되는 백업을 가져오세요.", "DesktopDeck 호환성 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show($"더 새로운 스키마로 만든 설정을 호환성 폴더에 보존했습니다. 덮어쓰기를 막기 위해 현재 안전 모드 세션은 읽기 전용입니다. 먼저 CyanDeck을 업데이트하거나 호환되는 백업을 가져오세요.", "CyanDeck 호환성 보호", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             Persist();
@@ -4497,12 +4497,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var details = report.Messages.Count == 0
                 ? report.Summary
                 : report.Summary + "\n\n" + string.Join("\n", report.Messages.Take(8).Select(m => "• " + m)) + (report.Messages.Count > 8 ? $"\n… and {report.Messages.Count - 8} more." : "");
-            System.Windows.MessageBox.Show(details, "DesktopDeck 설정 검사", MessageBoxButton.OK, report.Healthy ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(details, "CyanDeck 설정 검사", MessageBoxButton.OK, report.Healthy ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Configuration integrity check failed", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 설정 검사 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 설정 검사 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -4520,8 +4520,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             var dialog = new SaveFileDialog
             {
-                Title = "DesktopDeck 레이아웃 및 설정 내보내기",
-                Filter = "DesktopDeck 백업 (*.json)|*.json|모든 파일 (*.*)|*.*",
+                Title = "CyanDeck 레이아웃 및 설정 내보내기",
+                Filter = "CyanDeck 백업 (*.json)|*.json|모든 파일 (*.*)|*.*",
                 FileName = $"DesktopDeck-backup-{DateTime.Now:yyyyMMdd-HHmm}.json",
                 AddExtension = true,
                 DefaultExt = ".json"
@@ -4533,7 +4533,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Failed to export DesktopDeck configuration", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 내보내기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 내보내기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -4544,12 +4544,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             var dialog = new OpenFileDialog
             {
-                Title = "DesktopDeck 레이아웃 및 설정 가져오기",
-                Filter = "DesktopDeck 백업 (*.json)|*.json|모든 파일 (*.*)|*.*",
+                Title = "CyanDeck 레이아웃 및 설정 가져오기",
+                Filter = "CyanDeck 백업 (*.json)|*.json|모든 파일 (*.*)|*.*",
                 CheckFileExists = true
             };
             if (dialog.ShowDialog() != true) return false;
-            if (System.Windows.MessageBox.Show("현재 DesktopDeck 레이아웃과 설정을 이 백업으로 바꾸시겠습니까?", "DesktopDeck",
+            if (System.Windows.MessageBox.Show("현재 CyanDeck 레이아웃과 설정을 이 백업으로 바꾸시겠습니까?", "CyanDeck",
                     MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
 
             _store.SaveRecoveryCheckpoint(_state, "before-import");
@@ -4561,7 +4561,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Failed to import DesktopDeck configuration", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 가져오기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 가져오기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
     }
@@ -4577,11 +4577,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("ImportExport.Import", "프로그램 초기화") ||
             !EnsureManagedCapability("Settings.EditGeneral", "프로그램 초기화")) return false;
         var confirm = System.Windows.MessageBox.Show(
-            "DesktopDeck 그룹, 바탕화면 배치, 프로그램 환경설정을 기본값으로 초기화하시겠습니까?\n\n" +
+            "CyanDeck 그룹, 바탕화면 배치, 프로그램 환경설정을 기본값으로 초기화하시겠습니까?\n\n" +
             "현재 레이아웃·설정은 복원 가능한 JSON 파일로 백업합니다.\n" +
             "실제 파일/폴더, 캘린더 일정, Google 로그인 및 인증 정보는 삭제하지 않습니다.\n\n" +
-            "초기화 완료 후 DesktopDeck이 다시 시작됩니다.",
-            "DesktopDeck — 프로그램 초기화", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            "초기화 완료 후 CyanDeck이 다시 시작됩니다.",
+            "CyanDeck — 프로그램 초기화", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes) return false;
         var explicitConsent = TextPrompt.Show(Application.Current.Windows.OfType<SettingsWindow>().First(), "프로그램 초기화 확인", "계속하려면 '초기화'를 입력하세요.", "");
         if (!string.Equals(explicitConsent?.Trim(), "초기화", StringComparison.Ordinal)) return false;
@@ -4606,7 +4606,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             System.Windows.MessageBox.Show(
                 $"프로그램 설정과 그룹을 초기화했습니다.\n\n복구 백업: {backup}\n\n" +
                 "캘린더 일정과 Google 인증 정보, 실제 파일·폴더는 그대로 유지됩니다.\n프로그램을 다시 시작합니다.",
-                "DesktopDeck 초기화 완료", MessageBoxButton.OK, MessageBoxImage.Information);
+                "CyanDeck 초기화 완료", MessageBoxButton.OK, MessageBoxImage.Information);
             Restart(false);
             return true;
         }
@@ -4621,7 +4621,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             }
             System.Windows.MessageBox.Show(
                 $"초기화에 실패했습니다. 이전 설정 백업은 보존됩니다.\n{ex.Message}",
-                "DesktopDeck 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+                "CyanDeck 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
     }
@@ -4687,7 +4687,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             var dialog = new SaveFileDialog
             {
-                Title = "DesktopDeck 진단 번들 만들기",
+                Title = "CyanDeck 진단 번들 만들기",
                 Filter = "ZIP archive (*.zip)|*.zip",
                 FileName = $"DesktopDeck-diagnostics-{DateTime.Now:yyyyMMdd-HHmm}.zip",
                 AddExtension = true,
@@ -4696,12 +4696,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (dialog.ShowDialog() != true) return;
             DiagnosticBundleService.Create(dialog.FileName, _state, _icons.GetStats(), _safeMode, _managedPolicy?.GetDiagnosticSummary(), _quickHideStartupStatus, _quickHideStartupShowReason);
             DiagnosticsLog.Info($"Diagnostic bundle created: {dialog.FileName}");
-            System.Windows.MessageBox.Show("진단 번들을 만들었습니다. 로그와 환경 요약은 포함하지만 레이아웃 JSON과 바탕화면 항목 경로는 포함하지 않습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("진단 번들을 만들었습니다. 로그와 환경 요약은 포함하지만 레이아웃 JSON과 바탕화면 항목 경로는 포함하지 않습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Failed to create diagnostic bundle", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 진단 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 진단 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -4732,7 +4732,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (!check.UpdateAvailable)
             {
                 if (interactive)
-                    System.Windows.MessageBox.Show($"DesktopDeck {check.CurrentVersion.Major}.{check.CurrentVersion.Minor}.{check.CurrentVersion.Build}은(는) 최신 버전입니다.", "DesktopDeck 업데이트", MessageBoxButton.OK, MessageBoxImage.Information);
+                    System.Windows.MessageBox.Show($"CyanDeck {check.CurrentVersion.Major}.{check.CurrentVersion.Minor}.{check.CurrentVersion.Build}은(는) 최신 버전입니다.", "CyanDeck 업데이트", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -4740,7 +4740,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             {
                 if (!_state.Settings.InstallUpdatesAutomatically)
                 {
-                    _trayController?.ShowBalloonTip(6000, "DesktopDeck 업데이트 사용 가능", $"버전 {check.LatestVersion}을(를) 사용할 수 있습니다. 설정에서 설치하세요.", Forms.ToolTipIcon.Info);
+                    _trayController?.ShowBalloonTip(6000, "CyanDeck 업데이트 사용 가능", $"버전 {check.LatestVersion}을(를) 사용할 수 있습니다. 설정에서 설치하세요.", Forms.ToolTipIcon.Info);
                     return;
                 }
                 // Background installation requires all existing recovery safeguards.
@@ -4755,13 +4755,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             }
 
             var notes = string.IsNullOrWhiteSpace(check.Manifest.Notes) ? "" : $"\n\n{check.Manifest.Notes}";
-            if (System.Windows.MessageBox.Show($"DesktopDeck {check.LatestVersion}을(를) 사용할 수 있습니다.\n\n지금 업데이트를 다운로드하고 검증하시겠습니까?{notes}", "DesktopDeck 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (System.Windows.MessageBox.Show($"CyanDeck {check.LatestVersion}을(를) 사용할 수 있습니다.\n\n지금 업데이트를 다운로드하고 검증하시겠습니까?{notes}", "CyanDeck 업데이트", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
 
             var staged = await UpdateService.StagePackageAsync(check);
             _store.SaveRecoveryCheckpoint(_state, $"before-update-{check.LatestVersion}");
             var verification = "업데이트 매니페스트 RSA-PSS 서명과 패키지 SHA-256을 검증했습니다.";
-            if (System.Windows.MessageBox.Show($"{verification}\n\n지금 DesktopDeck {check.LatestVersion}을(를) 설치하시겠습니까? DesktopDeck이 다시 시작됩니다.", "DesktopDeck 업데이트 준비 완료", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (System.Windows.MessageBox.Show($"{verification}\n\n지금 CyanDeck {check.LatestVersion}을(를) 설치하시겠습니까? CyanDeck이 다시 시작됩니다.", "CyanDeck 업데이트 준비 완료", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
             UpdateService.TryLaunchInstall(staged, check.Manifest.Sha256, Environment.ProcessId, relaunch: true);
             Exit();
@@ -4770,7 +4770,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             DiagnosticsLog.Error("DesktopDeck update check/install failed", ex);
             if (interactive)
-                System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 업데이트 확인 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show(ex.Message, "CyanDeck 업데이트 확인 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -4785,10 +4785,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var rollback = UpdateService.GetLatestRollbackDirectory();
             if (string.IsNullOrWhiteSpace(rollback))
             {
-                System.Windows.MessageBox.Show("되돌릴 수 있는 이전 프로그램 버전이 없습니다.", "DesktopDeck 버전 되돌리기", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("되돌릴 수 있는 이전 프로그램 버전이 없습니다.", "CyanDeck 버전 되돌리기", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            if (System.Windows.MessageBox.Show("마지막 DesktopDeck 업데이트 전에 저장한 프로그램 파일로 되돌리시겠습니까? %APPDATA%의 레이아웃과 설정은 교체되지 않습니다.", "DesktopDeck 버전 되돌리기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            if (System.Windows.MessageBox.Show("마지막 CyanDeck 업데이트 전에 저장한 프로그램 파일로 되돌리시겠습니까? %APPDATA%의 레이아웃과 설정은 교체되지 않습니다.", "CyanDeck 버전 되돌리기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
             _store.SaveRecoveryCheckpoint(_state, "before-app-rollback");
             if (!UpdateService.TryLaunchRollback(Environment.ProcessId, relaunch: true))
@@ -4798,7 +4798,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("DesktopDeck application rollback failed", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 버전 되돌리기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 버전 되돌리기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -4832,7 +4832,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Manual desktop repair failed", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 바탕화면 연결 복구 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 바탕화면 연결 복구 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -4965,7 +4965,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             ProblemReportService.ShowOnce("layout-save", "바탕화면 레이아웃 자동 저장", "layout.json", ex,
                 "자동 저장을 연속 3회 실패했습니다. 메모리의 변경 사항을 유지하며 저장을 재시도합니다.",
                 layoutPath, layoutPath + ".tmp");
-            _trayController?.ShowBalloonTip(5000, "DesktopDeck 저장 오류",
+            _trayController?.ShowBalloonTip(5000, "CyanDeck 저장 오류",
                 "진단 정보가 담긴 별도 창을 열었습니다. 창에서 복사하여 개발자에게 전달해 주세요.",
                 Forms.ToolTipIcon.Warning);
         }
@@ -5035,13 +5035,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             if (!File.Exists(path))
             {
-                System.Windows.MessageBox.Show("복구 체크포인트를 더 이상 사용할 수 없습니다.", "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("복구 체크포인트를 더 이상 사용할 수 없습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
                 return false;
             }
             var targetState = _store.Import(path);
             var diff = RecoveryDiffService.Compare(_state, targetState);
             var prompt = $"이 DesktopDeck 복구 체크포인트를 복원하시겠습니까? 먼저 현재 상태를 체크포인트로 저장합니다.\n\n{diff.ToDisplayString()}";
-            if (System.Windows.MessageBox.Show(prompt, "DesktopDeck 복구", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (System.Windows.MessageBox.Show(prompt, "CyanDeck 복구", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return false;
             _store.SaveRecoveryCheckpoint(_state, "before-recovery-restore");
             ReplaceState(targetState);
@@ -5052,7 +5052,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Failed to restore recovery checkpoint", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 복구 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 복구 실패", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
     }
@@ -5074,7 +5074,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Failed to open settings audit log", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -5083,12 +5083,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         try
         {
             var report = SelfTestService.Run(_state, _safeMode);
-            System.Windows.MessageBox.Show(report.ToDisplayString(), "DesktopDeck 자체 검사", MessageBoxButton.OK, report.Passed ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(report.ToDisplayString(), "CyanDeck 자체 검사", MessageBoxButton.OK, report.Passed ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
             DiagnosticsLog.Error("DesktopDeck 자체 검사 실패", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 자체 검사 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 자체 검사 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -5105,7 +5105,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Failed to restart DesktopDeck", ex);
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck 다시 시작 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck 다시 시작 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 

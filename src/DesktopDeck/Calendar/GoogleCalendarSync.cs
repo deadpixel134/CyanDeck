@@ -287,7 +287,7 @@ public sealed class GoogleCalendarSync : IDisposable
         // The WPF caller confirms permissions, account identity and calendar catalog
         // only after the callback and token exchange have completed successfully.
         var message = query["error"] is string error ? "Google 인증 취소: " + error
-            : "Google 권한 승인을 받았습니다. DesktopDeck에서 계정 연결 결과를 확인하세요.";
+            : "Google 권한 승인을 받았습니다. CyanDeck에서 계정 연결 결과를 확인하세요.";
         var page = Encoding.UTF8.GetBytes("<!doctype html><html><meta charset='utf-8'><body>" + WebUtility.HtmlEncode(message) + "</body></html>");
         context.Response.ContentType = "text/html; charset=utf-8";
         context.Response.ContentLength64 = page.Length;

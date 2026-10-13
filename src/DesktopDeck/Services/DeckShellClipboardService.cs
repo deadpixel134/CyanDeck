@@ -200,7 +200,7 @@ internal static class DeckShellClipboardService
             {
                 // Instead of crashing an unobserved STA worker, relay errors to UI.
                 dispatcher.BeginInvoke(new Action(() =>
-                    MessageBox.Show(ex.Message, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning)));
+                    MessageBox.Show(ex.Message, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning)));
                 return;
             }
             dispatcher.BeginInvoke(new Action(() => completed(result)));

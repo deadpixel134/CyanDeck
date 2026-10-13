@@ -78,7 +78,7 @@ public sealed class CalendarWindow : Window
         _onAutoSyncIntervalChanged = onAutoSyncIntervalChanged;
         _holidayFeeds = holidayFeeds;
         _onHolidaySourcesChanged = onHolidaySourcesChanged;
-        Title = "DesktopDeck Calendar";
+        Title = "CyanDeck Calendar";
         // An ordinary window is available ONLY after the user explicitly
         // selects the troubleshooting fallback from the tray. It participates
         // in standard Windows taskbar/Z-order behavior; never Topmost.
@@ -878,7 +878,7 @@ public sealed class CalendarWindow : Window
             IsChecked = existing?.LocalOnly == true || (existing is null && noWritableGoogleCalendar),
             IsEnabled = existing?.RemoteId is null,
             Margin = new Thickness(0, 8, 0, 3),
-            ToolTip = "DesktopDeck의 로컬 일정 파일에만 저장합니다. Google 계정이 없어도 사용 가능합니다."
+            ToolTip = "CyanDeck의 로컬 일정 파일에만 저장합니다. Google 계정이 없어도 사용 가능합니다."
         };
         panel.Children.Add(localOnly);
         if (existing?.RemoteId is not null)
@@ -1138,7 +1138,7 @@ public sealed class CalendarWindow : Window
         if (!GoogleOAuthClientConfiguration.HasCompleteClient())
             panel.Children.Add(new TextBlock
             {
-                Text = "Google 데스크톱 OAuth 설정이 이 배포본에 포함되지 않았습니다. 앱 제작자에게 인증 정보가 포함된 DesktopDeck 빌드를 요청하세요. 일반 사용자의 JSON 설정은 필요하지 않습니다.",
+                Text = "Google 데스크톱 OAuth 설정이 이 배포본에 포함되지 않았습니다. 앱 제작자에게 인증 정보가 포함된 CyanDeck 빌드를 요청하세요. 일반 사용자의 JSON 설정은 필요하지 않습니다.",
                 Foreground = Brushes.Khaki, TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 5)
             });
@@ -1331,7 +1331,7 @@ public sealed class CalendarWindow : Window
         var confirmation = MessageBox.Show(this,
             "읽기 전용 백업은 최신 일정이 아닐 수 있습니다. 손상된 원본은 별도 파일로 보존하고 "
             + "기존 .bak은 유지합니다. Google 동기화 토큰을 초기화하여 전체 재동기화합니다. "
-            + "현재 DesktopDeck 데이터 폴더를 별도로 백업한 후 복원을 진행하시겠습니까?",
+            + "기존 DesktopDeck 데이터 폴더를 별도로 백업한 후 복원을 진행하시겠습니까?",
             "캘린더 백업 복원 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning,
             MessageBoxResult.No);
         if (confirmation != MessageBoxResult.Yes) return;

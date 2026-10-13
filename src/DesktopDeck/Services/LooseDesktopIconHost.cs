@@ -481,7 +481,7 @@ internal sealed class LooseDesktopIconHost : IDisposable
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show(ex.Message, "DesktopDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(ex.Message, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -777,11 +777,11 @@ internal sealed class LooseDesktopIconHost : IDisposable
         var name = paths.Count == 1 ? $"'{System.IO.Path.GetFileName(paths[0])}'" : $"선택한 {paths.Count}개 항목";
         if (System.Windows.MessageBox.Show(
             $"{name}을(를) 실제 바탕화면에서 휴지통으로 이동하시겠습니까?\n원본 파일·폴더가 휴지통으로 이동합니다.",
-            "DesktopDeck — 실제 파일 삭제 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+            "CyanDeck — 실제 파일 삭제 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning,
             MessageBoxResult.No) != MessageBoxResult.Yes) return;
         var result = DesktopRecycleService.RecycleConfirmed(paths, warning =>
             System.Windows.MessageBox.Show(warning,
-                "DesktopDeck — 영구 삭제 위험 추가 확인", MessageBoxButton.YesNo,
+                "CyanDeck — 영구 삭제 위험 추가 확인", MessageBoxButton.YesNo,
                 MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes);
         if (result.Recycled.Count > 0)
         {
@@ -793,7 +793,7 @@ internal sealed class LooseDesktopIconHost : IDisposable
         }
         if (result.Errors.Count > 0)
             System.Windows.MessageBox.Show(string.Join(Environment.NewLine, result.Errors.Take(8)),
-                "DesktopDeck — 휴지통 이동 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "CyanDeck — 휴지통 이동 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private static void Reveal(string path)

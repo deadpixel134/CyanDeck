@@ -16,9 +16,9 @@ internal static class ProblemReportText
     public static string Create(string area, string fileName, Exception ex, string situation, string? lockOwners = null)
     {
         var buffer = new StringBuilder()
-            .AppendLine("[DesktopDeck 오류 진단 — 개발자 전달용]")
+            .AppendLine("[CyanDeck 오류 진단 — 개발자 전달용]")
             .AppendLine($"발생 시각: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
-            .AppendLine("제품: DesktopDeck v7.49.3 + Calendar v26 (진단 팝업 개선)")
+            .AppendLine("제품: CyanDeck (내부 호환성 식별자: DesktopDeck)")
             .AppendLine($"실행 파일 버전: {typeof(ProblemReportText).Assembly.GetName().Version}")
             .AppendLine($"운영 체제: {RuntimeInformation.OSDescription}")
             .AppendLine($"영역: {area}")

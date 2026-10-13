@@ -85,8 +85,8 @@ internal static class ProblemReportService
             DiagnosticsLog.Error("Could not display or copy a problem report", popupError);
             if (fatal)
             {
-                try { MessageBox.Show("DesktopDeck에 문제가 발생했습니다. 오류 창을 표시할 수 없습니다.",
-                    "DesktopDeck 오류", MessageBoxButton.OK, MessageBoxImage.Error); }
+                try { MessageBox.Show("CyanDeck에 문제가 발생했습니다. 오류 창을 표시할 수 없습니다.",
+                    "CyanDeck 오류", MessageBoxButton.OK, MessageBoxImage.Error); }
                 catch { }
             }
         }
