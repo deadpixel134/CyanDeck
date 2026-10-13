@@ -14,6 +14,9 @@ try {
   Set-Content -LiteralPath (Join-Path $installed 'user-notes.txt') -Value 'unrelated user file' -Encoding ASCII
   $script = Join-Path $PSScriptRoot '../apply-update.ps1'
   $shell = Join-Path $PSHOME $(if ($PSVersionTable.PSVersion.Major -ge 6) { 'pwsh.exe' } else { 'powershell.exe' })
+  # The ZIP archive mode enum lives in System.IO.Compression on .NET
+  # Framework/Windows PowerShell 5.1 (not just FileSystem).
+  Add-Type -AssemblyName System.IO.Compression
   Add-Type -AssemblyName System.IO.Compression.FileSystem
 
   function New-FixtureZip([string]$Name, [System.Collections.IDictionary]$Files) {
