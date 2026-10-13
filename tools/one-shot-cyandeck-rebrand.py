@@ -143,11 +143,11 @@ uninstaller.write_text(s,encoding="utf8")
 
 # Core deployment files and signed update names are already globally renamed.
 # Remove obsolete managed policy example iff still a backward-compat fixture.
-if (ROOT/"src/DesktopDeck").exists(): raise RuntimeError("Old source tree still exists")
 if not (ROOT/"src/CyanDeck/AppIcon.ico").is_file(): raise RuntimeError("Original icon missing")
 if not (ROOT/"src/CyanDeck/CyanDeck.csproj").is_file(): raise RuntimeError("New project missing")
 for d in sorted((p for p in ROOT.rglob("*") if p.is_dir() and ".git" not in p.parts),
                 key=lambda p:len(p.parts),reverse=True):
     try:d.rmdir()
     except OSError:pass
+if (ROOT/"src/DesktopDeck").exists(): raise RuntimeError("Old source tree still exists after cleanup")
 print("One-shot CyanDeck standalone source rewrite complete.")
