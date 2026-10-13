@@ -39,6 +39,21 @@ function Get-SafeTree([string]$Root) {
     }
   }
 }
+# Share the application's actual single-instance mutex. Holding ownership
+# prevents an app instance from starting during the copy/verification window.
+# Process-name checks alone cannot close the startup race.
+$migrationMutex = [Threading.Mutex]::new($false, 'Local\\DesktopDeck.SingleInstance')
+$ownsMigrationMutex = $false
+try {
+  try {
+    $ownsMigrationMutex = $migrationMutex.WaitOne(0)
+  } catch [Threading.AbandonedMutexException] {
+    # An abandoned lock is not evidence that the previous writer shut down cleanly.
+    throw 'DesktopDeck single-instance mutex was abandoned; retry after inspecting application state.'
+  }
+  if (-not $ownsMigrationMutex) {
+    throw 'DesktopDeck is running or another migration holds its single-instance mutex.'
+  }
 Assert-SafePath $legacy
 Assert-SafePath $destination
 if ([string]::Equals($legacy, $destination, [StringComparison]::OrdinalIgnoreCase)) {
@@ -206,4 +221,9 @@ try {
   if (Test-Path -LiteralPath $staging) {
     Remove-Item -LiteralPath $staging -Recurse -Force
   }
+}
+
+} finally {
+  if ($ownsMigrationMutex) { $migrationMutex.ReleaseMutex() }
+  $migrationMutex.Dispose()
 }
