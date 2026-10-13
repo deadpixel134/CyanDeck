@@ -222,6 +222,11 @@ checks.update({
     "migration journal flushes before rename": "output.Flush(flushToDisk: true)" in journal_review,
     "migration journal uses atomic rename": "File.Move(temporary, JournalPath, overwrite: true)" in journal_review,
 })
+checks.update({
+    "migration abort uses locked state transition": "public static void AbortPreparation()" in journal_review and "Record(Aborted);" in journal_review,
+    "migration abort is idempotent inside lock": "phase == Aborted && (previous is null || previous.Phase == Aborted)" in journal_review,
+    "migration prevents overlapping preparations": "phase == Prepared && previous is not null && previous.Phase != Aborted" in journal_review,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
