@@ -46,8 +46,18 @@ ARM64 환경에는 win-arm64를 선택합니다. 출력은 publish/{runtime}/Cya
 
 CI 개발 빌드는 Google 인증 설정을 포함하지 않습니다. 배포용 빌드는 배포자 Google Desktop OAuth JSON과 RSA 업데이트 서명 키를 GitHub Secrets로 주입해 서명 ZIP 및 매니페스트를 검증한 후에만 릴리스합니다. 사용자 토큰 및 개인 서명 키를 GitHub 소스에 올리지 마세요.
 
-공식 GitHub 저장소: https://github.com/deadpixel134/CyanDeck 입니다. 업데이트 채널도 `github-release://deadpixel134/CyanDeck`을 사용합니다. 이전 DesktopDeck v7.49.5 릴리스는 CyanDeck 업데이트 대상으로 사용하지 않으며, 공개된 CyanDeck v8 이상 릴리스만 자동 업데이트에 사용합니다. v8.0.0 서명 패키지는 현재 비공개 Draft이므로 실제 배포 승인이 완료되기 전에는 자동 업데이트되지 않습니다.
+공식 GitHub 저장소: https://github.com/deadpixel134/CyanDeck 입니다. 업데이트 채널도 `github-release://deadpixel134/CyanDeck`을 사용합니다. 이전 DesktopDeck v7.49.5 릴리스는 CyanDeck 업데이트 대상으로 사용하지 않으며, 공개된 CyanDeck v8 이상 릴리스만 자동 업데이트에 사용합니다. v8.0.0 서명 패키지는 정식 공개되었으며, 최신 릴리스에서 x64 및 ARM64용 ZIP과 검증 가능한 업데이트 매니페스트를 제공합니다. 배포 패키지의 설치·제거 자동 검사는 통과했지만 실제 데스크톱 GUI 및 Google 계정 로그인 통합 검증은 별도로 수행해야 합니다.
 
-## 안전
+## CyanDeck v8.0.0 다운로드와 설치
+
+- 정식 릴리스: https://github.com/deadpixel134/CyanDeck/releases/tag/v8.0.0
+- 일반 PC(Intel/AMD): `CyanDeck-8.0.0-win-x64.zip`
+- Windows ARM PC: `CyanDeck-8.0.0-win-arm64.zip`
+
+배포 ZIP의 압축을 풀고 `CyanDeck.exe`를 실행하거나, 설치를 원하면
+같은 폴더의 `install.ps1`을 PowerShell에서 실행합니다. 설치 관리자가
+사용자 데이터 폴더를 삭제하거나 DesktopDeck 데이터를 이동하지 않습니다.
+
+
 
 Collection의 참조 제거와 원본 파일 삭제는 다릅니다. Folder Portal은 실제 파일 시스템을 다루므로 삭제 및 복구 전에 주의하세요. Windows Explorer, 다중 모니터, Google OAuth, 설치/업데이트/롤백 실기기 검증은 별도로 수행해야 합니다.
