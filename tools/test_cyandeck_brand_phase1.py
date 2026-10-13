@@ -107,6 +107,19 @@ checks.update({
     "signed manifest protocol stays unchanged": '"DesktopDeck.UpdateManifest.v1"' in update_service,
     "staged update storage stays unchanged": '"DesktopDeck", "updates", "staged"' in update_service,
 })
+# Phase 2.4: guard the update/recovery safety boundaries against regressions.
+checks.update({
+    "recovery journal remains in legacy storage": "'DesktopDeck\\\\updates'" in apply_update,
+    "update checks executable before replacing files": "Assert-ManagedFile $InstallDir 'DesktopDeck.exe'" in apply_update,
+    "update process waits for graceful exit": "Wait-DesktopDeckProcess $WaitForPid" in apply_update,
+    "update rejects multiple executable payloads": "The package must contain exactly one DesktopDeck.exe." in apply_update,
+    "rollback snapshot requires original executable": "The rollback snapshot is missing DesktopDeck.exe." in apply_update,
+    "update maintains separate staging directory": ".DesktopDeck-stage-" in apply_update,
+    "update script does not forcibly kill process": "Stop-Process" not in apply_update and "taskkill" not in apply_update.lower(),
+    "update download validates executable presence": "The update ZIP does not contain DesktopDeck.exe." in update_service,
+    "update signature remains required by default": "bool requireSignature = true" in update_service,
+    "update manifest still uses RSA verification": "VerifyManifestSignature" in update_service,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
