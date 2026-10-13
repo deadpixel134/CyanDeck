@@ -19,7 +19,7 @@ if (Test-Path -LiteralPath $installDir -PathType Container) {
 # Graceful exit is a prerequisite, not a forced Stop-Process. This avoids
 # corrupting a pending layout or calendar save during uninstallation.
 if (@(Get-Process DesktopDeck -ErrorAction SilentlyContinue).Count -gt 0) {
-  throw 'DesktopDeck is running. Exit from the tray menu before uninstalling.'
+  throw 'CyanDeck is running. Exit from the tray menu before uninstalling.'
 }
 
 if ($PurgeData -and -not $ConfirmPurgeData) {
@@ -109,5 +109,5 @@ if ($PurgeData) {
     }
   }
 }
-Write-Host 'DesktopDeck was uninstalled (unrelated files preserved).'
+Write-Host 'CyanDeck was uninstalled (unrelated files preserved).'
 if (-not $PurgeData) { Write-Host 'Your settings were preserved in %APPDATA%\DesktopDeck.' }

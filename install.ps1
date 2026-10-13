@@ -21,7 +21,7 @@ function Assert-NoReparseAncestors([string]$Target) {
     if (Test-Path -LiteralPath $cursor) {
       $item = Get-Item -LiteralPath $cursor -Force -ErrorAction Stop
       if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "Installer refused reparse-point path: $cursor"
+        throw "CyanDeck installer refused reparse-point path: $cursor"
       }
     }
     $parent = [IO.Path]::GetDirectoryName($cursor.TrimEnd('\'))
@@ -51,7 +51,7 @@ function Assert-ShortcutBelongsToDesktopDeck([string]$Path, [string]$ExpectedExe
   if ([string]::IsNullOrWhiteSpace($existing.TargetPath) -or
       -not [string]::Equals([IO.Path]::GetFullPath($existing.TargetPath),
         [IO.Path]::GetFullPath($ExpectedExe), [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Installer refused to overwrite an unrelated shortcut: $Path"
+    throw "CyanDeck installer refused to overwrite an unrelated shortcut: $Path"
   }
 }
 $expectedExe = Join-Path $installDir 'DesktopDeck.exe'
@@ -60,7 +60,7 @@ if ($CreateDesktopShortcut) { Assert-ShortcutBelongsToDesktopDeck $desktopShortc
 
 # Do not terminate the process while layout/calendar writes may be in flight.
 if (@(Get-Process DesktopDeck -ErrorAction SilentlyContinue).Count -gt 0) {
-  throw 'DesktopDeck is running. Please exit from the tray menu and retry the installer.'
+  throw 'CyanDeck is running. Please exit from the tray menu and retry the installer.'
 }
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Assert-NoReparseAncestors $installDir
@@ -84,14 +84,14 @@ $wsh = New-Object -ComObject WScript.Shell
 $link = $wsh.CreateShortcut($shortcut)
 $link.TargetPath = Join-Path $installDir "DesktopDeck.exe"
 $link.WorkingDirectory = $installDir
-$link.Description = "DesktopDeck desktop organizer"
+$link.Description = "CyanDeck desktop organizer"
 $link.Save()
 
 if ($CreateDesktopShortcut) {
   $link = $wsh.CreateShortcut($desktopShortcut)
   $link.TargetPath = Join-Path $installDir "DesktopDeck.exe"
   $link.WorkingDirectory = $installDir
-  $link.Description = "DesktopDeck desktop organizer"
+  $link.Description = "CyanDeck desktop organizer"
   $link.Save()
 }
 
@@ -101,5 +101,5 @@ if ($StartWithWindows) {
   New-ItemProperty -Path $runKey -Name "DesktopDeck" -Value ('"' + (Join-Path $installDir "DesktopDeck.exe") + '"') -PropertyType String -Force | Out-Null
 }
 
-Write-Host "Installed DesktopDeck to: $installDir"
+Write-Host "Installed CyanDeck to: $installDir"
 Write-Host "Start Menu shortcut: $shortcut"

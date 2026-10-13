@@ -60,6 +60,18 @@ checks.update({
     "calendar LocalOnly behavior remains protected": 'LocalOnly' in source("src/DesktopDeck/Calendar/CalendarEventStore.cs")
         and 'LocalOnly' in source("src/DesktopDeck/Calendar/GoogleCalendarSync.cs"),
 })
+# Phase 2: installer/uninstaller copy must not rename compatibility identifiers.
+installer = source("install.ps1")
+uninstaller = source("uninstall.ps1")
+checks.update({
+    "installer shortcut description is CyanDeck": installer.count('$link.Description = "CyanDeck desktop organizer"') == 2,
+    "installer confirmation displays CyanDeck": 'Write-Host "Installed CyanDeck to: $installDir"' in installer,
+    "uninstaller confirmation displays CyanDeck": "Write-Host 'CyanDeck was uninstalled" in uninstaller,
+    "legacy start menu shortcut filename preserved": '"DesktopDeck.lnk"' in installer and "'DesktopDeck.lnk'" in uninstaller,
+    "legacy startup registry value preserved": '-Name "DesktopDeck"' in installer and "-Name 'DesktopDeck'" in uninstaller,
+    "legacy install folder preserved": 'Programs\\DesktopDeck' in installer and 'Programs\\DesktopDeck' in uninstaller,
+    "data purge requires two switches": '$PurgeData -and -not $ConfirmPurgeData' in uninstaller,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
