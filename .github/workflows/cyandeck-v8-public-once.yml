@@ -61,12 +61,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)"
-          if [ -n "$existing" ]; then
-            test "$existing" = "$SOURCE_SHA" || { echo "::error::The v8 tag points to a different commit."; exit 1; }
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE_SHA" --silent
-          fi
+          # GitHub draft releases can have a reserved tag name without an actual
+          # Git reference. Publishing with --target atomically creates that tag
+          # from the exact source revision packaged in the draft.
           cat > v8-release-notes.md <<'NOTES'
           ## CyanDeck v8.0.0
 
@@ -81,7 +78,7 @@ jobs:
 
           **Validation:** Windows build, domain test harnesses, manifest signature verification, and sandboxed installation/uninstallation of the actual OAuth-provisioned package passed on both runtimes. Interactive Windows Explorer/desktop integration and Google account consent have not yet been smoke-tested on a live user's desktop. The OAuth information website may still return an HTTP 404 during GitHub Pages configuration. Check https://cyandeck.duckdns.org/ before relying on its policy links.
           NOTES
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest --notes-file v8-release-notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --draft=false --prerelease=false --latest --notes-file v8-release-notes.md
           test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = "false" || {
             echo "::error::The v8 release is still a draft."; exit 1;
           }
