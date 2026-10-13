@@ -26,8 +26,9 @@ for name in scripts:
     try:
         completed = subprocess.run([sys.executable, str(path)], cwd=root, capture_output=True,
             text=True, timeout=60, check=False)
+        output = completed.stdout + '\n' + completed.stderr
         result = {'script':name, 'passed':completed.returncode == 0, 'exitCode':completed.returncode,
-                  'lastLines':(completed.stdout + '\n' + completed.stderr).splitlines()[-5:]}
+                  'lastLines':output.splitlines()[-5:]}
     except subprocess.TimeoutExpired:
         result = {'script':name, 'passed':False, 'exitCode':None, 'lastLines':['Timed out after 60 seconds']}
     results.append(result)
