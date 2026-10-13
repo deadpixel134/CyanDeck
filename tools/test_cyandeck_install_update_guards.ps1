@@ -40,6 +40,7 @@ try {
   Assert-Blocked { & $installer } 'cutover fence is present' 'installer with cutover fence'
   Assert-Blocked { & $updater -InstallDir $installedDir -RecoverPending } 'cutover fence is present' 'recovery with cutover fence'
   Assert-Blocked { & $updater -InstallDir $installedDir -RollbackDir (Join-Path $root 'not-used') } 'cutover fence is present' 'rollback with cutover fence'
+  Assert-Blocked { & $updater -InstallDir $installedDir -Package (Join-Path $root 'not-used.zip') } 'cutover fence is present' 'update with cutover fence'
   Remove-Item -LiteralPath $fencePath -Force
 
   # Directories at the fence name must also block; Test-Path -PathType Leaf
@@ -75,8 +76,18 @@ try {
             throw "Process contention test timed out for $target on $mutexName"
           }
           $output = @(Receive-Job -Job $job -ErrorAction Stop)
-          if ($output.Count -ne 1 -or -not ([string]$output[0]).StartsWith('BLOCKED:')) {
-            throw "Did not block $target when $mutexName was held: $($output -join '; ')"
+          $isLegacy = $mutexName -eq 'Local\DesktopDeck.SingleInstance'
+          $expected = if ($isLegacy) {
+            if ($target -eq 'install') { 'DesktopDeck is running or another installer is active.' }
+            else { 'DesktopDeck is running or another update owns its profile.' }
+          } else {
+            if ($target -eq 'install') { 'Another CyanDeck writer or data migration holds the legacy profile.' }
+            else { 'A CyanDeck writer or data migration owns the legacy profile.' }
+          }
+          if ($output.Count -ne 1 -or
+              -not ([string]$output[0]).StartsWith('BLOCKED:') -or
+              -not ([string]$output[0]).Contains($expected)) {
+            throw "Did not block $target for the expected mutex reason when $mutexName was held: $($output -join '; ')"
           }
         } finally { Remove-Job -Job $job -Force }
       }
@@ -90,6 +101,9 @@ try {
   }
   if (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'DesktopDeck\updates')) {
     throw 'Blocked updater unexpectedly created a recovery or rollback directory.'
+  }
+  if ((Get-Content -LiteralPath (Join-Path $installedDir 'DesktopDeck.exe') -Raw).Trim() -ne 'test-only installed EXE') {
+    throw 'Blocked updater altered an existing installed executable.'
   }
   Write-Host 'CyanDeck installer/updater cutover and mutex guards passed.'
 }
