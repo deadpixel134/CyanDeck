@@ -38,6 +38,11 @@ public partial class App : Application
             return;
         }
 
+        // Refuse startup if an external migration has installed a writer fence.
+        // Keep the legacy mutex held while checking so a cooperating cutover
+        // cannot race this startup. This build never activates CyanDeck itself.
+        CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();
+
         // A command-line activation request must never be silently ignored:
         // otherwise a launcher could claim CyanDeck was activated while all
         // stores continue writing to the legacy profile. Fail before startup.
