@@ -248,6 +248,10 @@ checks.update({
     "migration acquires mutex without waiting": "$migrationMutex.WaitOne(0)" in migration_script,
     "migration releases mutex after work": "$migrationMutex.ReleaseMutex()" in migration_script and "$migrationMutex.Dispose()" in migration_script,
 })
+checks.update({
+    "abandoned mutex ownership is tracked": "catch [Threading.AbandonedMutexException]" in migration_script and "$ownsMigrationMutex = $true" in migration_script,
+    "abandoned mutex is released in finally": "if ($ownsMigrationMutex) { $migrationMutex.ReleaseMutex() }" in migration_script,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
