@@ -77,6 +77,13 @@ foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
     }
   } catch { throw "Migration preflight failed for $name; original data unchanged: $_" }
 }
+# Ensure all files remained unchanged during preflight. The source is not
+# a transactional snapshot, so reject changes while staging and before publish.
+$sourceManifest = @{}
+foreach ($file in $files) {
+  $relative = $file.FullName.Substring($legacy.Length).TrimStart('\')
+  $sourceManifest[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+}
 Write-Host "Source: $legacy"
 Write-Host "Destination: $destination"
 Write-Host "Files: $($files.Count)"
@@ -102,7 +109,20 @@ try {
     Copy-Item -LiteralPath $file.FullName -Destination $target -ErrorAction Stop
     $a = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
     $b = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
-    if ($a -cne $b) { throw "Checksum mismatch: $relative" }
+    if ($a -cne $sourceManifest[$relative] -or $a -cne $b) {
+      throw "Source changed or checksum mismatch during migration: $relative"
+    }
+  }
+  $currentFiles = @(Get-ChildItem -LiteralPath $legacy -File -Recurse -Force)
+  if ($currentFiles.Count -ne $sourceManifest.Count) {
+    throw 'Source file set changed during migration; refusing to publish.'
+  }
+  foreach ($file in $currentFiles) {
+    $relative = $file.FullName.Substring($legacy.Length).TrimStart('\')
+    if (-not $sourceManifest.ContainsKey($relative) -or
+        (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -cne $sourceManifest[$relative]) {
+      throw "Source changed during migration: $relative"
+    }
   }
   if (Test-Path -LiteralPath $destination) { throw 'Destination appeared during migration; refusing overwrite.' }
   Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop

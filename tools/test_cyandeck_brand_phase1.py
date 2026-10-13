@@ -144,6 +144,12 @@ checks.update({
     "migration rejects malformed calendar entries": "Calendar event must be an object." in migration_preflight,
     "migration refuses invalid schema text": "[int]::TryParse" in migration_preflight,
 })
+checks.update({
+    "migration records original hashes": "$sourceManifest[$relative]" in migration_preflight,
+    "migration rejects changed source content": "Source changed during migration:" in migration_preflight,
+    "migration rejects changed source file set": "Source file set changed during migration" in migration_preflight,
+    "migration verifies before publish": migration_preflight.index("Source file set changed during migration") < migration_preflight.index("Move-Item -LiteralPath $staging"),
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
