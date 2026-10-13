@@ -69,10 +69,21 @@ public static class CyanDeckCutoverJournal
     {
         if (!IsKnownPhase(phase)) throw new ArgumentOutOfRangeException(nameof(phase));
         var directory = Path.GetDirectoryName(JournalPath)!;
+        // A lock-file symlink could redirect the exclusive open outside our profile.
+        // Check both parent directories before creating or opening journal files.
+        var migrationRoot = new DirectoryInfo(directory);
+        var legacyLocal = new DirectoryInfo(DataRootPaths.LegacyLocal);
+        if ((legacyLocal.Exists && (legacyLocal.Attributes & FileAttributes.ReparsePoint) != 0) ||
+            (migrationRoot.Exists && (migrationRoot.Attributes & FileAttributes.ReparsePoint) != 0))
+            throw new InvalidDataException("Unsafe CyanDeck migration journal directory.");
         Directory.CreateDirectory(directory);
+        var lockPath = JournalPath + ".lock";
+        var lockInfo = new FileInfo(lockPath);
+        if (lockInfo.Exists && (lockInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException("Unsafe CyanDeck migration journal lock.");
         // Hold an exclusive lock across the read, validation and atomic rename.
         // Concurrent processes must not overwrite a newer journal transition.
-        using var gate = new FileStream(JournalPath + ".lock", FileMode.OpenOrCreate,
+        using var gate = new FileStream(lockPath, FileMode.OpenOrCreate,
             FileAccess.ReadWrite, FileShare.None);
         var previous = Read();
         // Enforce transitions while holding the lock; abort is idempotent.
