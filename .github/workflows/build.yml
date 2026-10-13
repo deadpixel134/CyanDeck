@@ -22,9 +22,12 @@ jobs:
         with:
           python-version: '3.12'
       - name: Static safety regression checks
+        shell: pwsh
         run: |
           python tools/run_v43_safety_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Static safety regression suite failed; build blocked.' }
           python tools/test_v45_recycle_bin_preflight.py
+          if ($LASTEXITCODE -ne 0) { throw 'Recycle-bin safety suite failed; build blocked.' }
       - name: CyanDeck migration PowerShell smoke tests
         shell: pwsh
         run: ./tools/test_cyandeck_migration_smoke.ps1
