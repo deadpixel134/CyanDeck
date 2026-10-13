@@ -6,6 +6,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <Product>CyanDeck</Product>
+    <Title>CyanDeck</Title>
     <AssemblyName>DesktopDeck</AssemblyName>
     <RootNamespace>DesktopDeck</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>

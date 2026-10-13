@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:layout="clr-namespace:DesktopDeck.Layout"
-        Title="DesktopDeck"
+        Title="CyanDeck"
         WindowStyle="None"
         ResizeMode="CanResize"
         AllowsTransparency="True"
@@ -21,7 +21,7 @@
         PreviewMouseWheel="Window_PreviewMouseWheel"
         PreviewKeyDown="Window_PreviewKeyDown"
         Focusable="True"
-        AutomationProperties.Name="DesktopDeck group">
+        AutomationProperties.Name="CyanDeck group">
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -231,7 +231,7 @@
                     </Border>
 
                     <ListBox x:Name="ItemsList" Grid.Row="1"
-                             AutomationProperties.Name="DesktopDeck items"
+                             AutomationProperties.Name="CyanDeck items"
                              Background="Transparent"
                              BorderThickness="0"
                              Foreground="#F3F6FA"

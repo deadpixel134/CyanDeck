@@ -1,6 +1,10 @@
-# DesktopDeck
+# CyanDeck
 
-DesktopDeck는 Windows 10/11용 바탕화면 파일 정리와 Google Calendar 연동을 지원하는 WPF/.NET 8 프로그램입니다.
+CyanDeck(구 DesktopDeck)은 Windows 10/11용 바탕화면 파일 정리와 Google Calendar 연동을 지원하는 WPF/.NET 8 프로그램입니다.
+
+## 명칭 변경 및 기존 사용자 호환성
+
+**CyanDeck**은 DesktopDeck의 새 제품 표시명입니다. 1단계에서는 사용자에게 보이는 UI 및 제품 메타데이터를 변경합니다. 기존 사용자 보호를 위해 `DesktopDeck.exe`, 기존 설치 경로, `%APPDATA%\DesktopDeck` 데이터 폴더, 자동 업데이트 채널·파일명·서명 키, GitHub 저장소 주소 및 OAuth 기술 식별자는 유지합니다. 내부 명칭은 별도의 마이그레이션 테스트 후 변경합니다.
 
 ## 기능
 

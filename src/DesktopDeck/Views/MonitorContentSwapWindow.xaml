@@ -31,9 +31,9 @@
         </Grid.RowDefinitions>
 
         <StackPanel>
-            <TextBlock Text="연결된 두 화면의 DesktopDeck 내용을 서로 교환합니다."
+            <TextBlock Text="연결된 두 화면의 CyanDeck 내용을 서로 교환합니다."
                        FontSize="17" FontWeight="SemiBold" Margin="0,0,0,6"/>
-            <TextBlock Text="그룹과 DesktopDeck이 관리하는 그룹 밖 아이콘의 모니터 소유권과 위치만 바뀝니다. 파일 자체는 이동하지 않으며 실행 전에 복구 체크포인트를 만듭니다."
+            <TextBlock Text="그룹과 CyanDeck이 관리하는 그룹 밖 아이콘의 모니터 소유권과 위치만 바뀝니다. 파일 자체는 이동하지 않으며 실행 전에 복구 체크포인트를 만듭니다."
                        Foreground="#98A3B3" TextWrapping="Wrap"/>
         </StackPanel>
 
