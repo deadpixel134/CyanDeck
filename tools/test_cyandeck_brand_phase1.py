@@ -192,6 +192,11 @@ checks.update({
     "runtime inspects each directory level": "current.EnumerateFileSystemInfos()" in root_readiness,
     "runtime refuses reparse points": "(entry.Attributes & FileAttributes.ReparsePoint) != 0" in root_readiness,
 })
+checks.update({
+    "cutover readiness returns explicit reason": "GetCutoverReadinessReason()" in root_readiness,
+    "cutover readiness requires checksum comparison": 'if (!IsPreparedCopyIdentical()) return "prepared-copy-diverged"' in root_readiness,
+    "cutover readiness does not activate root": "ActiveRoaming => LegacyRoaming" in root_readiness,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
