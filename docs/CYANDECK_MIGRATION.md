@@ -129,6 +129,32 @@ PowerShell 5.1 and 7 CI now execute real disposable ZIP installs, adversarial
 package rejection, and an actual application-file rollback. These tests do
 **not** activate the new profile or constitute a safe cross-EXE cutover.
 
+## CyanDeck.exe compatibility entry point (preview only)
+
+A separate `src/CyanDeck.Launcher` Windows project now builds **`CyanDeck.exe`**
+using the original application icon. It launches only the `DesktopDeck.exe`
+beside itself, forwards approved startup options without a shell, and exits.
+The DesktopDeck process continues to own the two writer mutexes, account
+credentials, local calendars, updater, taskbar identity and single-instance IPC.
+`--activate-cyandeck` remains explicitly unsupported.
+
+Build a self-contained preview on Windows:
+
+```powershell
+pwsh -File tools/build-cyandeck-launcher-preview.ps1 -Runtime win-x64
+```
+
+For manual checks, put `CyanDeck.exe` beside a compatible `DesktopDeck.exe`
+in a **separate portable test folder**. Do not overwrite the installed EXE.
+Windows CI tests the real executable forwarding to a disposable fake
+`DesktopDeck.exe` and publishes unsigned preview-only CI artifacts for
+win-x64 and win-arm64, retained for 7 days.
+
+The legacy installer, signed `package.ps1`, `apply-update.ps1` and GitHub
+Releases intentionally **do not include the launcher**. Old updaters reject
+additional executables; a later signed handoff/rollback protocol must be
+implemented and verified before an installed executable cutover is enabled.
+
 ## Future cutover (not yet implemented)
 
 1. Freeze writes and stop all DesktopDeck processes.
