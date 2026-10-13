@@ -154,8 +154,18 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
     try {
       [IO.File]::Copy($source, $staging, $false)
       if (Test-Path -LiteralPath $target -PathType Leaf) {
-        # NTFS atomic replace; permission/lock failure aborts rather than delete.
-        [IO.File]::Replace($staging, $target, $null)
+        # .NET Framework/PowerShell 5.1 may marshal a null backup path as
+        # empty. File.Replace then fails AFTER the recovery journal exists.
+        # Use a unique, app-owned NTFS backup name and remove it after a
+        # verified atomic replacement; the durable snapshot is elsewhere.
+        $replaceBackup = Join-Path $DestinationDir ('.DesktopDeck-replace-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+        try {
+          [IO.File]::Replace($staging, $target, $replaceBackup)
+        } finally {
+          if (Test-Path -LiteralPath $replaceBackup) {
+            Remove-Item -LiteralPath $replaceBackup -Force -ErrorAction Stop
+          }
+        }
       } else {
         [IO.File]::Move($staging, $target)
       }
