@@ -2,6 +2,7 @@ param(
   [switch]$Apply,
   [switch]$VerifyPrepared,
   [switch]$AbortPreparation,
+  [switch]$RecoverPreparation,
   [string]$DestinationRoot = (Join-Path $env:APPDATA 'CyanDeck')
 )
 # Opt-in, non-destructive preparation only. Runtime still uses DesktopDeck.
@@ -59,6 +60,79 @@ function Remove-SafeStagingTree([string]$Root) {
   Assert-SafePath $Root
   Remove-Item -LiteralPath $Root -Force -ErrorAction Stop
 }
+# Read-only integrity check shared by normal verification and interruption
+# recovery. Compare the entire file AND directory set, including empty dirs.
+# Refuse links before hashing; never make a destination file writable.
+function Assert-MigrationJsonCandidates {
+  # Check the source and recovery candidates before preparing or repairing
+  # a journal. An identical copy is not necessarily valid data.
+  foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
+                       'calendar-events.json', 'calendar-events.json.bak', 'calendar-events.json.tmp')) {
+    $candidate = Join-Path $legacy $name
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+    try {
+      $raw = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 -ErrorAction Stop
+      if ($name.StartsWith('calendar-events.json', [StringComparison]::OrdinalIgnoreCase)) {
+        if (-not $raw.TrimStart().StartsWith('[')) { throw 'Calendar must be an array.' }
+        # Both Windows PowerShell 5.1 and PowerShell 7 unwrap top-level arrays.
+        # A named JSON property retains the array, including [] and [one item].
+        $parsed = (ConvertFrom-Json -InputObject ('{"events":' + $raw + '}') -ErrorAction Stop).events
+        if ($parsed -isnot [array]) { throw 'Calendar must be an array.' }
+      } else {
+        $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+      }
+      if ($name.StartsWith('layout.json', [StringComparison]::OrdinalIgnoreCase)) {
+        if ($null -eq $parsed -or $parsed -isnot [pscustomobject]) { throw 'Layout must be an object.' }
+        if ($null -ne $parsed.Version) {
+          $version = 0
+          if (-not [int]::TryParse([string]$parsed.Version, [ref]$version) -or $version -lt 0 -or $version -gt 35) {
+            throw 'Unsupported layout schema version.'
+          }
+        }
+      } else {
+        # Reject nulls and non-object entries, even inside backup/temp arrays.
+        foreach ($event in $parsed) {
+          if ($null -eq $event -or $event -isnot [pscustomobject]) { throw 'Calendar event must be an object.' }
+        }
+      }
+    } catch { throw "Migration preflight failed for $name; original data unchanged: $_" }
+  }
+}
+
+function Assert-PreparedCopyIdentical {
+  if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+    throw 'No prepared CyanDeck directory to verify.'
+  }
+  Assert-SafePath $destination
+  $original = @(Get-SafeTree $legacy | Where-Object { -not $_.PSIsContainer })
+  $copied = @(Get-SafeTree $destination | Where-Object { -not $_.PSIsContainer })
+  $originalDirs = @(Get-SafeTree $legacy | Where-Object { $_.PSIsContainer })
+  $copiedDirs = @(Get-SafeTree $destination | Where-Object { $_.PSIsContainer })
+  foreach ($item in @($original) + @($copied) + @($originalDirs) + @($copiedDirs)) {
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+  throw "Refusing linked migration item: $($item.FullName)"
+  }
+  }
+  if ($original.Count -ne $copied.Count -or $originalDirs.Count -ne $copiedDirs.Count) {
+  throw 'Prepared copy has a different file or directory count.'
+  }
+  foreach ($file in $original) {
+  $relative = $file.FullName.Substring($legacy.Length).TrimStart('\')
+  $target = Join-Path $destination $relative
+  if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
+  (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -cne
+  (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash) {
+  throw "Prepared copy differs from original: $relative"
+  }
+  }
+  foreach ($dir in $originalDirs) {
+  $relative = $dir.FullName.Substring($legacy.Length).TrimStart('\')
+  if (-not (Test-Path -LiteralPath (Join-Path $destination $relative) -PathType Container)) {
+  throw "Prepared copy is missing directory: $relative"
+  }
+  }
+}
+
 # Mirror the non-activating C# journal format and transition rules. Only the
 # canonical CyanDeck destination is eligible for a shared journal record.
 function Assert-JournalTimestamp($Value) {
@@ -166,6 +240,9 @@ try {
   if (-not $ownsMigrationMutex) {
     throw 'DesktopDeck is running or another migration holds its single-instance mutex.'
   }
+if ($RecoverPreparation -and ($Apply -or $VerifyPrepared -or $AbortPreparation)) {
+  throw 'Use -RecoverPreparation by itself.'
+}
 if ($AbortPreparation) {
   if ($Apply -or $VerifyPrepared) { throw 'Use -AbortPreparation by itself.' }
   $canonical = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'CyanDeck'))
@@ -197,39 +274,31 @@ if (-not (Test-Path -LiteralPath $legacy -PathType Container)) {
 if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'Exit all DesktopDeck and CyanDeck processes before preparing a data migration.'
 }
+# Recover only an orphaned *copy* after a stopped -Apply publication.
+# Never infer an active cutover and never delete or overwrite either profile.
+if ($RecoverPreparation) {
+  $canonical = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'CyanDeck'))
+  if (-not [string]::Equals($destination, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'RecoverPreparation requires the canonical CyanDeck destination.'
+  }
+  if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+    throw 'No orphaned prepared CyanDeck directory exists.'
+  }
+  # A verified or prepared journal is not orphaned; an unknown journal is
+  # unsafe. The existing transition guard admits only missing/aborted state.
+  Assert-CanPrepareJournal
+  Assert-MigrationJsonCandidates
+  Assert-PreparedCopyIdentical
+  # Check once more immediately before recording to catch intervening edits.
+  Assert-PreparedCopyIdentical
+  Write-CutoverJournal 'prepared'
+  Write-Host 'Recovered missing preparation journal after verifying the entire CyanDeck copy.'
+  Write-Host 'Run -VerifyPrepared separately. Legacy data remains active and untouched.'
+  return
+}
 if ($VerifyPrepared) {
   if ($Apply) { throw 'Use -VerifyPrepared or -Apply, not both.' }
-  if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
-    throw 'No prepared CyanDeck directory to verify.'
-  }
-  Assert-SafePath $destination
-  $original = @(Get-SafeTree $legacy | Where-Object { -not $_.PSIsContainer })
-  $copied = @(Get-SafeTree $destination | Where-Object { -not $_.PSIsContainer })
-  $originalDirs = @(Get-SafeTree $legacy | Where-Object { $_.PSIsContainer })
-  $copiedDirs = @(Get-SafeTree $destination | Where-Object { $_.PSIsContainer })
-  foreach ($item in @($original) + @($copied) + @($originalDirs) + @($copiedDirs)) {
-    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-      throw "Refusing linked migration item: $($item.FullName)"
-    }
-  }
-  if ($original.Count -ne $copied.Count -or $originalDirs.Count -ne $copiedDirs.Count) {
-    throw 'Prepared copy has a different file or directory count.'
-  }
-  foreach ($file in $original) {
-    $relative = $file.FullName.Substring($legacy.Length).TrimStart('\')
-    $target = Join-Path $destination $relative
-    if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -cne
-        (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash) {
-      throw "Prepared copy differs from original: $relative"
-    }
-  }
-  foreach ($dir in $originalDirs) {
-    $relative = $dir.FullName.Substring($legacy.Length).TrimStart('\')
-    if (-not (Test-Path -LiteralPath (Join-Path $destination $relative) -PathType Container)) {
-      throw "Prepared copy is missing directory: $relative"
-    }
-  }
+  Assert-PreparedCopyIdentical
   Write-CutoverJournal 'verified'
   Write-Host 'Prepared copy matches the current legacy data. No files were changed.'
   Write-Host 'Verification does not activate the CyanDeck data root.'
@@ -251,39 +320,7 @@ foreach ($dir in $directories) {
     throw "Refusing linked directory: $($dir.FullName)"
   }
 }
-# Check every recovery candidate, not just the primary file. Do not
-# promote corrupt backups or a future schema into a new data root.
-foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
-                     'calendar-events.json', 'calendar-events.json.bak', 'calendar-events.json.tmp')) {
-  $candidate = Join-Path $legacy $name
-  if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
-  try {
-    $raw = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 -ErrorAction Stop
-    if ($name.StartsWith('calendar-events.json', [StringComparison]::OrdinalIgnoreCase)) {
-      if (-not $raw.TrimStart().StartsWith('[')) { throw 'Calendar must be an array.' }
-      # Both Windows PowerShell 5.1 and PowerShell 7 unwrap top-level arrays.
-      # A named JSON property retains the array, including [] and [one item].
-      $parsed = (ConvertFrom-Json -InputObject ('{"events":' + $raw + '}') -ErrorAction Stop).events
-      if ($parsed -isnot [array]) { throw 'Calendar must be an array.' }
-    } else {
-      $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
-    }
-    if ($name.StartsWith('layout.json', [StringComparison]::OrdinalIgnoreCase)) {
-      if ($null -eq $parsed -or $parsed -isnot [pscustomobject]) { throw 'Layout must be an object.' }
-      if ($null -ne $parsed.Version) {
-        $version = 0
-        if (-not [int]::TryParse([string]$parsed.Version, [ref]$version) -or $version -lt 0 -or $version -gt 35) {
-          throw 'Unsupported layout schema version.'
-        }
-      }
-    } else {
-      # Reject nulls and non-object entries, even inside backup/temp arrays.
-      foreach ($event in $parsed) {
-        if ($null -eq $event -or $event -isnot [pscustomobject]) { throw 'Calendar event must be an object.' }
-      }
-    }
-  } catch { throw "Migration preflight failed for $name; original data unchanged: $_" }
-}
+Assert-MigrationJsonCandidates
 # Ensure all files remained unchanged during preflight. The source is not
 # a transactional snapshot, so reject changes while staging and before publish.
 $sourceManifest = @{}
