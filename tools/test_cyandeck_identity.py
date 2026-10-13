@@ -33,4 +33,12 @@ assert 'RequireNativeCyanDeckVersion' in release
 assert 'github-release-beta://deadpixel134/CyanDeck' in release
 assert 'EnableBetaUpdateChannel' in (source/'Models'/'Models.cs').read_text(encoding='utf-8')
 assert 'BetaUpdateChannelCheck' in (source/'Views'/'SettingsWindow.xaml').read_text(encoding='utf-8')
+# Calendar grid never exposes scrollbars during interactive resize, while dense
+# event lanes remain accessible with wheel, trackpad and touch panning.
+calendar_window = (source/'Calendar'/'CalendarWindow.cs').read_text(encoding='utf-8')
+assert 'VerticalScrollBarVisibility = ScrollBarVisibility.Hidden' in calendar_window
+assert 'HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled' in calendar_window
+assert 'PanningMode = PanningMode.VerticalOnly' in calendar_window
+assert '_weekScroll.ScrollToTop();' in calendar_window
+assert 'new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }' in calendar_window
 print('PASS: standalone CyanDeck namespace, executable, storage, OAuth and original icon')

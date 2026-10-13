@@ -110,11 +110,21 @@ public sealed class CalendarWindow : Window
         Opacity = settings.CalendarOpacity;
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
-        _weekScroll = new ScrollViewer { Content = _weeks, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        // The calendar viewport must never gain a visible scrollbar when the
+        // user drags its resize grip. Keep overflow scrollable (mouse wheel,
+        // trackpad or touch) instead of clipping dense event lanes or dates.
+        // The event editor and preferences retain their own scrollbars.
+        _weekScroll = new ScrollViewer
+        {
+            Content = _weeks,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            PanningMode = PanningMode.VerticalOnly,
+            ToolTip = "일정이 화면보다 많을 때는 마우스 휠이나 터치 스크롤로 다른 주를 볼 수 있습니다."
+        };
         // ScrollViewer measures StackPanel content with unbounded vertical space.
-        // Explicitly distribute any *visible* excess height among the six weeks.
-        // MinHeight, not Height, preserves event-lane overflow and scrolling.
+        // Stretch normal weeks to fill the viewport. Dense event lanes can
+        // still overflow internally, but never introduce a visible scrollbar.
         _weekScroll.SizeChanged += (_, _) => StretchWeekRowsToViewport();
         LocationChanged += (_, _) =>
         {
@@ -351,6 +361,9 @@ public sealed class CalendarWindow : Window
         _monthCaption.FontSize = dateFontSize + 1;
         _weeks.Children.Clear();
         _renderedWeekRows.Clear();
+        // A previously scrolled tall month must not open the next month below
+        // its first week (especially now that scrollbars remain invisible).
+        _weekScroll.ScrollToTop();
         var heading = new Grid { Margin = new Thickness(0, 0, 0, 4) };
         for (var i = 0; i < 7; i++) heading.ColumnDefinitions.Add(new ColumnDefinition());
         var names = new[] { "일", "월", "화", "수", "목", "금", "토" };
@@ -693,7 +706,7 @@ public sealed class CalendarWindow : Window
     {
         if (_renderedWeekRows.Count == 0) return;
         // Six weeks occupy the whole viewport when there is free height.
-        // The calendar can still scroll if dense overlapping event bars need more.
+        // Dense event lanes remain wheel/touch-scrollable without a visible scrollbar.
         var viewportHeight = _weekScroll.ViewportHeight;
         if (!double.IsFinite(viewportHeight) || viewportHeight <= 0)
             viewportHeight = _weekScroll.ActualHeight;
