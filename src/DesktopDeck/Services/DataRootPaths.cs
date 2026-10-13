@@ -14,6 +14,17 @@ public static class DataRootPaths
         Directory.Exists(CyanRoaming) &&
         File.Exists(Path.Combine(CyanRoaming, "layout.json"));
 
+    // Read-only readiness signal; never activates a profile. A copy is only
+    // eligible for a later cutover if the critical files are present and its
+    // recovery candidates can be inspected by the migration verifier.
+    public static bool HasPreparedCriticalData =>
+        HasPreparedCyanRoamingCopy &&
+        File.Exists(Path.Combine(CyanRoaming, "calendar-events.json")) &&
+        File.Exists(Path.Combine(CyanRoaming, "calendar-google-token.dat")) ==
+        File.Exists(Path.Combine(LegacyRoaming, "calendar-google-token.dat")) &&
+        File.Exists(Path.Combine(CyanRoaming, "calendar-google-owner.dat")) ==
+        File.Exists(Path.Combine(LegacyRoaming, "calendar-google-owner.dat"));
+
     // All persistent stores must switch together in a later, verified release.
     // Never infer activation merely because the destination directory exists.
     public static string ActiveRoaming => LegacyRoaming;
