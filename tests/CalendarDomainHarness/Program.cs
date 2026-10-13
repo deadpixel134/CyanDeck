@@ -60,6 +60,25 @@ using (var restarted = CyanDeckSingleInstanceGate.TryAcquire(singletonName))
 }
 // Standalone CyanDeck uses only its own single-instance guard.
 
+// Repository rename must not route CyanDeck to old DesktopDeck updates.
+Assert.That(GitHubReleaseSource.DefaultChannel == "github-release://deadpixel134/CyanDeck",
+    "CyanDeck native default update channel uses renamed repository");
+Assert.That(GitHubReleaseSource.RequireNativeCyanDeckVersion("v8.0.0") == "8.0.0",
+    "CyanDeck release tag passes");
+Assert.That(GitHubReleaseSource.RequireNativeCyanDeckVersion("v8.7.1") == "8.7.1",
+    "future CyanDeck release tag passes");
+var rejectedOldRelease = false;
+try { GitHubReleaseSource.RequireNativeCyanDeckVersion("v7.49.5"); }
+catch (InvalidOperationException) { rejectedOldRelease = true; }
+Assert.That(rejectedOldRelease, "old DesktopDeck v7 release is never a CyanDeck update");
+var rejectedTagInjection = false;
+try { GitHubReleaseSource.RequireNativeCyanDeckVersion("v8.0.0-preview"); }
+catch (InvalidDataException) { rejectedTagInjection = true; }
+Assert.That(rejectedTagInjection, "only fully versioned stable CyanDeck releases qualify");
+Assert.That(GitHubReleaseSource.PackageSource(GitHubReleaseSource.DefaultChannel, "CyanDeck-8.0.0-win-x64.zip")
+    == "github-release://deadpixel134/CyanDeck/CyanDeck-8.0.0-win-x64.zip",
+    "renamed GitHub repo package source stays within expected channel");
+
 Assert.That(CalendarHeaderPolicy.FormatToday(new DateTime(2026, 10, 9)) == "2026.10.09 (금)",
     "Korean calendar header includes zero-padded date and correct weekday");
 Assert.That(CalendarHeaderPolicy.FormatToday(new DateTime(2026, 11, 1)) == "2026.11.01 (일)",

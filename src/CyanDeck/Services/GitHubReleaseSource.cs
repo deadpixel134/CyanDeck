@@ -15,7 +15,7 @@ namespace CyanDeck.Services;
 /// </summary>
 public static class GitHubReleaseSource
 {
-    public const string DefaultChannel = "github-release://deadpixel134/DesktopDeck";
+    public const string DefaultChannel = "github-release://deadpixel134/CyanDeck";
     private const long MaxManifestBytes = 256 * 1024;
     private const long MaxPackageBytes = 300L * 1024 * 1024;
     private static readonly Regex SafePart = new("^[A-Za-z0-9_.-]+$", RegexOptions.CultureInvariant);
@@ -53,6 +53,22 @@ public static class GitHubReleaseSource
         return $"github-release://{owner}/{repository}/{packageFile}";
     }
 
+    // GitHub's /releases/latest may still refer to the old DesktopDeck v7
+    // release after repository rename. Never try to fetch/install a v7 package.
+    internal static string RequireNativeCyanDeckVersion(string tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag) ||
+            !tag.StartsWith('v') ||
+            !Version.TryParse(tag[1..], out var version) ||
+            version.Build < 0 || version.Revision >= 0)
+            throw new InvalidDataException("GitHub release tag is not a CyanDeck semantic version.");
+        if (version.Major < 8)
+            throw new InvalidOperationException(
+                "CyanDeck 8.0.0 or later has not been published as a public GitHub Release yet. " +
+                "The existing DesktopDeck v7 release is not a CyanDeck update.");
+        return version.ToString(3);
+    }
+
     private static async Task<ReleaseInfo> LatestAsync(string owner, string repository, CancellationToken token)
     {
         var url = new Uri($"https://api.github.com/repos/{owner}/{repository}/releases/latest");
@@ -63,6 +79,7 @@ public static class GitHubReleaseSource
         await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token).ConfigureAwait(false);
         var tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
+        _ = RequireNativeCyanDeckVersion(tag);
         var assets = new List<GitHubAsset>();
         foreach (var element in doc.RootElement.GetProperty("assets").EnumerateArray())
         {
@@ -80,7 +97,7 @@ public static class GitHubReleaseSource
         var (owner, repository, asset) = Parse(source);
         if (asset is not null) throw new InvalidDataException("A GitHub manifest source must refer to the repository, not an asset.");
         var release = await LatestAsync(owner, repository, token).ConfigureAwait(false);
-        var manifestName = $"CyanDeck-{release.Tag.TrimStart('v', 'V')}-{runtime}.update.json";
+        var manifestName = $"CyanDeck-{RequireNativeCyanDeckVersion(release.Tag)}-{runtime}.update.json";
         var manifest = release.Assets.FirstOrDefault(a => string.Equals(a.Name, manifestName, StringComparison.OrdinalIgnoreCase))
             ?? throw new FileNotFoundException($"Signed manifest asset missing in latest GitHub Release: {manifestName}");
         if (manifest.Size > MaxManifestBytes)

@@ -22,4 +22,8 @@ oauth=(source/'Calendar'/'GoogleOAuthClientConfiguration.cs').read_text(encoding
 assert 'CyanDeck.OAuthDesktopClient' in oauth
 for name in ['build.ps1','package.ps1','install.ps1','uninstall.ps1','apply-update.ps1']:
     assert 'CyanDeck.exe' in (root/name).read_text(encoding='utf-8-sig'),name
+release=(source/'Services'/'GitHubReleaseSource.cs').read_text(encoding='utf-8')
+assert 'github-release://deadpixel134/CyanDeck' in release
+assert 'github-release://deadpixel134/DesktopDeck' not in release
+assert 'RequireNativeCyanDeckVersion' in release
 print('PASS: standalone CyanDeck namespace, executable, storage, OAuth and original icon')

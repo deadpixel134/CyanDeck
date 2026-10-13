@@ -33,7 +33,7 @@ ARM64 환경에는 win-arm64를 선택합니다. 출력은 publish/{runtime}/Cya
 
 CI 개발 빌드는 Google 인증 설정을 포함하지 않습니다. 배포용 빌드는 배포자 Google Desktop OAuth JSON과 RSA 업데이트 서명 키를 GitHub Secrets로 주입해 서명 ZIP 및 매니페스트를 검증한 후에만 릴리스합니다. 사용자 토큰 및 개인 서명 키를 GitHub 소스에 올리지 마세요.
 
-현재 GitHub 저장소 주소는 https://github.com/deadpixel134/DesktopDeck 입니다. 이 주소는 업데이트 파일 호스팅 경로일 뿐, 프로그램 이름과 저장 경로는 모두 CyanDeck입니다. 저장소 자체의 이름 변경은 별도 GitHub 관리 작업입니다.
+공식 GitHub 저장소: https://github.com/deadpixel134/CyanDeck 입니다. 업데이트 채널도 `github-release://deadpixel134/CyanDeck`을 사용합니다. 이전 DesktopDeck v7.49.5 릴리스는 CyanDeck 업데이트 대상으로 사용하지 않으며, 공개된 CyanDeck v8 이상 릴리스만 자동 업데이트에 사용합니다. v8.0.0 서명 패키지는 현재 비공개 Draft이므로 실제 배포 승인이 완료되기 전에는 자동 업데이트되지 않습니다.
 
 ## 안전
 
