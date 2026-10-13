@@ -179,6 +179,25 @@ try {
       throw "Source changed during migration: $relative"
     }
   }
+  # Files can remain unchanged while empty directories are added or removed.
+  # Verify the full directory set again immediately before publishing.
+  $currentDirs = @(Get-SafeTree $legacy | Where-Object { $_.PSIsContainer })
+  if ($currentDirs.Count -ne $directories.Count) {
+    throw 'Source directory set changed during migration; refusing to publish.'
+  }
+  $expectedDirs = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($dir in $directories) {
+    [void]$expectedDirs.Add($dir.FullName.Substring($legacy.Length).TrimStart('\'))
+  }
+  foreach ($dir in $currentDirs) {
+    $relative = $dir.FullName.Substring($legacy.Length).TrimStart('\')
+    if (-not $expectedDirs.Contains($relative)) {
+      throw "Source directory changed during migration: $relative"
+    }
+  }
+  if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+    throw 'DesktopDeck or CyanDeck started during migration; refusing to publish.'
+  }
   if (Test-Path -LiteralPath $destination) { throw 'Destination appeared during migration; refusing overwrite.' }
   Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop
   Write-Host 'Verified CyanDeck data copy prepared. Original DesktopDeck data remains untouched.'
