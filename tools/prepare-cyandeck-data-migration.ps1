@@ -99,7 +99,7 @@ function Write-CutoverJournal([string]$Phase) {
       # File.Replace atomically updates an existing journal on Windows;
       # File.Move publishes the first journal without overwriting it.
       if (Test-Path -LiteralPath $journal -PathType Leaf) {
-        [IO.File]::Replace($temp, $journal, $null)
+        [IO.File]::Replace($temp, $journal, ($journal + '.backup'))
       } else {
         [IO.File]::Move($temp, $journal)
       }
