@@ -1,7 +1,7 @@
 param(
   [ValidateSet('win-x64', 'win-arm64')]
   [string]$Runtime = 'win-x64',
-  [string]$OutputDirectory = (Join-Path $PSScriptRoot '../preview-portable/win-x64')
+  [string]$OutputDirectory = (Join-Path $PSScriptRoot "../preview-portable/$Runtime")
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,16 +61,25 @@ if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$') {
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ('cyandeck-portable-' + [Guid]::NewGuid().ToString('N'))
 $bundle = Join-Path $work 'bundle'
+$launcher = Join-Path $work 'launcher'
 $legacy = Join-Path $work 'legacy'
 try {
   New-Item -ItemType Directory -Path $work -ErrorAction Stop | Out-Null
-  & (Join-Path $PSScriptRoot 'build-cyandeck-launcher-preview.ps1') -Runtime $Runtime -OutputDirectory $bundle
+  & (Join-Path $PSScriptRoot 'build-cyandeck-launcher-preview.ps1') -Runtime $Runtime -OutputDirectory $launcher
   & dotnet publish (Join-Path $root 'src/DesktopDeck/DesktopDeck.csproj') -c Release -r $Runtime --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o $legacy
   if ($LASTEXITCODE -ne 0) { throw 'Portable DesktopDeck companion publish failed.' }
   $legacyExe = Join-Path $legacy 'DesktopDeck.exe'
   if (-not (Test-Path -LiteralPath $legacyExe -PathType Leaf)) {
     throw 'Portable companion DesktopDeck.exe missing.'
   }
+  # Publish may emit PDBs or auxiliary files. Construct a clean three-file
+  # bundle instead of deleting output files or relaxing manifest validation.
+  $launcherExe = Join-Path $launcher 'CyanDeck.exe'
+  if (-not (Test-Path -LiteralPath $launcherExe -PathType Leaf)) {
+    throw 'Portable launcher CyanDeck.exe missing.'
+  }
+  New-Item -ItemType Directory -Path $bundle -ErrorAction Stop | Out-Null
+  Copy-Item -LiteralPath $launcherExe -Destination (Join-Path $bundle 'CyanDeck.exe') -ErrorAction Stop
   Copy-Item -LiteralPath $legacyExe -Destination (Join-Path $bundle 'DesktopDeck.exe') -ErrorAction Stop
   $notice = @(
     'UNSIGNED CYANDECK PORTABLE COMPATIBILITY PREVIEW - NOT FOR PRODUCTION'
