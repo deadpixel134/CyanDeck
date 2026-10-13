@@ -20,6 +20,7 @@ try {
   }
   & $script -VerifyPrepared
   $journal = Join-Path $env:LOCALAPPDATA 'DesktopDeck/migration/cyandeck-cutover-state.json'
+  & $script -VerifyPrepared
   $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
   if ($entry.Phase -ne 'verified' -or $entry.Version -ne 1) {
     throw 'Verified migration journal was not recorded.'
