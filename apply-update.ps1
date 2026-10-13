@@ -165,9 +165,59 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
   }
 }
 
+# This legacy-compatible updater must never reinstall or recover an old EXE
+# after a future CyanDeck data cutover. Treat any existing fence (including a
+# directory, malformed file, or symlink) as blocking until a compatible updater
+# explicitly handles the new storage contract.
+function Assert-LegacyWriterFenceAbsent {
+  $fencePath = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'DesktopDeck\migration\legacy-writer-fenced.json'))
+  $cursor = $fencePath
+  while ($cursor) {
+    $attributes = $null
+    try { $attributes = [IO.File]::GetAttributes($cursor) }
+    catch [IO.FileNotFoundException] { }
+    catch [IO.DirectoryNotFoundException] { }
+    if ($null -ne $attributes) {
+      if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Unsafe CyanDeck legacy profile fence path: $cursor"
+      }
+      if ([string]::Equals($cursor, $fencePath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'CyanDeck profile cutover fence is present. Legacy update, rollback and recovery are blocked.'
+      }
+    }
+    $parent = [IO.Path]::GetDirectoryName($cursor.TrimEnd('\', '/'))
+    if (-not $parent -or $parent -eq $cursor) { break }
+    $cursor = $parent
+  }
+}
+
+# Wait until the requesting application has exited before taking both locks.
+# Keep both owned until installation/rollback/recovery finishes, then relaunch.
 Wait-DesktopDeckProcess $WaitForPid
+$legacyUpdateMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
+$writerUpdateMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.LegacyProfileWriter.v1')
+$ownsLegacyUpdateMutex = $false
+$ownsWriterUpdateMutex = $false
+try {
+  try { $ownsLegacyUpdateMutex = $legacyUpdateMutex.WaitOne(0) }
+  catch [Threading.AbandonedMutexException] {
+    $ownsLegacyUpdateMutex = $true
+    throw 'DesktopDeck stopped unexpectedly; inspect its data before updating or recovering.'
+  }
+  if (-not $ownsLegacyUpdateMutex) {
+    throw 'DesktopDeck is running or another update owns its profile. Update cancelled.'
+  }
+  try { $ownsWriterUpdateMutex = $writerUpdateMutex.WaitOne(0) }
+  catch [Threading.AbandonedMutexException] {
+    $ownsWriterUpdateMutex = $true
+    throw 'CyanDeck writer lease was abandoned; inspect profile data before updating.'
+  }
+  if (-not $ownsWriterUpdateMutex) {
+    throw 'A CyanDeck writer or data migration owns the legacy profile. Update cancelled.'
+  }
+  Assert-LegacyWriterFenceAbsent
 # Manual recovery must not replace files while another DesktopDeck instance is running.
-if (@(Get-Process -Name DesktopDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is still running. Exit all instances normally before updating or recovering.'
 }
 $InstallDir = Assert-OrdinaryDirectory $InstallDir 'Install directory'
@@ -182,9 +232,7 @@ $rollbackRoot = Assert-OrdinaryDirectory $rollbackRoot 'Rollback storage'
 $journal = Get-RecoveryJournal $InstallDir
 if ($RecoverPending) {
   Restore-PendingUpdate $journal
-  if ($Relaunch) { Start-Process -FilePath $installedExe }
-  exit 0
-}
+} else {
 if (Test-Path -LiteralPath $journal) {
   throw "Previous update has an unresolved recovery journal: $journal. Run apply-update.ps1 -RecoverPending -InstallDir <directory> after closing DesktopDeck."
 }
@@ -294,7 +342,15 @@ try {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
+} # Completed normal update/rollback branch.
+} finally {
+  if ($ownsWriterUpdateMutex) { $writerUpdateMutex.ReleaseMutex() }
+  $writerUpdateMutex.Dispose()
+  if ($ownsLegacyUpdateMutex) { $legacyUpdateMutex.ReleaseMutex() }
+  $legacyUpdateMutex.Dispose()
+}
 
+# A relaunched EXE must not race its own updater's still-held mutex.
 if ($Relaunch) {
   $exe = Join-Path $InstallDir 'DesktopDeck.exe'
   if (Test-Path -LiteralPath $exe -PathType Leaf) { Start-Process -FilePath $exe }
