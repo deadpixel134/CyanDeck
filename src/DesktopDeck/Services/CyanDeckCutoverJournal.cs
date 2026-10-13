@@ -59,6 +59,29 @@ public static class CyanDeckCutoverJournal
             DataRootPaths.IsPreparedCopyIdentical();
     }
 
+    // Reserved for a future coordinated installer cutover. A fence must be
+    // installed atomically while holding the legacy single-instance mutex.
+    // Never infer a fence from a verified copy or a preparation journal.
+    public static string LegacyWriterFencePath => Path.Combine(DataRootPaths.LegacyLocal,
+        "migration", "legacy-writer-fenced.json");
+
+    public static void ThrowIfLegacyWriterFenced()
+    {
+        var migration = new DirectoryInfo(Path.GetDirectoryName(LegacyWriterFencePath)!);
+        var local = new DirectoryInfo(DataRootPaths.LegacyLocal);
+        if ((local.Exists && (local.Attributes & FileAttributes.ReparsePoint) != 0) ||
+            (migration.Exists && (migration.Attributes & FileAttributes.ReparsePoint) != 0))
+            throw new InvalidDataException("Unsafe CyanDeck writer fence directory.");
+        var fence = new FileInfo(LegacyWriterFencePath);
+        if (!fence.Exists) return;
+        if ((fence.Attributes & FileAttributes.ReparsePoint) != 0 || fence.Length > 4096)
+            throw new InvalidDataException("Unsafe CyanDeck writer fence.");
+        // Fail closed: even an empty or corrupt fence blocks legacy writes.
+        throw new InvalidOperationException(
+            "This legacy DesktopDeck build cannot write after CyanDeck cutover. " +
+            "Use a compatible CyanDeck version or perform a verified rollback.");
+    }
+
     // Explicit rollback-preparation record. This does not move or delete data;
     // the legacy profile remains active throughout the current release.
     public static void AbortPreparation()
