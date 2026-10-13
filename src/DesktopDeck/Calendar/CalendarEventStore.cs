@@ -54,7 +54,7 @@ public sealed class CalendarEventStore
     // accessing the user's actual calendar data.
     public CalendarEventStore(string? storagePath = null)
     {
-        _path = storagePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DesktopDeck", "calendar-events.json");
+        _path = storagePath ?? Path.Combine(DataRootPaths.ActiveRoaming, "calendar-events.json");
         try
         {
             if (File.Exists(_path))
