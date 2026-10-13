@@ -363,7 +363,11 @@ try {
         throw 'Update ZIP extraction produced an unexpected directory.'
       }
     }
-    if (-not [string]::Equals($payloadDir, (Split-Path -Parent $exes[0].FullName), [StringComparison]::OrdinalIgnoreCase)) {
+    # Use FileInfo.DirectoryName directly: command-mode Split-Path can treat
+    # a bare indexed member expression as a literal argument.
+    $actualExeDirectory = $exes[0].DirectoryName
+    if (-not [string]::Equals([IO.Path]::GetFullPath($payloadDir),
+        [IO.Path]::GetFullPath($actualExeDirectory), [StringComparison]::OrdinalIgnoreCase)) {
       throw 'Update ZIP executable escaped the selected payload root.'
     }
     # Fail closed: no unrecognized content or nested directories in the payload.
