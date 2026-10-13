@@ -83,6 +83,37 @@ installer/updater handoff, downgrade prevention, old-binary compatibility
 strategy, and tested rollback. A preparation journal or a writer lease is
 not permission to activate CyanDeck storage.
 
+## Legacy distribution and downgrade protection (implemented, limited)
+
+The current `install.ps1`, `apply-update.ps1`, and `uninstall.ps1`
+now acquire BOTH legacy writer mutexes before changing managed installation
+files, and release them when the operation ends. The updater releases
+them **before** relaunching the app. This excludes cooperating binaries
+during install, signed update, application-file rollback, crash recovery,
+and uninstall.
+
+All three scripts inspect the legacy cutover fence at
+`%LOCALAPPDATA%\\DesktopDeck\\migration\\legacy-writer-fenced.json`.
+Once that fence exists, the current **legacy-only** distribution scripts
+refuse to reinstall, downgrade, recover or uninstall the obsolete executable.
+Malformed or directory-shaped fence paths fail closed. This fence is not
+created by the current release and **must not be created manually**; it is
+reserved for a future coordinated, signed transition.
+
+A `-PurgeData -ConfirmPurgeData` uninstall is also rejected while an
+`%APPDATA%\\CyanDeck` candidate exists, because removing only the
+DesktopDeck source would silently orphan an additional copy of settings
+and possibly Google credentials. The candidate must never be silently
+deleted. A compatible future uninstaller needs its own explicit data
+retention/erasure workflow.
+
+Windows CI exercises these guards with disposable user-profile directories
+in PowerShell 7 and Windows PowerShell 5.1. **Older already-distributed
+scripts and standalone portable EXEs do not understand the new fence or
+mutexes.** These safeguards do not yet permit a safe live profile cutover;
+the future transition must also handle older executables and downgrades
+without trusting that every old copy participates.
+
 ## Future cutover (not yet implemented)
 
 1. Freeze writes and stop all DesktopDeck processes.
