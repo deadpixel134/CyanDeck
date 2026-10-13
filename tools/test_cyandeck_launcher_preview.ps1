@@ -42,7 +42,10 @@ try {
   if (Test-Path -LiteralPath (Join-Path $payload 'calendar-events.json')) {
     throw 'Launcher unexpectedly created persistent calendar data.'
   }
-  Write-Host 'CyanDeck.exe forwarded exact arguments and working directory to sibling DesktopDeck.exe.'
+  $quotedOutput = Join-Path $root 'quoted-forwarded.json'
+  & dotnet run --project (Join-Path $PSScriptRoot '../tests/CyanDeckLauncherHarness/CyanDeckLauncherHarness.csproj') -c Release -- $launcher $quotedOutput $otherCwd
+  if ($LASTEXITCODE -ne 0) { throw 'Quoted and Unicode real-process handoff failed.' }
+  Write-Host 'CyanDeck.exe forwarded startup options, Korean/spaced paths and working directory without changing data.'
 }
 finally {
   $env:CYANDECK_LAUNCH_FIXTURE_OUTPUT = $previousOutput

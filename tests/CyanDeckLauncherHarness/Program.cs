@@ -61,4 +61,77 @@ try
         "removing test cutover fence restores handoff");
 }
 finally { Directory.Delete(scratch, recursive: true); }
+// Optional real-process contract. The PowerShell preview smoke suite passes
+// a self-contained bridge and a disposable DesktopDeck.exe probe in that order.
+// ProcessStartInfo.ArgumentList here tests real Windows quoting, not a shell's
+// best-effort reconstruction of a command-line string.
+if (args.Length != 0)
+{
+    Check(args.Length == 3, "real launch harness needs launcher, output and cwd paths");
+    var launcherExe = Path.GetFullPath(args[0]);
+    var outputPath = Path.GetFullPath(args[1]);
+    var independentWorkingDir = Path.GetFullPath(args[2]);
+    Check(File.Exists(launcherExe), "compiled CyanDeck preview exists");
+    if (File.Exists(outputPath)) File.Delete(outputPath);
+    var trickyArgs = new[]
+    {
+        "--managed-policy",
+        @"C:\some folder\한글 정책 name with spaces.json",
+        "--wait-for-pid", "1234", "--peek-toggle"
+    };
+    var start = new System.Diagnostics.ProcessStartInfo(launcherExe)
+    {
+        UseShellExecute = false,
+        WorkingDirectory = independentWorkingDir
+    };
+    foreach (var argument in trickyArgs) start.ArgumentList.Add(argument);
+    start.Environment["CYANDECK_LAUNCH_FIXTURE_OUTPUT"] = outputPath;
+    using (var child = System.Diagnostics.Process.Start(start)
+        ?? throw new InvalidOperationException("CyanDeck preview could not be launched"))
+    {
+        Check(child.WaitForExit(15000) && child.ExitCode == 0,
+            "real preview successfully handed off to legacy probe");
+    }
+    var startedAt = System.Diagnostics.Stopwatch.StartNew();
+    while (!File.Exists(outputPath) && startedAt.Elapsed < TimeSpan.FromSeconds(15))
+        Thread.Sleep(100);
+    Check(File.Exists(outputPath), "adjacent legacy probe received the process handoff");
+    // The probe may still be flushing the JSON when File.Exists first succeeds.
+    string[]? actual = null;
+    while (actual is null && startedAt.Elapsed < TimeSpan.FromSeconds(15))
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(outputPath));
+            actual = doc.RootElement.GetProperty("Args").EnumerateArray()
+                .Select(v => v.GetString() ?? "").ToArray();
+            Check(doc.RootElement.GetProperty("ExecutableName").GetString() == "DesktopDeck.exe",
+                "preview starts the sibling DesktopDeck.exe, not a different executable");
+            Check(string.Equals(
+                    Path.GetFullPath(doc.RootElement.GetProperty("WorkingDirectory").GetString()!),
+                    Path.GetDirectoryName(launcherExe), StringComparison.OrdinalIgnoreCase),
+                "real handoff uses sibling executable directory as working directory");
+        }
+        catch (IOException) { Thread.Sleep(100); }
+        catch (System.Text.Json.JsonException) { Thread.Sleep(100); }
+    }
+    Check(actual is not null && actual.SequenceEqual(trickyArgs),
+        "actual Windows handoff retains Unicode, spaces and argument boundaries");
+
+    // Diagnostic mode checks the adjacent executable without launching it.
+    File.Delete(outputPath);
+    var preflight = new System.Diagnostics.ProcessStartInfo(launcherExe)
+    {
+        UseShellExecute = false,
+        WorkingDirectory = independentWorkingDir
+    };
+    preflight.ArgumentList.Add(CyanDeckLaunchPolicy.DiagnosticOption);
+    preflight.Environment["CYANDECK_LAUNCH_FIXTURE_OUTPUT"] = outputPath;
+    using (var checkOnly = System.Diagnostics.Process.Start(preflight)
+        ?? throw new InvalidOperationException("Read-only handoff diagnostic failed to launch"))
+        Check(checkOnly.WaitForExit(15000) && checkOnly.ExitCode == 0,
+            "read-only handoff diagnostic exits successfully");
+    Thread.Sleep(300);
+    Check(!File.Exists(outputPath), "handoff diagnostic does not launch DesktopDeck.exe");
+}
 Console.WriteLine("CyanDeckLauncherHarness: policy assertions passed.");

@@ -147,7 +147,9 @@ pwsh -File tools/build-cyandeck-launcher-preview.ps1 -Runtime win-x64
 For manual checks, put `CyanDeck.exe` beside a compatible `DesktopDeck.exe`
 in a **separate portable test folder**. Do not overwrite the installed EXE.
 Windows CI tests the real executable forwarding to a disposable fake
-`DesktopDeck.exe` and publishes unsigned preview-only CI artifacts for
+`DesktopDeck.exe`, including Korean/spaced policy paths, precise argument
+boundaries, independent working-directory resolution, and a non-launching
+read-only diagnostic. It publishes unsigned preview-only CI artifacts for
 win-x64 and win-arm64, retained for 7 days.
 
 The legacy installer, signed `package.ps1`, `apply-update.ps1` and GitHub
