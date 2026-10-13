@@ -17,7 +17,8 @@ try {
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../install.ps1') -Destination $installer
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../apply-update.ps1') -Destination $updater
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../uninstall.ps1') -Destination $uninstaller
-  foreach ($filename in @('DesktopDeck.exe', 'uninstall.ps1', 'recover-desktop-icons.ps1')) {
+  # Keep the real uninstaller script above; do not overwrite it with a stub.
+  foreach ($filename in @('DesktopDeck.exe', 'recover-desktop-icons.ps1')) {
     Set-Content -LiteralPath (Join-Path $installerDir $filename) -Value 'test-only payload' -Encoding Ascii
   }
   Set-Content -LiteralPath (Join-Path $installedDir 'DesktopDeck.exe') -Value 'test-only installed EXE' -Encoding Ascii
@@ -28,9 +29,13 @@ try {
 
   function Assert-Blocked([scriptblock]$Action, [string]$Expected, [string]$Label) {
     $blocked = $false
+    $actual = '<no exception>'
     try { & $Action | Out-Null }
-    catch { $blocked = ([string]$_).Contains($Expected) }
-    if (-not $blocked) { throw "Guard did not block $Label with expected reason $Expected" }
+    catch {
+      $actual = [string]$_
+      $blocked = $actual.Contains($Expected)
+    }
+    if (-not $blocked) { throw "Guard did not block $Label. Expected: $Expected. Actual: $actual" }
     if (Test-Path -LiteralPath $managedInstallDir) {
       throw "Guard modified installed application directory during $Label"
     }
