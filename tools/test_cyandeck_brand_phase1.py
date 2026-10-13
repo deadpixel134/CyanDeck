@@ -197,6 +197,14 @@ checks.update({
     "cutover readiness requires checksum comparison": 'if (!IsPreparedCopyIdentical()) return "prepared-copy-diverged"' in root_readiness,
     "cutover readiness does not activate root": "ActiveRoaming => LegacyRoaming" in root_readiness,
 })
+cutover_journal = source("src/DesktopDeck/Services/CyanDeckCutoverJournal.cs")
+checks.update({
+    "migration journal has versioned states": 'CurrentVersion = 1' in cutover_journal and 'const string Aborted = "aborted"' in cutover_journal,
+    "migration journal writes atomically": 'File.Move(temporary, JournalPath, overwrite: true)' in cutover_journal,
+    "migration journal verifies before marking complete": 'phase == Verified && !DataRootPaths.IsPreparedCopyIdentical()' in cutover_journal,
+    "migration journal rejects incompatible roots": 'entry.CandidateRoot, DataRootPaths.CyanRoaming' in cutover_journal,
+    "migration journal never activates root": "ActiveRoaming => LegacyRoaming" in root_readiness,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
