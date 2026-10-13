@@ -323,6 +323,41 @@ checks.update({
     "migration rejects null calendar events without discarding them":
         "foreach ($event in $parsed)" in migration_script and "Where-Object { $null -ne $_ }" not in migration_script,
 })
+# Distribution handoff: these scripts are shipped inside signed update ZIPs.
+# Before cutover they may update the legacy executable, but a future fence
+# must block reinstall, updater rollback and legacy uninstall/data purge.
+distribution_installer = source("install.ps1")
+distribution_updater = source("apply-update.ps1")
+distribution_uninstaller = source("uninstall.ps1")
+distribution_test = source("tools/test_cyandeck_install_update_guards.ps1")
+build_ci = source(".github/workflows/build.yml")
+release_ci = source(".github/workflows/release.yml")
+checks.update({
+    "legacy distribution scripts each refuse a cutover fence":
+        all("function Assert-LegacyWriterFenceAbsent" in src and
+            "Assert-LegacyWriterFenceAbsent" in src and
+            "CyanDeck profile cutover fence is present" in src
+            for src in (distribution_installer, distribution_updater, distribution_uninstaller)),
+    "distribution scripts all hold the existing DesktopDeck mutex":
+        all("Local\\DesktopDeck.SingleInstance" in src and ".WaitOne(0)" in src
+            for src in (distribution_installer, distribution_updater, distribution_uninstaller)),
+    "distribution scripts all hold the shared CyanDeck writer lease":
+        all("Local\\CyanDeck.LegacyProfileWriter.v1" in src and
+            "Writer" in src and "ReleaseMutex()" in src
+            for src in (distribution_installer, distribution_updater, distribution_uninstaller)),
+    "updater relaunch occurs only after profile lease release":
+        distribution_updater.rindex("if ($ownsWriterUpdateMutex) { $writerUpdateMutex.ReleaseMutex() }") <
+            distribution_updater.rindex("if ($Relaunch) {"),
+    "uninstaller blocks partial purge when CyanDeck candidate exists":
+        "if ($PurgeData -and (Test-Path -LiteralPath (Join-Path $env:APPDATA 'CyanDeck')))" in distribution_uninstaller,
+    "legacy cutover integration tests run on both PowerShell versions":
+        all("test_cyandeck_install_update_guards.ps1" in ci and
+            "CyanDeck installer/updater cutover guards (Windows PowerShell 5.1)" in ci
+            for ci in (build_ci, release_ci)),
+    "distribution safety test uses isolated APPDATA and LOCALAPPDATA":
+        "$env:APPDATA = Join-Path $root 'roaming'" in distribution_test and
+        "$env:LOCALAPPDATA = Join-Path $root 'local'" in distribution_test
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
