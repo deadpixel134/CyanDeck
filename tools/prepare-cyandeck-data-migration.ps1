@@ -65,7 +65,7 @@ function Write-CutoverJournal([string]$Phase) {
     if ($Phase -eq 'prepared' -and $previous -and $previous.Phase -ne 'aborted') {
       throw 'Existing migration journal must be aborted before preparing again.'
     }
-    if ($Phase -eq 'verified' -and (-not $previous -or $previous.Phase -ne 'prepared')) {
+    if ($Phase -eq 'verified' -and (-not $previous -or $previous.Phase -notin @('prepared','verified'))) {
       throw 'Verification requires a prepared migration journal.'
     }
     if ($Phase -eq 'aborted' -and (-not $previous -or $previous.Phase -eq 'aborted')) { return }
