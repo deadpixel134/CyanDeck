@@ -205,6 +205,12 @@ checks.update({
     "migration journal rejects incompatible roots": 'entry.CandidateRoot, DataRootPaths.CyanRoaming' in cutover_journal,
     "migration journal never activates root": "ActiveRoaming => LegacyRoaming" in root_readiness,
 })
+journal_review = source("src/DesktopDeck/Services/CyanDeckCutoverJournal.cs")
+checks.update({
+    "verified journal rechecks current profile": "IsCurrentlyVerifiedForReview()" in journal_review and "DataRootPaths.IsPreparedCopyIdentical()" in journal_review,
+    "verified journal requires verified phase": "entry.Phase == Verified" in journal_review,
+    "journal remains separate from candidate profile": 'Path.Combine(DataRootPaths.LegacyLocal,' in journal_review,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
