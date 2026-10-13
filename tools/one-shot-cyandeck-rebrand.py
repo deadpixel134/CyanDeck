@@ -26,6 +26,9 @@ TEXT_EXT={".cs",".csproj",".xaml",".ps1",".py",".json",".yml",".yaml",".md",
 allfiles=subprocess.check_output(["git","ls-files","-z"],cwd=ROOT).decode().strip("\0").split("\0")
 plans=[]
 for oldpath in filter(None,allfiles):
+    # Workflows require a distinct GitHub permission; update them with the repository connector.
+    if oldpath.startswith(".github/workflows/") or oldpath=="tools/one-shot-cyandeck-rebrand.py":
+        continue
     file=ROOT/oldpath
     if not file.is_file(): continue
     newpath=rename(oldpath)
