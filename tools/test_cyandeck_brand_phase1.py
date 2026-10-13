@@ -20,7 +20,7 @@ checks = {
     "assembly name stays DesktopDeck": "<AssemblyName>DesktopDeck</AssemblyName>" in project,
     "root namespace stays DesktopDeck": "<RootNamespace>DesktopDeck</RootNamespace>" in project,
     "existing executable path is preserved": 'Join-Path $installDir "DesktopDeck.exe"' in source("install.ps1"),
-    "existing state folder is preserved": '"DesktopDeck"' in source("src/DesktopDeck/Services/StateStore.cs"),
+    "existing state folder is preserved": 'DataRootPaths.ActiveRoaming' in source("src/DesktopDeck/Services/StateStore.cs") and 'ActiveRoaming => LegacyRoaming' in source("src/DesktopDeck/Services/DataRootPaths.cs"),
     "existing single-instance mutex is preserved": 'Local\\DesktopDeck.SingleInstance' in source("src/DesktopDeck/App.xaml.cs"),
     "existing activation IPC is preserved": 'DesktopDeck.Activation.v1' in source("src/DesktopDeck/App.xaml.cs"),
     "OAuth embedded resource identifier is preserved": 'DesktopDeck.OAuthDesktopClient' in source("src/DesktopDeck/Calendar/GoogleOAuthClientConfiguration.cs"),
@@ -40,6 +40,7 @@ checks.update({
     "managed policy notice displays CyanDeck": "현재 CyanDeck 관리 정책에 의해" in controller and "현재 DesktopDeck 관리 정책에 의해" not in controller,
     "monitor swap user notices display CyanDeck": "교환할 CyanDeck 내용이 없습니다." in controller and "교환할 DesktopDeck 내용이 없습니다." not in controller,
     "feature toggle error displays CyanDeck": 'ReportFeatureSwitchSaveFailure("CyanDeck", ex)' in controller,
+    "managed policy cache remains in active legacy root": 'Path.Combine(DataRootPaths.ActiveRoaming, "managed-policy-cache.json")' in controller,
     "pending update recovery notice displays CyanDeck": "이전 CyanDeck 업데이트가 완료되지 않아" in controller and "이전 DesktopDeck 업데이트가 완료되지 않아" not in controller,
     "checkpoint restore notice displays CyanDeck": "이 CyanDeck 복구 체크포인트를 복원하시겠습니까?" in controller,
     "swap coordinator result copy displays CyanDeck": all(fragment in swap for fragment in (
@@ -55,7 +56,7 @@ checks.update({
     "calendar backup note keeps exact legacy folder": r"CyanDeck의 기존 데이터 폴더(%APPDATA%\\DesktopDeck)" in calendar_backup_ui
         and r'"DesktopDeck", "calendar-events.json"' in calendar_backup_ui,
     "Windows taskbar AppUserModelID remains unchanged": '"DesktopDeck.Peek"' in source("src/DesktopDeck/Peek/WpfPeekTaskbarButtonWindow.cs"),
-    "Google token path remains legacy DesktopDeck": '"DesktopDeck", "calendar-google-token.dat"' in source("src/DesktopDeck/Calendar/GoogleCalendarSync.cs"),
+    "Google token path remains legacy DesktopDeck": 'Path.Combine(DataRootPaths.ActiveRoaming, "calendar-google-token.dat")' in source("src/DesktopDeck/Calendar/GoogleCalendarSync.cs"),
     "manual smoke checklist exists": "Windows 수동 스모크 테스트" in source("docs/CYANDECK_PHASE15_WINDOWS_SMOKE_KO.md"),
     "calendar LocalOnly behavior remains protected": 'LocalOnly' in source("src/DesktopDeck/Calendar/CalendarEventStore.cs")
         and 'LocalOnly' in source("src/DesktopDeck/Calendar/GoogleCalendarSync.cs"),
@@ -105,7 +106,7 @@ checks.update({
     "update active process warning displays CyanDeck": "CyanDeck is still running." in apply_update,
     "update process executable remains DesktopDeck": "Get-Process -Name DesktopDeck" in apply_update,
     "signed manifest protocol stays unchanged": '"DesktopDeck.UpdateManifest.v1"' in update_service,
-    "staged update storage stays unchanged": '"DesktopDeck", "updates", "staged"' in update_service,
+    "staged update storage stays unchanged": 'Path.Combine(DataRootPaths.ActiveLocal, "updates", "staged")' in update_service and 'ActiveLocal => LegacyLocal' in source("src/DesktopDeck/Services/DataRootPaths.cs"),
 })
 # Phase 2.4: guard the update/recovery safety boundaries against regressions.
 checks.update({
@@ -133,7 +134,7 @@ checks.update({
 })
 migration_preflight = source("tools/prepare-cyandeck-data-migration.ps1")
 checks.update({
-    "migration validates layout before copying": "Migration preflight failed for $name" in migration_preflight and migration_preflight.index("Layout validation failed:") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
+    "migration validates layout before copying": "Migration preflight failed for $name" in migration_preflight and "if ($name.StartsWith('layout.json'" in migration_preflight and migration_preflight.index("Migration preflight failed for $name") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
     "migration rejects unsupported layout schema": "Unsupported layout schema version." in migration_preflight,
     "migration validates calendar array": "Calendar must be an array." in migration_preflight,
     "migration validates calendar before copying": migration_preflight.index("Migration preflight failed for $name") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
@@ -201,7 +202,7 @@ cutover_journal = source("src/DesktopDeck/Services/CyanDeckCutoverJournal.cs")
 checks.update({
     "migration journal has versioned states": 'CurrentVersion = 1' in cutover_journal and 'const string Aborted = "aborted"' in cutover_journal,
     "migration journal writes atomically": 'File.Move(temporary, JournalPath, overwrite: true)' in cutover_journal,
-    "migration journal verifies before marking complete": 'phase == Verified && !DataRootPaths.IsPreparedCopyIdentical()' in cutover_journal,
+    "migration journal verifies before marking complete": 'if (phase == Verified)' in cutover_journal and 'if (!DataRootPaths.IsPreparedCopyIdentical())' in cutover_journal,
     "migration journal rejects incompatible roots": 'entry.CandidateRoot, DataRootPaths.CyanRoaming' in cutover_journal,
     "migration journal never activates root": "ActiveRoaming => LegacyRoaming" in root_readiness,
 })
