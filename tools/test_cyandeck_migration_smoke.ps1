@@ -124,6 +124,78 @@ try {
   $rejected = $false
   try { & $script -Apply -AbortPreparation } catch { $rejected = $true }
   if (-not $rejected) { throw 'Conflicting abort and apply flags were accepted.' }
+  # A process can stop after publishing CyanDeck but before persisting
+  # its preparation journal. Explicit recovery must verify, not overwrite.
+  # An aborted journal permits a new preparation without altering either copy.
+  $candidateLayout = Join-Path $cyan 'layout.json'
+  $sourceLayout = Join-Path $legacy 'layout.json'
+  Set-Content -LiteralPath $candidateLayout -Value '{"Version":34}' -Encoding UTF8
+  $rejected = $false
+  try { & $script -RecoverPreparation } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Recovery accepted a diverged CyanDeck layout.' }
+  Copy-Item -LiteralPath $sourceLayout -Destination $candidateLayout -Force
+  $extra = Join-Path $cyan 'unexpected-empty-directory'
+  New-Item -ItemType Directory -Path $extra | Out-Null
+  $rejected = $false
+  try { & $script -RecoverPreparation } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Recovery accepted an extra CyanDeck directory.' }
+  Remove-Item -LiteralPath $extra
+  $nonCanonical = Join-Path $root 'CyanDeck-invalid-test'
+  $rejected = $false
+  try { & $script -RecoverPreparation -DestinationRoot $nonCanonical } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Recovery accepted a noncanonical destination.' }
+  $rejected = $false
+  try { & $script -RecoverPreparation -Apply } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Recovery accepted conflicting switches.' }
+  # Invalid recovery candidates must fail even if the bytes in both profiles
+  # match exactly; equality alone does not imply valid calendar data.
+  $badBackup = Join-Path $legacy 'calendar-events.json.bak'
+  $copyBadBackup = Join-Path $cyan 'calendar-events.json.bak'
+  Set-Content -LiteralPath $badBackup -Value '[null]' -Encoding UTF8
+  Copy-Item -LiteralPath $badBackup -Destination $copyBadBackup
+  $rejected = $false
+  try { & $script -RecoverPreparation } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Recovery accepted a malformed calendar backup.' }
+  Remove-Item -LiteralPath $badBackup -Force
+  Remove-Item -LiteralPath $copyBadBackup -Force
+
+  # Simulate an interruption in the journal writer, then resume without
+  # deleting or replacing the published data directory.
+  Remove-Item -LiteralPath $journal -Force
+  $lockPath = $journal + '.lock'
+  $lockDirectory = $lockPath + '.blocked'
+  # Existing lock file may remain; hold it with FileShare.None instead of
+  # disturbing its contents. Recovery must fail without changing data.
+  $lockHandle = [IO.FileStream]::new($lockPath, [IO.FileMode]::OpenOrCreate,
+    [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  try {
+    $rejected = $false
+    try { & $script -RecoverPreparation } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Recovery ignored locked migration journal.' }
+    if (Test-Path -LiteralPath $journal) { throw 'Failed recovery created a journal.' }
+  } finally {
+    $lockHandle.Dispose()
+  }
+  & $script -RecoverPreparation
+  $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+  if ($entry.Phase -ne 'prepared') { throw 'Recovery did not restore the prepared phase.' }
+  if (-not (Test-Path -LiteralPath $candidateLayout) -or
+      -not (Test-Path -LiteralPath $sourceLayout)) {
+    throw 'Recovery deleted a profile.'
+  }
+  $rejected = $false
+  try { & $script -RecoverPreparation } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Recovery improperly replaced an existing preparation journal.' }
+  & $script -VerifyPrepared
+  $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+  if ($entry.Phase -ne 'verified') { throw 'Recovered preparation could not be verified.' }
+  & $script -AbortPreparation
+  # Also recover when an earlier valid aborted journal exists.
+  & $script -RecoverPreparation
+  $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+  if ($entry.Phase -ne 'prepared') { throw 'Recovery refused an aborted journal.' }
+  & $script -VerifyPrepared
+  & $script -AbortPreparation
   # An old verified journal must block a fresh canonical candidate even
   # when the destination does not exist. Otherwise the test only exercises
   # the ordinary destination-exists guard, not journal preflight.
