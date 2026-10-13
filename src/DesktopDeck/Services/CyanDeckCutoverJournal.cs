@@ -65,14 +65,19 @@ public static class CyanDeckCutoverJournal
     public static string LegacyWriterFencePath => Path.Combine(DataRootPaths.LegacyLocal,
         "migration", "legacy-writer-fenced.json");
 
-    public static void ThrowIfLegacyWriterFenced()
+    public static void ThrowIfLegacyWriterFenced() =>
+        ThrowIfLegacyWriterFenced(DataRootPaths.LegacyLocal);
+
+    // Internal test seam: inspect an isolated root without changing user folders.
+    internal static void ThrowIfLegacyWriterFenced(string legacyLocalRoot)
     {
-        var migration = new DirectoryInfo(Path.GetDirectoryName(LegacyWriterFencePath)!);
-        var local = new DirectoryInfo(DataRootPaths.LegacyLocal);
+        var fencePath = Path.Combine(legacyLocalRoot, "migration", "legacy-writer-fenced.json");
+        var migration = new DirectoryInfo(Path.GetDirectoryName(fencePath)!);
+        var local = new DirectoryInfo(legacyLocalRoot);
         if ((local.Exists && (local.Attributes & FileAttributes.ReparsePoint) != 0) ||
             (migration.Exists && (migration.Attributes & FileAttributes.ReparsePoint) != 0))
             throw new InvalidDataException("Unsafe CyanDeck writer fence directory.");
-        var fence = new FileInfo(LegacyWriterFencePath);
+        var fence = new FileInfo(fencePath);
         if (!fence.Exists) return;
         if ((fence.Attributes & FileAttributes.ReparsePoint) != 0 || fence.Length > 4096)
             throw new InvalidDataException("Unsafe CyanDeck writer fence.");
