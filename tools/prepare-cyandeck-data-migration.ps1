@@ -61,6 +61,7 @@ function Write-CutoverJournal([string]$Phase) {
   New-Item -ItemType Directory -Path $journalDir -Force | Out-Null
   $journal = Join-Path $journalDir 'cyandeck-cutover-state.json'
   Assert-SafePath $journal
+  Assert-SafePath ($journal + '.lock')
   $gate = [IO.FileStream]::new($journal + '.lock', [IO.FileMode]::OpenOrCreate,
     [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
   try {
