@@ -24,6 +24,29 @@ try {
   if (-not (Test-Path -LiteralPath (Join-Path $legacy 'layout.json'))) {
     throw 'Original profile was removed.'
   }
+  # An existing candidate must never be overwritten or merged.
+  $rejected = $false
+  try { & $script -Apply } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Migration overwrote an existing CyanDeck profile.' }
+
+  # Exercise schema preflight independently of the already prepared copy.
+  $invalidDestination = Join-Path $root 'CyanDeck-invalid-test'
+  Set-Content -LiteralPath (Join-Path $legacy 'layout.json') -Value '{"Version":999}' -Encoding utf8
+  $rejected = $false
+  try { & $script -Apply -DestinationRoot $invalidDestination } catch { $rejected = $true }
+  if (-not $rejected -or (Test-Path -LiteralPath $invalidDestination)) {
+    throw 'Migration accepted an unsupported layout schema.'
+  }
+  Set-Content -LiteralPath (Join-Path $legacy 'layout.json') -Value '{"Version":35}' -Encoding utf8
+  Set-Content -LiteralPath (Join-Path $legacy 'calendar-events.json.bak') -Value '{invalid' -Encoding utf8
+  $rejected = $false
+  try { & $script -Apply -DestinationRoot $invalidDestination } catch { $rejected = $true }
+  if (-not $rejected -or (Test-Path -LiteralPath $invalidDestination)) {
+    throw 'Migration accepted a malformed calendar backup.'
+  }
+  if (-not (Test-Path -LiteralPath (Join-Path $legacy 'calendar-events.json.bak'))) {
+    throw 'Migration removed the malformed original backup.'
+  }
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
 finally {
