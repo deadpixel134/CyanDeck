@@ -22,6 +22,23 @@ function Assert-SafePath([string]$Path) {
     $cursor = $parent
   }
 }
+# Walk one directory at a time: reject junctions and symlinks before
+# descending, rather than checking them after a recursive enumeration.
+function Get-SafeTree([string]$Root) {
+  $pending = [Collections.Generic.Stack[string]]::new()
+  $pending.Push($Root)
+  while ($pending.Count -gt 0) {
+    $current = $pending.Pop()
+    Assert-SafePath $current
+    foreach ($entry in (Get-ChildItem -LiteralPath $current -Force)) {
+      if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Refusing linked migration item: $($entry.FullName)"
+      }
+      $entry
+      if ($entry.PSIsContainer) { $pending.Push($entry.FullName) }
+    }
+  }
+}
 Assert-SafePath $legacy
 Assert-SafePath $destination
 if ([string]::Equals($legacy, $destination, [StringComparison]::OrdinalIgnoreCase)) {
@@ -44,10 +61,10 @@ if ($VerifyPrepared) {
     throw 'No prepared CyanDeck directory to verify.'
   }
   Assert-SafePath $destination
-  $original = @(Get-ChildItem -LiteralPath $legacy -File -Recurse -Force)
-  $copied = @(Get-ChildItem -LiteralPath $destination -File -Recurse -Force)
-  $originalDirs = @(Get-ChildItem -LiteralPath $legacy -Directory -Recurse -Force)
-  $copiedDirs = @(Get-ChildItem -LiteralPath $destination -Directory -Recurse -Force)
+  $original = @(Get-SafeTree $legacy | Where-Object { -not $_.PSIsContainer })
+  $copied = @(Get-SafeTree $destination | Where-Object { -not $_.PSIsContainer })
+  $originalDirs = @(Get-SafeTree $legacy | Where-Object { $_.PSIsContainer })
+  $copiedDirs = @(Get-SafeTree $destination | Where-Object { $_.PSIsContainer })
   foreach ($item in @($original) + @($copied) + @($originalDirs) + @($copiedDirs)) {
     if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
       throw "Refusing linked migration item: $($item.FullName)"
@@ -78,13 +95,13 @@ if ($VerifyPrepared) {
 if (Test-Path -LiteralPath $destination) {
   throw "Destination already exists; refusing to merge or overwrite: $destination"
 }
-$files = @(Get-ChildItem -LiteralPath $legacy -File -Recurse -Force)
+$files = @(Get-SafeTree $legacy | Where-Object { -not $_.PSIsContainer })
 foreach ($file in $files) {
   if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw "Refusing linked file: $($file.FullName)"
   }
 }
-$directories = @(Get-ChildItem -LiteralPath $legacy -Directory -Recurse -Force)
+$directories = @(Get-SafeTree $legacy | Where-Object { $_.PSIsContainer })
 foreach ($dir in $directories) {
   if (($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw "Refusing linked directory: $($dir.FullName)"
@@ -151,7 +168,7 @@ try {
       throw "Source changed or checksum mismatch during migration: $relative"
     }
   }
-  $currentFiles = @(Get-ChildItem -LiteralPath $legacy -File -Recurse -Force)
+  $currentFiles = @(Get-SafeTree $legacy | Where-Object { -not $_.PSIsContainer })
   if ($currentFiles.Count -ne $sourceManifest.Count) {
     throw 'Source file set changed during migration; refusing to publish.'
   }
