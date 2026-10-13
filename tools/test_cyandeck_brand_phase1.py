@@ -238,6 +238,11 @@ checks.update({
     "migration script avoids unsafe recursive traversal": "-Recurse -Force" not in migration_script,
     "migration script verifies both trees safely": "Get-SafeTree $destination" in migration_script and "Get-SafeTree $legacy" in migration_script,
 })
+checks.update({
+    "migration detects source directory set changes": "Source directory set changed during migration" in migration_script and "expectedDirs.Contains" in migration_script,
+    "migration rechecks running app before publish": "started during migration; refusing to publish" in migration_script,
+    "migration checks before final publish": migration_script.index("Source directory set changed during migration") < migration_script.index("Move-Item -LiteralPath $staging -Destination $destination"),
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
