@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/CyanDeck/Services/FenceVisibilityPolicy.cs" Link="Production/FenceVisibilityPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/StartupUpdatePolicy.cs" Link="Production/StartupUpdatePolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/DesktopShowDesktopRecoveryPolicy.cs" Link="Production/DesktopShowDesktopRecoveryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Appearance/LooseIconOpacityPolicy.cs" Link="Production/LooseIconOpacityPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TabSwitchActivationPolicy.cs" Link="Production/TabSwitchActivationPolicy.cs" />

@@ -101,16 +101,18 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private bool _desktopRuntimeStarted;
     private bool _forceNativeIconsVisibleUntilRestart;
     private readonly bool _ignoreCrashLoopOnce;
+    private readonly bool _suppressStartupUpdateCheck;
     private readonly string? _managedPolicyCommandLinePath;
     private StartupHealthSnapshot? _startupHealth;
     private IReadOnlyDictionary<string, string> _settingsAuditBaseline = new Dictionary<string, string>();
     private LinkedIconSpacingCoordinator? _linkedIconSpacingCoordinator;
 
-    public AppController(Dispatcher dispatcher, bool safeMode = false, bool ignoreCrashLoopOnce = false, string? managedPolicyPath = null)
+    public AppController(Dispatcher dispatcher, bool safeMode = false, bool ignoreCrashLoopOnce = false, string? managedPolicyPath = null, bool suppressStartupUpdateCheck = false)
     {
         _dispatcher = dispatcher;
         _safeMode = safeMode;
         _ignoreCrashLoopOnce = ignoreCrashLoopOnce;
+        _suppressStartupUpdateCheck = suppressStartupUpdateCheck;
         _managedPolicyCommandLinePath = managedPolicyPath;
     }
 
@@ -4706,6 +4708,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void ScheduleAutomaticUpdateCheck()
     {
+        // A successful, failed, timed-out, or skipped startup preflight must not
+        // initiate a second hidden auto-install after the desktop is visible.
+        if (_suppressStartupUpdateCheck) return;
         if (!_state.Settings.EnableAutomaticUpdateChecks && !_state.Settings.InstallUpdatesAutomatically) return;
         // The startup check happens once per process, not once per day.
         // Never auto-restart from Safe Mode or while an update requires recovery.

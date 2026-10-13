@@ -43,6 +43,24 @@ foreach (var attached in new[] { false, true })
 }
 Console.WriteLine($"PASS: {nativeRecoveryScenarios} Show Desktop visibility combinations");
 
+// Startup preflight must prevent desktop flash only for safe, opted-in
+// automatic installations. Explicit commands and failure-recovery bypass it.
+var startupCases = 0;
+foreach (var checkEnabled in new[] { false, true })
+foreach (var autoInstall in new[] { false, true })
+foreach (var safeMode in new[] { false, true })
+foreach (var readOnly in new[] { false, true })
+foreach (var recovery in new[] { false, true })
+foreach (var external in new[] { false, true })
+{
+    var expected = checkEnabled && autoInstall && !safeMode && !readOnly && !recovery && !external;
+    if (StartupUpdatePolicy.ShouldPreflight(checkEnabled, autoInstall, safeMode, readOnly,
+        recovery, external) != expected)
+        throw new Exception("Startup update preflight policy mismatch");
+    startupCases++;
+}
+Console.WriteLine($"PASS: {startupCases} startup update preflight safety combinations");
+
 // Regression: Explorer WorkerW can obscure all groups without minimizing or
 // hiding a single HWND. Older builds attempted one repair and then permanently
 // suppressed retries until the desktop became healthy on its own.

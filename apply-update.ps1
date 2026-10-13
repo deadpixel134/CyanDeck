@@ -5,10 +5,87 @@ param(
   [string]$ExpectedSha256,
   [int]$WaitForPid = 0,
   [switch]$Relaunch,
-  [switch]$RecoverPending
+  [switch]$RecoverPending,
+  [switch]$ShowProgress
 )
 
 $ErrorActionPreference = "Stop"
+# A dedicated STA WinForms runspace belongs to the installer process rather
+# than CyanDeck.exe: the user continues to see update progress after the app
+# exits and before its replacement executable is started.
+$updateProgressState = $null
+$updateProgressRunspace = $null
+$updateProgressPowerShell = $null
+$updateProgressSucceeded = $false
+if ($ShowProgress) {
+  try {
+    $updateProgressState = [hashtable]::Synchronized(@{
+      Stage='Preparing CyanDeck update...'; Done=$false
+    })
+    $updateProgressRunspace = [runspacefactory]::CreateRunspace()
+    $updateProgressRunspace.ApartmentState = 'STA'
+    $updateProgressRunspace.ThreadOptions = 'ReuseThread'
+    $updateProgressRunspace.Open()
+    $updateProgressPowerShell = [powershell]::Create()
+    $updateProgressPowerShell.Runspace = $updateProgressRunspace
+    $guiScript = @'
+param($state)
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$form = New-Object System.Windows.Forms.Form
+$form.Text = 'CyanDeck Update'
+$form.Size = New-Object System.Drawing.Size(462,190)
+$form.FormBorderStyle = 'FixedDialog'
+$form.MaximizeBox = $false
+$form.MinimizeBox = $false
+$form.StartPosition = 'CenterScreen'
+$form.BackColor = [Drawing.Color]::FromArgb(25,29,36)
+$form.ForeColor = [Drawing.Color]::White
+$form.ShowInTaskbar = $true
+try {
+  $exe = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CyanDeck\CyanDeck.exe'
+  if (Test-Path -LiteralPath $exe) { $form.Icon = [Drawing.Icon]::ExtractAssociatedIcon($exe) }
+} catch { }
+$title = New-Object System.Windows.Forms.Label
+$title.Text = 'CyanDeck is updating'
+$title.Location = New-Object System.Drawing.Point(22,19)
+$title.Size = New-Object System.Drawing.Size(400,29)
+$title.Font = New-Object System.Drawing.Font('Segoe UI',13,[Drawing.FontStyle]::Bold)
+$form.Controls.Add($title)
+$status = New-Object System.Windows.Forms.Label
+$status.Location = New-Object System.Drawing.Point(22,60)
+$status.Size = New-Object System.Drawing.Size(407,37)
+$status.Font = New-Object System.Drawing.Font('Segoe UI',9)
+$status.Text = 'Preparing update...'
+$form.Controls.Add($status)
+$bar = New-Object System.Windows.Forms.ProgressBar
+$bar.Location = New-Object System.Drawing.Point(22,117)
+$bar.Size = New-Object System.Drawing.Size(400,11)
+$bar.Style = 'Marquee'
+$bar.MarqueeAnimationSpeed = 25
+$form.Controls.Add($bar)
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 200
+$timer.Add_Tick({
+  $status.Text = [string]$state.Stage
+  if ([bool]$state.Done) { $timer.Stop(); $form.Close() }
+})
+$timer.Start()
+[System.Windows.Forms.Application]::Run($form)
+$timer.Dispose()
+$form.Dispose()
+'@
+    $null = $updateProgressPowerShell.AddScript($guiScript).AddArgument($updateProgressState)
+    $null = $updateProgressPowerShell.BeginInvoke()
+  } catch {
+    Write-Warning "Optional update progress UI unavailable: $($_.Exception.Message)"
+    $updateProgressState = $null
+  }
+}
+function Set-UpdateProgress([string]$Stage) {
+  if ($null -ne $updateProgressState) { $updateProgressState.Stage = $Stage }
+}
+
 # SAFETY: Never remove the contents of InstallDir. Portable users can keep other
 # files alongside CyanDeck.exe. Only these application-owned leaf files may
 # be backed up or replaced by the updater/rollback.
@@ -181,6 +258,8 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
 # explicitly handles the new storage contract.
 # Wait until the requesting application has exited before taking both locks.
 # Keep both owned until installation/rollback/recovery finishes, then relaunch.
+try {
+Set-UpdateProgress 'Waiting for CyanDeck to close safely...'
 Wait-CyanDeckProcess $WaitForPid
 $cyanUpdateMutex = [Threading.Mutex]::new($false, 'Local\CyanDeck.SingleInstance')
 $ownsCyanUpdateMutex = $false
@@ -197,6 +276,7 @@ try {
 if (@(Get-Process -Name CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'CyanDeck is still running. Exit all instances normally before updating or recovering.'
 }
+Set-UpdateProgress 'Checking installation and recovery state...'
 $InstallDir = Assert-OrdinaryDirectory $InstallDir 'Install directory'
 $installedExe = Assert-ManagedFile $InstallDir 'CyanDeck.exe'
 if (-not $RecoverPending -and -not (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
@@ -322,6 +402,7 @@ try {
       }
     } finally { $archive.Dispose() }
     New-Item -ItemType Directory -Path $tempRoot -ErrorAction Stop | Out-Null
+    Set-UpdateProgress 'Extracting verified update package...'
     Expand-Archive -LiteralPath $Package -DestinationPath $tempRoot -ErrorAction Stop
     $exes = @(Get-ChildItem -LiteralPath $tempRoot -Filter CyanDeck.exe -File -Recurse)
     if ($exes.Count -ne 1) { throw 'The package must contain exactly one CyanDeck.exe.' }
@@ -361,6 +442,7 @@ try {
     Assert-SnapshotMatches $InstallDir $safety
     Write-RecoveryJournal $journal $safety
     $changed = $true
+    Set-UpdateProgress 'Installing update and preserving recovery snapshot...'
     Install-ManagedFiles $payloadDir $InstallDir
     [IO.File]::WriteAllText($marker, $safety)
     Remove-Item -LiteralPath $journal -Force
@@ -389,7 +471,22 @@ try {
 }
 
 # A relaunched EXE must not race its own updater's still-held mutex.
+Set-UpdateProgress 'Update completed; starting CyanDeck...'
 if ($Relaunch) {
   $exe = Join-Path $InstallDir 'CyanDeck.exe'
   if (Test-Path -LiteralPath $exe -PathType Leaf) { Start-Process -FilePath $exe }
+}
+$updateProgressSucceeded = $true
+} finally {
+  if ($null -ne $updateProgressState) {
+    $updateProgressState.Stage = if ($updateProgressSucceeded) {
+      'Update complete. CyanDeck is restarting...'
+    } else {
+      'Update could not be completed. Existing application files were preserved or recovered.'
+    }
+    # Keep status visible briefly, particularly when an updater error occurs.
+    Start-Sleep -Milliseconds $(if ($updateProgressSucceeded) { 800 } else { 3500 })
+    $updateProgressState.Done = $true
+    Start-Sleep -Milliseconds 250
+  }
 }

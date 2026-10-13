@@ -222,7 +222,7 @@ public static class UpdateService
         var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
         if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the CyanDeck installation.", script);
         var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -Package {Quote(packagePath)} -ExpectedSha256 {Quote(expectedSha256)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid}" + (relaunch ? " -Relaunch" : "");
+        var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -Package {Quote(packagePath)} -ExpectedSha256 {Quote(expectedSha256)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid} -ShowProgress" + (relaunch ? " -Relaunch" : "");
         return Process.Start(new ProcessStartInfo("powershell.exe", args) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden }) is not null;
     }
 

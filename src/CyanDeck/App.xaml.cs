@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading;
 using System.Windows;
 using CyanDeck.Services;
+using CyanDeck.Views;
 using Forms = System.Windows.Forms;
 
 namespace CyanDeck;
@@ -15,7 +16,7 @@ public partial class App : Application
     private CancellationTokenSource? _activationCts;
     private Task? _activationTask;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
@@ -38,7 +39,8 @@ public partial class App : Application
             return;
         }
 
-        _controller = new AppController(Dispatcher, safeMode, ignoreCrashLoop, managedPolicyPath);
+        // Do not create desktop group or calendar HWNDs until auto-update preflight
+        // has decided whether this process must hand off to the installer.
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
             if (args.ExceptionObject is Exception ex) DiagnosticsLog.Error("AppDomain unhandled exception", ex);
@@ -58,11 +60,89 @@ public partial class App : Application
             Shutdown(-1);
         };
         DiagnosticsLog.Info("CyanDeck starting");
+        var preflight = await RunStartupUpdatePreflightAsync(
+            safeMode, ignoreCrashLoop, peekToggle || recoverGroups, managedPolicyPath);
+        if (preflight.ExitForUpdate) return;
+        _controller = new AppController(Dispatcher, safeMode, ignoreCrashLoop, managedPolicyPath,
+            suppressStartupUpdateCheck: preflight.Attempted);
         _controller.Start();
         StartActivationServer();
         if (peekToggle) Dispatcher.BeginInvoke(() => _controller?.TogglePeekFromExternalCommand());
         if (recoverGroups && recoveryMonitor is not null)
             Dispatcher.BeginInvoke(() => _controller?.RecoverAllGroupsToMonitor(recoveryMonitor));
+    }
+
+
+    /// <summary>
+    /// Runs BEFORE any Fence, calendar, native icon hiding, shell hook or session
+    /// marker. Existing windows are never shown only to disappear for auto-install.
+    /// Network checks are bounded and failure falls back to the installed version.
+    /// </summary>
+    private async Task<(bool ExitForUpdate, bool Attempted)> RunStartupUpdatePreflightAsync(
+        bool safeMode, bool ignoreCrashLoop, bool externalCommand, string? managedPolicyPath)
+    {
+        StartupUpdateWindow? splash = null;
+        try
+        {
+            var store = new StateStore();
+            var loaded = store.Load();
+            var settings = loaded.Settings;
+            var crashSafeMode = !ignoreCrashLoop && settings.EnableCrashLoopProtection
+                && StartupHealthService.GetSnapshot(settings.CrashLoopWindowMinutes,
+                    settings.CrashLoopThreshold).ShouldUseSafeMode;
+            var readOnly = store.EncounteredUnsupportedState;
+            if (!StartupUpdatePolicy.ShouldPreflight(settings.EnableAutomaticUpdateChecks,
+                    settings.InstallUpdatesAutomatically, safeMode || crashSafeMode,
+                    readOnly, UpdateService.HasPendingRecovery(), externalCommand))
+                return (false, false);
+
+            using var skip = new CancellationTokenSource();
+            splash = new StartupUpdateWindow();
+            splash.SkipRequested += () => skip.Cancel();
+            splash.SetStage("새 버전을 확인하고 있습니다.", true);
+            splash.Show();
+            // Give WPF a frame to paint before the asynchronous network request.
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            using var checkTimeout = CancellationTokenSource.CreateLinkedTokenSource(skip.Token);
+            checkTimeout.CancelAfter(TimeSpan.FromSeconds(8));
+            var source = UpdateService.ResolveManifestSource(settings.UpdateManifestSource,
+                settings.EnableBetaUpdateChannel);
+            var check = await UpdateService.CheckAsync(source, true,
+                settings.UpdatePublicKeyPath, checkTimeout.Token);
+            if (!check.UpdateAvailable)
+            {
+                DiagnosticsLog.Info("Startup update preflight: installed version is current");
+                return (false, true);
+            }
+
+            splash.SetStage($"CyanDeck {check.LatestVersion.ToString(3)} 업데이트를 다운로드하고 검증 중입니다.\\n설치 전까지 바탕화면 그룹은 표시하지 않습니다.", true);
+            var package = await UpdateService.StagePackageAsync(check, skip.Token);
+            skip.Token.ThrowIfCancellationRequested();
+            store.SaveRecoveryCheckpoint(loaded, $"before-startup-auto-update-{check.LatestVersion}");
+            splash.SetStage("업데이트 설치 프로그램을 실행합니다.\\n설치가 끝나면 CyanDeck이 자동으로 시작됩니다.", false);
+            if (!UpdateService.TryLaunchInstall(package, check.Manifest.Sha256,
+                    Environment.ProcessId, relaunch: true))
+                throw new InvalidOperationException("업데이트 설치 프로그램을 시작하지 못했습니다.");
+            DiagnosticsLog.Info($"Startup update preflight handed off to updater: version={check.LatestVersion}");
+            // The independent installer displays its own progress window before
+            // waiting for CyanDeck to close; avoid a visible gap in handoff.
+            await Task.Delay(450);
+            splash.Close();
+            splash = null;
+            Shutdown();
+            return (true, true);
+        }
+        catch (OperationCanceledException)
+        {
+            DiagnosticsLog.Info("Startup update preflight skipped (timeout or user choice); opening installed application");
+            return (false, true);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Startup update preflight failed; opening installed application", ex);
+            return (false, true);
+        }
+        finally { try { splash?.Close(); } catch { } }
     }
 
     private static string? GetOptionValue(string[] args, string option)
