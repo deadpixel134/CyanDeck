@@ -59,6 +59,12 @@ public static class CyanDeckCutoverJournal
         Record(Aborted);
     }
 
+    // Preview-only guard for future startup cutover. This must not redirect
+    // storage, and an existing prepared/verified journal is never an activation flag.
+    // Old DesktopDeck builds still write to the legacy root; do not activate
+    // CyanDeck until upgrade/downgrade and writer fencing are coordinated.
+    public static bool IsSafeToActivateAtStartup() => false;
+
     public static void Record(string phase)
     {
         if (!IsKnownPhase(phase)) throw new ArgumentOutOfRangeException(nameof(phase));
