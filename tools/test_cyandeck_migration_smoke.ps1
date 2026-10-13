@@ -47,6 +47,37 @@ try {
   if (-not (Test-Path -LiteralPath (Join-Path $legacy 'calendar-events.json.bak'))) {
     throw 'Migration removed the malformed original backup.'
   }
+  # Simulate a running DesktopDeck by owning the same named mutex.
+  # A second thread cannot enter the migration critical section.
+  Remove-Item -LiteralPath (Join-Path $legacy 'calendar-events.json.bak') -Force
+  $heldMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
+  $held = $false
+  try {
+    $held = $heldMutex.WaitOne(0)
+    if (-not $held) { throw 'Could not acquire the test single-instance mutex.' }
+    $blocked = $false
+    $job = Start-Job -ScriptBlock {
+      param($scriptPath, $appData, $candidate)
+      $env:APPDATA = $appData
+      & $scriptPath -Apply -DestinationRoot $candidate
+    } -ArgumentList $script, $root, $invalidDestination
+    try {
+      if (-not (Wait-Job -Job $job -Timeout 30)) {
+        Stop-Job -Job $job
+        throw 'Mutex contention test timed out.'
+      }
+      if ($job.State -eq 'Failed') { $blocked = $true }
+      Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
+    } finally {
+      Remove-Job -Job $job -Force
+    }
+    if (-not $blocked -or (Test-Path -LiteralPath $invalidDestination)) {
+      throw 'Migration was not blocked by an active DesktopDeck mutex.'
+    }
+  } finally {
+    if ($held) { $heldMutex.ReleaseMutex() }
+    $heldMutex.Dispose()
+  }
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
 finally {
