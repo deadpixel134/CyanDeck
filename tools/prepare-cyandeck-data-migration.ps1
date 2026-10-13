@@ -1,5 +1,6 @@
 param(
   [switch]$Apply,
+  [switch]$VerifyPrepared,
   [string]$DestinationRoot = (Join-Path $env:APPDATA 'CyanDeck')
 )
 # Opt-in, non-destructive preparation only. Runtime still uses DesktopDeck.
@@ -36,6 +37,43 @@ if (-not (Test-Path -LiteralPath $legacy -PathType Container)) {
 }
 if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
   throw 'Exit all DesktopDeck and CyanDeck processes before preparing a data migration.'
+}
+if ($VerifyPrepared) {
+  if ($Apply) { throw 'Use -VerifyPrepared or -Apply, not both.' }
+  if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+    throw 'No prepared CyanDeck directory to verify.'
+  }
+  Assert-SafePath $destination
+  $original = @(Get-ChildItem -LiteralPath $legacy -File -Recurse -Force)
+  $copied = @(Get-ChildItem -LiteralPath $destination -File -Recurse -Force)
+  $originalDirs = @(Get-ChildItem -LiteralPath $legacy -Directory -Recurse -Force)
+  $copiedDirs = @(Get-ChildItem -LiteralPath $destination -Directory -Recurse -Force)
+  foreach ($item in @($original) + @($copied) + @($originalDirs) + @($copiedDirs)) {
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw "Refusing linked migration item: $($item.FullName)"
+    }
+  }
+  if ($original.Count -ne $copied.Count -or $originalDirs.Count -ne $copiedDirs.Count) {
+    throw 'Prepared copy has a different file or directory count.'
+  }
+  foreach ($file in $original) {
+    $relative = $file.FullName.Substring($legacy.Length).TrimStart('\')
+    $target = Join-Path $destination $relative
+    if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -cne
+        (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash) {
+      throw "Prepared copy differs from original: $relative"
+    }
+  }
+  foreach ($dir in $originalDirs) {
+    $relative = $dir.FullName.Substring($legacy.Length).TrimStart('\')
+    if (-not (Test-Path -LiteralPath (Join-Path $destination $relative) -PathType Container)) {
+      throw "Prepared copy is missing directory: $relative"
+    }
+  }
+  Write-Host 'Prepared copy matches the current legacy data. No files were changed.'
+  Write-Host 'Verification does not activate the CyanDeck data root.'
+  return
 }
 if (Test-Path -LiteralPath $destination) {
   throw "Destination already exists; refusing to merge or overwrite: $destination"
