@@ -19,7 +19,8 @@ public static class DataRootPaths
     // recovery candidates can be inspected by the migration verifier.
     public static bool HasPreparedCriticalData =>
         HasPreparedCyanRoamingCopy &&
-        File.Exists(Path.Combine(CyanRoaming, "calendar-events.json")) &&
+        File.Exists(Path.Combine(CyanRoaming, "calendar-events.json")) ==
+        File.Exists(Path.Combine(LegacyRoaming, "calendar-events.json")) &&
         File.Exists(Path.Combine(CyanRoaming, "calendar-google-token.dat")) ==
         File.Exists(Path.Combine(LegacyRoaming, "calendar-google-token.dat")) &&
         File.Exists(Path.Combine(CyanRoaming, "calendar-google-owner.dat")) ==
