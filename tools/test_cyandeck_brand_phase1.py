@@ -169,6 +169,28 @@ checks.update({
     "migration retains legacy data": "Original DesktopDeck data remains untouched." in migration_preflight,
 })
 checks.update({
+    "orphaned migration recovery is explicit and never activates runtime":
+        "[switch]$RecoverPreparation" in migration_preflight
+        and "if ($RecoverPreparation)" in migration_preflight
+        and "Run -VerifyPrepared separately." in migration_preflight
+        and "ActiveRoaming => LegacyRoaming" in source("src/DesktopDeck/Services/DataRootPaths.cs"),
+    "recovery requires canonical destination and journal preflight":
+        "RecoverPreparation requires the canonical CyanDeck destination." in migration_preflight
+        and "Assert-CanPrepareJournal" in migration_preflight
+        and "No orphaned prepared CyanDeck directory exists." in migration_preflight,
+    "recovery rejects conflicting mode switches":
+        "if ($RecoverPreparation -and ($Apply -or $VerifyPrepared -or $AbortPreparation))" in migration_preflight,
+    "recovery verifies JSON and entire copy before recording prepared":
+        "function Assert-PreparedCopyIdentical" in migration_preflight
+        and "function Assert-MigrationJsonCandidates" in migration_preflight
+        and "Assert-MigrationJsonCandidates\n  Assert-PreparedCopyIdentical" in migration_preflight
+        and migration_preflight.index("Assert-MigrationJsonCandidates\n  Assert-PreparedCopyIdentical") <
+            migration_preflight.index("Write-CutoverJournal 'prepared'"),
+    "recovery flow is documented without suggesting activation":
+        "-RecoverPreparation" in source("docs/CYANDECK_MIGRATION.md")
+        and "does not" in source("docs/CYANDECK_MIGRATION.md").lower(),
+})
+checks.update({
     "prepared copy can be verified without activation": "[switch]$VerifyPrepared" in migration_preflight and "Verification does not activate" in migration_preflight,
     "prepared verification checks file hashes": "Prepared copy differs from original:" in migration_preflight and "Get-FileHash -LiteralPath $target -Algorithm SHA256" in migration_preflight,
     "prepared verification rejects missing directories": "Prepared copy is missing directory:" in migration_preflight,
