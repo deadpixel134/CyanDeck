@@ -74,7 +74,7 @@ public static class CyanDeckCutoverJournal
             throw new InvalidOperationException("An existing migration must be aborted before preparing again.");
         if (phase == Verified)
         {
-            if (previous is null || previous.Phase != Prepared)
+            if (previous is null || (previous.Phase != Prepared && previous.Phase != Verified))
                 throw new InvalidOperationException("Verification requires a prepared migration journal.");
             if (!DataRootPaths.IsPreparedCopyIdentical())
                 throw new InvalidOperationException("Prepared profile no longer matches legacy data.");
