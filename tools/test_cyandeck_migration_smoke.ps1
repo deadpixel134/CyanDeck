@@ -1,9 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $root = Join-Path ([IO.Path]::GetTempPath()) ('cyandeck-smoke-' + [Guid]::NewGuid().ToString('N'))
 $previousAppData = $env:APPDATA
+$previousLocalAppData = $env:LOCALAPPDATA
 $script = Join-Path $PSScriptRoot 'prepare-cyandeck-data-migration.ps1'
 try {
   $env:APPDATA = $root
+  $env:LOCALAPPDATA = Join-Path $root 'local'
   $legacy = Join-Path $root 'DesktopDeck'
   $cyan = Join-Path $root 'CyanDeck'
   New-Item -ItemType Directory -Path $legacy -Force | Out-Null
@@ -17,6 +19,11 @@ try {
     throw 'Prepared copy lost an empty directory.'
   }
   & $script -VerifyPrepared
+  $journal = Join-Path $env:LOCALAPPDATA 'DesktopDeck/migration/cyandeck-cutover-state.json'
+  $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+  if ($entry.Phase -ne 'verified' -or $entry.Version -ne 1) {
+    throw 'Verified migration journal was not recorded.'
+  }
   Add-Content -LiteralPath (Join-Path $legacy 'layout.json') -Value ' '
   $rejected = $false
   try { & $script -VerifyPrepared } catch { $rejected = $true }
@@ -89,6 +96,7 @@ try {
 }
 finally {
   $env:APPDATA = $previousAppData
+  $env:LOCALAPPDATA = $previousLocalAppData
   if (Test-Path -LiteralPath $root) {
     Remove-Item -LiteralPath $root -Recurse -Force
   }
