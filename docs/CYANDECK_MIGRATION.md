@@ -25,6 +25,32 @@ delete, rename, merge or mutate the legacy data. It does not change runtime
 paths or activate the new copy. Treat the new folder as a **migration staging
 copy**, not the live data store. Do not edit both folders independently.
 
+## Recovering an interrupted preparation (implemented, explicit)
+
+If `-Apply` published `%APPDATA%\\CyanDeck` but stopped before writing the
+preparation journal, **do not run `-Apply` again or delete either folder**.
+Close DesktopDeck/CyanDeck completely, preserve a separate backup and run:
+
+```powershell
+pwsh -File tools/prepare-cyandeck-data-migration.ps1 -RecoverPreparation
+pwsh -File tools/prepare-cyandeck-data-migration.ps1 -VerifyPrepared
+```
+
+Recovery is allowed **only for the canonical CyanDeck destination**, with a
+missing or explicitly aborted preparation journal. It validates the existing
+copy's full file and directory set, SHA-256 file hashes, primary JSON and
+recovery candidates against the current legacy profile. Any difference, unsafe
+link, malformed journal, running application, or conflicting switch aborts the
+operation without replacing or deleting either profile. It restores only the
+non-activating `prepared` journal phase; the separate `-VerifyPrepared` step
+is still required. If verification fails, preserve both folders for review
+rather than removing the candidate. `-AbortPreparation` only changes metadata;
+it **does not** clean up directories.
+
+An existing `CyanDeck` folder by itself is *not proof* of an interrupted
+preparation. Use recovery only if you intentionally prepared that exact copy;
+the tool never adopts a different folder or activates it automatically.
+
 ## Future cutover (not yet implemented)
 
 1. Freeze writes and stop all DesktopDeck processes.
