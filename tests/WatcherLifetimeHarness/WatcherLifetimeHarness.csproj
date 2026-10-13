@@ -11,5 +11,6 @@
     <Compile Include="../../src/DesktopDeck/Services/FolderPortalWatcherLifetime.cs" Link="FolderPortalWatcherLifetime.cs" />
     <Compile Include="../../src/DesktopDeck/Services/DiagnosticsLog.cs" Link="DiagnosticsLog.cs" />
     <Compile Include="../../src/DesktopDeck/Services/DataRootPaths.cs" Link="DataRootPaths.cs" />
+    <Compile Include="../../src/DesktopDeck/Services/CyanDeckCutoverJournal.cs" Link="CyanDeckCutoverJournal.cs" />
   </ItemGroup>
 </Project>
