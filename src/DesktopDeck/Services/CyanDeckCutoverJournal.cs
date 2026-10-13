@@ -50,16 +50,33 @@ public static class CyanDeckCutoverJournal
     public static void Record(string phase)
     {
         if (!IsKnownPhase(phase)) throw new ArgumentOutOfRangeException(nameof(phase));
-        if (phase == Verified && !DataRootPaths.IsPreparedCopyIdentical())
-            throw new InvalidOperationException("Prepared profile no longer matches legacy data.");
         var directory = Path.GetDirectoryName(JournalPath)!;
         Directory.CreateDirectory(directory);
+        // Hold an exclusive lock across the read, validation and atomic rename.
+        // Concurrent processes must not overwrite a newer journal transition.
+        using var gate = new FileStream(JournalPath + ".lock", FileMode.OpenOrCreate,
+            FileAccess.ReadWrite, FileShare.None);
+        var previous = Read();
+        if (phase == Verified)
+        {
+            if (previous is null || previous.Phase != Prepared)
+                throw new InvalidOperationException("Verification requires a prepared migration journal.");
+            if (!DataRootPaths.IsPreparedCopyIdentical())
+                throw new InvalidOperationException("Prepared profile no longer matches legacy data.");
+        }
+        if (phase == Aborted && previous is null)
+            throw new InvalidOperationException("Cannot abort a migration that has not been prepared.");
         var temporary = JournalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             var entry = new Entry(CurrentVersion, phase, DateTimeOffset.UtcNow,
                 DataRootPaths.LegacyRoaming, DataRootPaths.CyanRoaming);
-            File.WriteAllText(temporary, JsonSerializer.Serialize(entry));
+            using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
+                FileShare.None, 4096, FileOptions.WriteThrough))
+            {
+                JsonSerializer.Serialize(output, entry);
+                output.Flush(flushToDisk: true);
+            }
             File.Move(temporary, JournalPath, overwrite: true);
         }
         finally
