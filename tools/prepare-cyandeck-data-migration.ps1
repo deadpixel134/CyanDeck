@@ -42,7 +42,7 @@ function Get-SafeTree([string]$Root) {
 # Share the application's actual single-instance mutex. Holding ownership
 # prevents an app instance from starting during the copy/verification window.
 # Process-name checks alone cannot close the startup race.
-$migrationMutex = [Threading.Mutex]::new($false, 'Local\\DesktopDeck.SingleInstance')
+$migrationMutex = [Threading.Mutex]::new($false, 'Local\DesktopDeck.SingleInstance')
 $ownsMigrationMutex = $false
 try {
   try {
