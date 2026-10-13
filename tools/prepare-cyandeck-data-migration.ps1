@@ -40,6 +40,25 @@ function Get-SafeTree([string]$Root) {
     }
   }
 }
+# Cleanup is deliberately non-recursive. Windows PowerShell 5.1 can
+# descend into directory junctions when using Remove-Item -Recurse; only delete
+# our temporary staging tree after walking it with no-link validation.
+function Remove-SafeStagingTree([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root)) { return }
+  Assert-SafePath $Root
+  $entries = @(Get-SafeTree $Root)
+  foreach ($file in @($entries | Where-Object { -not $_.PSIsContainer })) {
+    Assert-SafePath $file.FullName
+    Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+  }
+  foreach ($dir in @($entries | Where-Object { $_.PSIsContainer } |
+          Sort-Object { $_.FullName.Length } -Descending)) {
+    Assert-SafePath $dir.FullName
+    Remove-Item -LiteralPath $dir.FullName -Force -ErrorAction Stop
+  }
+  Assert-SafePath $Root
+  Remove-Item -LiteralPath $Root -Force -ErrorAction Stop
+}
 # Mirror the non-activating C# journal format and transition rules. Only the
 # canonical CyanDeck destination is eligible for a shared journal record.
 function Assert-JournalTimestamp($Value) {
@@ -338,7 +357,7 @@ try {
   Write-Host 'The application still reads legacy paths; this command does NOT activate the new location.'
 } finally {
   if (Test-Path -LiteralPath $staging) {
-    Remove-Item -LiteralPath $staging -Recurse -Force
+    Remove-SafeStagingTree $staging
   }
 }
 
