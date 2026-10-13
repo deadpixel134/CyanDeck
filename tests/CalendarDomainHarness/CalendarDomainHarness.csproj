@@ -23,5 +23,6 @@
     <Compile Include="../../src/DesktopDeck/Calendar/CalendarBackupRestorer.cs" Link="CalendarBackupRestorer.cs" />
     <Compile Include="../../src/DesktopDeck/Calendar/VerifiedCredentialCheckpoint.cs" Link="VerifiedCredentialCheckpoint.cs" />
     <Compile Include="../../src/DesktopDeck/Services/FeatureSwitchCheckpoint.cs" Link="FeatureSwitchCheckpoint.cs" />
+    <Compile Include="../../src/DesktopDeck/Services/DataRootPaths.cs" Link="DataRootPaths.cs" />
   </ItemGroup>
 </Project>
