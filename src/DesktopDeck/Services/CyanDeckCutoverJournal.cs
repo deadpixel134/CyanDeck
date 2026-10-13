@@ -77,9 +77,19 @@ public static class CyanDeckCutoverJournal
         if ((local.Exists && (local.Attributes & FileAttributes.ReparsePoint) != 0) ||
             (migration.Exists && (migration.Attributes & FileAttributes.ReparsePoint) != 0))
             throw new InvalidDataException("Unsafe CyanDeck writer fence directory.");
+        // FileInfo.Exists is false for directories and some dangling links.
+        // Such entries must fail closed instead of appearing to be no fence.
+        FileAttributes attributes;
+        try
+        {
+            attributes = File.GetAttributes(fencePath);
+        }
+        catch (FileNotFoundException) { return; }
+        catch (DirectoryNotFoundException) { return; }
+        if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+            throw new InvalidDataException("Unsafe CyanDeck writer fence.");
         var fence = new FileInfo(fencePath);
-        if (!fence.Exists) return;
-        if ((fence.Attributes & FileAttributes.ReparsePoint) != 0 || fence.Length > 4096)
+        if (fence.Length > 4096)
             throw new InvalidDataException("Unsafe CyanDeck writer fence.");
         // Fail closed: even an empty or corrupt fence blocks legacy writes.
         throw new InvalidOperationException(
