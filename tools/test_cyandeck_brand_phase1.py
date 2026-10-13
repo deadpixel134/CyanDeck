@@ -68,7 +68,7 @@ checks.update({
     "installer shortcut description is CyanDeck": installer.count('$link.Description = "CyanDeck desktop organizer"') == 2 and '$cyanLink.Description = "CyanDeck desktop organizer"' in installer,
     "installer confirmation displays CyanDeck": 'Write-Host "Installed CyanDeck to: $installDir"' in installer,
     "uninstaller confirmation displays CyanDeck": "Write-Host 'CyanDeck was uninstalled" in uninstaller,
-    "new CyanDeck Start Menu entry is separate": '"CyanDeck.lnk"' in installer and "'CyanDeck.lnk'" in uninstaller,
+    "new CyanDeck Start Menu entry is separate": '"CyanDeck.lnk"' in installer and "CyanDeck.lnk" in uninstaller and '$cyanShortcut' in installer and '$cyanStartMenuShortcut' in uninstaller,
     "new shortcut ownership is checked before file copy": installer.index("Assert-ShortcutBelongsToDesktopDeck $cyanShortcut $expectedExe") < installer.index("Copy-Item $source"),
     "legacy and new Start Menu entries share EXE": '$cyanLink.TargetPath = Join-Path $installDir "DesktopDeck.exe"' in installer,
     "uninstaller only removes owned CyanDeck shortcut": '@($startMenuShortcut, $cyanStartMenuShortcut, $desktopShortcut)' in uninstaller and 'OrdinalIgnoreCase' in uninstaller,
@@ -110,7 +110,7 @@ checks.update({
 })
 # Phase 2.4: guard the update/recovery safety boundaries against regressions.
 checks.update({
-    "recovery journal remains in legacy storage": "'DesktopDeck\\\\updates'" in apply_update,
+    "recovery journal remains in legacy storage": "$updatesRoot = Join-Path $env:LOCALAPPDATA" in apply_update and r"DesktopDeck\updates" in apply_update,
     "update checks executable before replacing files": "Assert-ManagedFile $InstallDir 'DesktopDeck.exe'" in apply_update,
     "update process waits for graceful exit": "Wait-DesktopDeckProcess $WaitForPid" in apply_update,
     "update rejects multiple executable payloads": "The package must contain exactly one DesktopDeck.exe." in apply_update,
@@ -236,7 +236,7 @@ checks.update({
 migration_script = source("tools/prepare-cyandeck-data-migration.ps1")
 checks.update({
     "migration script checks links before descent": "function Get-SafeTree" in migration_script and "if ($entry.PSIsContainer) { $pending.Push($entry.FullName) }" in migration_script,
-    "migration script avoids unsafe recursive traversal": "-Recurse -Force" not in migration_script,
+    "migration script avoids unsafe recursive traversal": "-Recurse -Force" not in migration_script and "Remove-SafeStagingTree $staging" in migration_script and "Get-SafeTree $Root" in migration_script,
     "migration script verifies both trees safely": "Get-SafeTree $destination" in migration_script and "Get-SafeTree $legacy" in migration_script,
 })
 checks.update({
