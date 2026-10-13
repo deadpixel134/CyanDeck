@@ -9,6 +9,9 @@
     <Product>CyanDeck</Product>
     <Title>CyanDeck</Title>
     <AssemblyName>DesktopDeck</AssemblyName>
+    <!-- Native WPF CyanDeck only when explicitly requested. -->
+    <AssemblyName Condition="'$(CyanDeckNative)' == 'true'">CyanDeck</AssemblyName>
+    <DefineConstants Condition="'$(CyanDeckNative)' == 'true'">$(DefineConstants);CYANDECK_NATIVE</DefineConstants>
     <RootNamespace>DesktopDeck</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>

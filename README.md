@@ -81,3 +81,12 @@ DesktopDeck/CyanDeck를 모두 종료하고 소스 폴더에서 다음 명령으
 점검 결과는 상태와 사유 코드만 출력하며 사용자 일정/토큰/경로는
 출력하지 않습니다. verified-copy 상태도 실제 전환 허가가 아니며,
 기존 파일, 데이터 경로, 실행 프로그램, 마이그레이션 기록을 수정하지 않습니다.
+
+
+### 독립 실행형 CyanDeck.exe (전체 WPF 본체)
+
+GitHub Actions의 cyandeck-native-preview-win-x64 / win-arm64 파일은 기존
+DesktopDeck.exe를 대신 호출하는 런처가 아니라 전체 WPF 프로그램입니다.
+별도 Windows 테스트 계정 전용 미서명 개발판으로 기존 아이콘·IPC·데이터 경로
+및 서명 업데이트 프로토콜은 그대로 사용합니다. 현재 기존 사용자 프로필을
+CyanDeck 경로로 전환하지 않으며 Google 로그인이 제공되지 않습니다.

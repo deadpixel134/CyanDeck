@@ -223,3 +223,18 @@ false: the signed installer/EXE/profile handoff is still not implemented.
 This is an instantaneous audit and does not reserve readiness for a later
 cutover. The CI fixture uses disposable simulated roaming/local profiles in
 PowerShell 7 and Windows PowerShell 5.1; it never uses real user data.
+
+
+## Phase 3 native CyanDeck WPF executable (unsigned test artifact)
+
+The opt-in property CyanDeckNative=true compiles the complete WPF application
+as CyanDeck.exe using its existing AppIcon.ico, rather than launching a sibling
+DesktopDeck.exe. The default production project and signed updater still
+produce DesktopDeck.exe. Native preview artifacts are named
+cyandeck-native-preview-win-x64 / win-arm64.
+
+This is a compatibility executable: legacy single-instance mutex, IPC, profile
+roots, OAuth resource identity and signed update protocol remain unchanged.
+Only run in a separate Windows TEST ACCOUNT. A different extraction directory
+does NOT isolate legacy roaming/local data. The native artifact is unsigned and
+Google OAuth-unprovisioned; it is NOT an installed executable cutover.

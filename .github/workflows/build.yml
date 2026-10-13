@@ -76,6 +76,21 @@ jobs:
             ${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}/PREVIEW-README.txt
           if-no-files-found: error
           retention-days: 7
+      - name: Build native CyanDeck WPF preview for ${{ matrix.runtime }}
+        shell: pwsh
+        run: ./tools/build-cyandeck-native-preview.ps1 -Runtime '${{ matrix.runtime }}' -OutputDirectory "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}"
+      - name: Verify native CyanDeck WPF preview
+        shell: pwsh
+        run: ./tools/test_cyandeck_native_preview.ps1 -BundleDirectory "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}"
+      - name: Upload unsigned native CyanDeck for isolated testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyandeck-native-preview-${{ matrix.runtime }}
+          path: |
+            ${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/CyanDeck.exe
+            ${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/NATIVE-PREVIEW-README.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Calendar domain tests
         run: dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj --configuration Release
       - name: Watcher lifetime tests

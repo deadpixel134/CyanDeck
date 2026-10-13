@@ -67,3 +67,33 @@ for label, passed in portable_checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 if not all(portable_checks.values()):
     raise SystemExit(1)
+
+
+nativeProject = read("src/DesktopDeck/DesktopDeck.csproj")
+nativeBuilder = read("tools/build-cyandeck-native-preview.ps1")
+nativeVerifier = read("tools/test_cyandeck_native_preview.ps1")
+nativeWorkflow = read(".github/workflows/build.yml")
+nativeApp = read("src/DesktopDeck/App.xaml.cs")
+nativeChecks = {
+    "native WPF binary selected explicitly while keeping old release default":
+        "CyanDeckNative" in nativeProject and "<AssemblyName>DesktopDeck</AssemblyName>" in nativeProject,
+    "native builder publishes the full WPF project retaining the icon":
+        "src/DesktopDeck/DesktopDeck.csproj" in nativeBuilder
+        and "-p:CyanDeckNative=true" in nativeBuilder
+        and "<ApplicationIcon>AppIcon.ico</ApplicationIcon>" in nativeProject,
+    "native preview refuses embedded OAuth credentials":
+        "json/client_secret.json" in nativeBuilder and "ReparsePoint" in nativeBuilder,
+    "native version and safety warnings are verified":
+        "FileVersionInfo" in nativeVerifier and "UNPROVISIONED" in nativeVerifier,
+    "native app retains writer gate and does not activate staged profile":
+        "CYANDECK_NATIVE" in nativeApp
+        and "LegacyProfileWriterGate.Acquire()" in nativeApp
+        and "CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced()" in nativeApp,
+    "native preview does not change signed release artifacts":
+        "cyandeck-native-preview-" in nativeWorkflow
+        and "-p:CyanDeckNative=true" not in read("package.ps1"),
+}
+for label, passed in nativeChecks.items():
+    print(("PASS" if passed else "FAIL") + ": " + label)
+if not all(nativeChecks.values()):
+    raise SystemExit(1)

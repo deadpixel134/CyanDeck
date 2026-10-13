@@ -93,7 +93,12 @@ public partial class App : Application
             args.Handled = true;
             Shutdown(-1);
         };
+#if CYANDECK_NATIVE
+        // Full WPF app with legacy profile/IPC while signed cutover is incomplete.
+        DiagnosticsLog.Info("CyanDeck native compatibility build starting: " + (Environment.ProcessPath ?? "unknown exe"));
+#else
         DiagnosticsLog.Info("DesktopDeck Calendar v26 여러 캘린더/저장 대상 build starting: " + (Environment.ProcessPath ?? "unknown exe"));
+#endif
         _controller.Start();
         StartActivationServer();
         if (peekToggle) Dispatcher.BeginInvoke(() => _controller?.TogglePeekFromExternalCommand());
