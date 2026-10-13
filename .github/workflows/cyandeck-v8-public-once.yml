@@ -1,0 +1,88 @@
+name: CyanDeck v8.0.0 public release (one time)
+on:
+  push:
+    branches: [main]
+    paths: ['tools/v8-public-release.trigger']
+permissions:
+  contents: write
+jobs:
+  verify-release-package:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [win-x64, win-arm64]
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact OAuth-provisioned draft release packages
+        shell: pwsh
+        run: |
+          $runtime='${{ matrix.runtime }}'
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          gh release download v8.0.0 --repo "$env:GITHUB_REPOSITORY" --pattern "CyanDeck-8.0.0-$runtime.zip" --dir dist
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch v8 draft release ZIP.' }
+          gh release download v8.0.0 --repo "$env:GITHUB_REPOSITORY" --pattern "CyanDeck-8.0.0-$runtime.update.json" --dir dist
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch signed v8 draft release manifest.' }
+          $zip=Join-Path dist "CyanDeck-8.0.0-$runtime.zip"
+          $archiveDirectory=Join-Path $env:RUNNER_TEMP ('cyandeck-candidate-'+$runtime)
+          Expand-Archive -LiteralPath $zip -DestinationPath $archiveDirectory
+          $publicKey=Join-Path $archiveDirectory 'CyanDeck.update-public-key.pem'
+          if (-not (Test-Path -LiteralPath $publicKey -PathType Leaf)) { throw 'Release signing public key missing.' }
+          Copy-Item -LiteralPath $publicKey -Destination (Join-Path dist 'CyanDeck.update-public-key.pem')
+          ./tools/test_cyandeck_release_package.ps1 -Runtime $runtime -RequireOAuth
+          if (-not $?) { throw 'Real signed/OAuth release package install-uninstall test failed.' }
+  publish:
+    needs: verify-release-package
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v8.0.0
+      SOURCE_SHA: 8d221bf580da99473a66313a67ccc8b54c196374
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prevent wrong-version publication and enforce tested candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = "true"
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')" = "false"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.tag_name=="v8.0.0" and .draft==true)] | length')" = "1"
+          # The packaging code, installer, updater, executable project and user-facing
+          # documentation are identical to the source ZIP inside the signed draft.
+          git diff --quiet "$SOURCE_SHA" HEAD -- src/ install.ps1 uninstall.ps1 apply-update.ps1 package.ps1 build.ps1 verify-release.ps1 recover-desktop-icons.ps1 README.md
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets|length')" = "6"
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | index("CyanDeck-8.0.0-win-x64.zip") != null')" = "true"
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | index("CyanDeck-8.0.0-win-arm64.zip") != null')" = "true"
+      - name: Publish approved CyanDeck v8 stable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            test "$existing" = "$SOURCE_SHA" || { echo "::error::The v8 tag points to a different commit."; exit 1; }
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE_SHA" --silent
+          fi
+          cat > v8-release-notes.md <<'NOTES'
+          ## CyanDeck v8.0.0
+
+          First standalone release of CyanDeck for Windows 10/11 (x64 and ARM64).
+
+          - New CyanDeck application identity, installation directories and profile paths. No automatic DesktopDeck data migration.
+          - Desktop icon groups, Collection tabs and Folder Portals.
+          - Google Calendar integration including multiple calendars and local-only events.
+          - Windows installation and uninstallation scripts, signed RSA-PSS update manifest and SHA-256 package hashes.
+
+          **Downloads:** Choose CyanDeck-8.0.0-win-x64.zip for most Windows PCs or win-arm64.zip for Windows on ARM. Extract the package and run install.ps1, or launch CyanDeck.exe from the extracted folder. The source archive and checksums are included.
+
+          **Validation:** Windows build, domain test harnesses, manifest signature verification, and sandboxed installation/uninstallation of the actual OAuth-provisioned package passed on both runtimes. Interactive Windows Explorer/desktop integration and Google account consent have not yet been smoke-tested on a live user's desktop. The OAuth information website may still return an HTTP 404 during GitHub Pages configuration. Check https://cyandeck.duckdns.org/ before relying on its policy links.
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest --notes-file v8-release-notes.md
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = "false" || {
+            echo "::error::The v8 release is still a draft."; exit 1;
+          }
+          echo "Published release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
