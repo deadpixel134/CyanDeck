@@ -94,7 +94,15 @@ function Write-CutoverJournal([string]$Phase) {
         [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough)
       try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
       finally { $stream.Dispose() }
-      [IO.File]::Move($temp, $journal, $true)
+      # File.Move(source, destination, overwrite) is unavailable on the
+      # .NET Framework runtime used by Windows PowerShell 5.1.
+      # File.Replace atomically updates an existing journal on Windows;
+      # File.Move publishes the first journal without overwriting it.
+      if (Test-Path -LiteralPath $journal -PathType Leaf) {
+        [IO.File]::Replace($temp, $journal, $null)
+      } else {
+        [IO.File]::Move($temp, $journal)
+      }
     } finally { if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force } }
   } finally { $gate.Dispose() }
 }
