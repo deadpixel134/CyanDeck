@@ -26,6 +26,26 @@ public static class DataRootPaths
         File.Exists(Path.Combine(CyanRoaming, "calendar-google-owner.dat")) ==
         File.Exists(Path.Combine(LegacyRoaming, "calendar-google-owner.dat"));
 
+    // Inspect each level before recursive enumeration to avoid following
+    // junctions or symbolic links into unrelated user directories.
+    private static bool HasOnlyRegularEntries(DirectoryInfo root)
+    {
+        var pending = new Stack<DirectoryInfo>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (!current.Exists || (current.Attributes & FileAttributes.ReparsePoint) != 0)
+                return false;
+            foreach (var entry in current.EnumerateFileSystemInfos())
+            {
+                if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) return false;
+                if (entry is DirectoryInfo directory) pending.Push(directory);
+            }
+        }
+        return true;
+    }
+
     // Stronger read-only verification than the presence-only UI indicator.
     // Any changed, added or removed file invalidates the staged copy.
     public static bool IsPreparedCopyIdentical()
@@ -36,6 +56,7 @@ public static class DataRootPaths
             var source = new DirectoryInfo(LegacyRoaming);
             var target = new DirectoryInfo(CyanRoaming);
             if (!source.Exists || !target.Exists) return false;
+            if (!HasOnlyRegularEntries(source) || !HasOnlyRegularEntries(target)) return false;
             var sourceFiles = source.GetFiles("*", SearchOption.AllDirectories);
             var targetFiles = target.GetFiles("*", SearchOption.AllDirectories);
             if (sourceFiles.Length != targetFiles.Length) return false;
