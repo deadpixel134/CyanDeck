@@ -68,9 +68,7 @@ function Write-CutoverJournal([string]$Phase) {
     if (Test-Path -LiteralPath $journal -PathType Leaf) {
       $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
       Assert-JournalTimestamp $previous.RecordedAtUtc
-      Assert-JournalTimestamp $previous.RecordedAtUtc
-  if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
-      -not $previous.RecordedAtUtc -or
+      if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
           -not $previous.RecordedAtUtc -or
           -not [string]::Equals($previous.LegacyRoot, $legacy, [StringComparison]::OrdinalIgnoreCase) -or
           -not [string]::Equals($previous.CandidateRoot, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
@@ -108,6 +106,7 @@ function Assert-CanPrepareJournal {
   Assert-SafePath $journal
   if (-not (Test-Path -LiteralPath $journal)) { return }
   $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-JournalTimestamp $previous.RecordedAtUtc
   if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
       -not [string]::Equals($previous.LegacyRoot, $legacy, [StringComparison]::OrdinalIgnoreCase) -or
       -not [string]::Equals($previous.CandidateRoot, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
