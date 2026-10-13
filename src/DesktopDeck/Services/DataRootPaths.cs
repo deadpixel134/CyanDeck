@@ -54,6 +54,17 @@ public static class DataRootPaths
         if (!Directory.Exists(CyanRoaming)) return "prepared-copy-missing";
         if (!HasPreparedCriticalData) return "critical-data-mismatch";
         if (!IsPreparedCopyIdentical()) return "prepared-copy-diverged";
+        // An identical directory alone is not authorization to cut over.
+        // Require a durable, explicitly verified preparation journal.
+        try
+        {
+            var journal = CyanDeckCutoverJournal.Read();
+            if (journal is null) return "migration-journal-missing";
+            if (journal.Phase != CyanDeckCutoverJournal.Verified) return "migration-not-verified";
+        }
+        catch (IOException) { return "migration-journal-unreadable"; }
+        catch (UnauthorizedAccessException) { return "migration-journal-unreadable"; }
+        catch (InvalidDataException) { return "migration-journal-invalid"; }
         return "ready-for-manual-cutover-review";
     }
 
