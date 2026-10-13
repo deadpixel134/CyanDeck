@@ -85,6 +85,15 @@ checks.update({
     "new and legacy shortcuts share working directory": '$cyanLink.WorkingDirectory = $installDir' in installer and '$link.WorkingDirectory = $installDir' in installer,
     "uninstaller retains reparse-point protection": "ReparsePoint" in uninstaller and "ReparsePoint" in installer,
 })
+# Release branding changes the public title only, not signed asset filenames.
+release_workflow = source(".github/workflows/release.yml")
+checks.update({
+    "release title displays CyanDeck": '--title "CyanDeck $TAG"' in release_workflow,
+    "release assets keep DesktopDeck identity": 'dist/DesktopDeck-*.zip' in release_workflow and 'dist/DesktopDeck-*.update.json' in release_workflow,
+    "release tag is still version validated": "Tag must exactly match version" in release_workflow,
+    "release signing and OAuth secrets remain required": "DESKTOPDECK_UPDATE_SIGNING_KEY_PEM" in release_workflow and "DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON" in release_workflow,
+    "application icon path stays unchanged": "<ApplicationIcon>AppIcon.ico</ApplicationIcon>" in project,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
