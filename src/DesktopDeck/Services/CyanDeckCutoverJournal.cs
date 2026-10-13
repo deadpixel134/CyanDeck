@@ -35,6 +35,7 @@ public static class CyanDeckCutoverJournal
             throw new InvalidDataException("Malformed CyanDeck migration journal.", error);
         }
         if (entry is null || entry.Version != CurrentVersion || !IsKnownPhase(entry.Phase) ||
+            entry.RecordedAtUtc == default || entry.RecordedAtUtc > DateTimeOffset.UtcNow.AddMinutes(10) ||
             !string.Equals(entry.LegacyRoot, DataRootPaths.LegacyRoaming, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(entry.CandidateRoot, DataRootPaths.CyanRoaming, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Unrecognized CyanDeck migration journal; refusing automatic activation.");
