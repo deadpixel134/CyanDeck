@@ -25,7 +25,7 @@ checks = {
     "existing activation IPC is preserved": 'DesktopDeck.Activation.v1' in source("src/DesktopDeck/App.xaml.cs"),
     "OAuth embedded resource identifier is preserved": 'DesktopDeck.OAuthDesktopClient' in source("src/DesktopDeck/Calendar/GoogleOAuthClientConfiguration.cs"),
     "signed update canonical protocol is preserved": 'DesktopDeck.UpdateManifest.v1' in source("src/DesktopDeck/Services/UpdateService.cs"),
-    "signed update still requires DesktopDeck.exe": 'The update ZIP does not contain DesktopDeck.exe.' in source("src/DesktopDeck/Services/UpdateService.cs"),
+    "signed update still requires DesktopDeck.exe": 'UpdatePackageLayoutPolicy.Validate(archive)' in source("src/DesktopDeck/Services/UpdateService.cs") and 'The package must contain exactly one DesktopDeck.exe.' in source("src/DesktopDeck/Services/UpdatePackageLayoutPolicy.cs"),
     "GitHub update channel is preserved": 'github-release://deadpixel134/DesktopDeck' in source("src/DesktopDeck/Services/GitHubReleaseSource.cs"),
 }
 # Phase 1.5: inspect direct UI/error copy, without renaming on-disk or IPC identities.
@@ -117,7 +117,7 @@ checks.update({
     "rollback snapshot requires original executable": "The rollback snapshot is missing DesktopDeck.exe." in apply_update,
     "update maintains separate staging directory": ".DesktopDeck-stage-" in apply_update,
     "update script does not forcibly kill process": "Stop-Process" not in apply_update and "taskkill" not in apply_update.lower(),
-    "update download validates executable presence": "The update ZIP does not contain DesktopDeck.exe." in update_service,
+    "update download validates executable presence": "UpdatePackageLayoutPolicy.Validate(archive)" in update_service and "The package must contain exactly one DesktopDeck.exe." in source("src/DesktopDeck/Services/UpdatePackageLayoutPolicy.cs"),
     "update signature remains required by default": "bool requireSignature = true" in update_service,
     "update manifest still uses RSA verification": "VerifyManifestSignature" in update_service,
 })
