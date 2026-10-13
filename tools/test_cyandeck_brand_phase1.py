@@ -157,6 +157,12 @@ checks.update({
     "google owner follows shared root": 'Path.Combine(DataRootPaths.ActiveRoaming, "calendar-google-owner.dat")' in google_sync_contract,
     "migration does not activate new roaming root": "ActiveRoaming => LegacyRoaming" in root_contract,
 })
+prepared_root_contract = source("src/DesktopDeck/Services/DataRootPaths.cs")
+checks.update({
+    "prepared root is detection only": "HasPreparedCyanRoamingCopy" in prepared_root_contract and "Directory.Exists(CyanRoaming)" in prepared_root_contract,
+    "prepared root requires layout file": 'File.Exists(Path.Combine(CyanRoaming, "layout.json"))' in prepared_root_contract,
+    "prepared root never changes active path": "ActiveRoaming => LegacyRoaming" in prepared_root_contract,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
