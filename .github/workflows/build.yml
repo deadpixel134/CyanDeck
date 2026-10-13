@@ -68,6 +68,21 @@ jobs:
           dotnet publish src/CyanDeck/CyanDeck.csproj -c Release -r '${{ matrix.runtime }}' --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o "${{ runner.temp }}/CyanDeck/${{ matrix.runtime }}"
           if ($LASTEXITCODE -ne 0) { throw 'CyanDeck publish failed.' }
           if (-not (Test-Path "${{ runner.temp }}/CyanDeck/${{ matrix.runtime }}/CyanDeck.exe")) { throw 'CyanDeck.exe missing.' }
+      - name: Verify signed CyanDeck package with disposable RSA key
+        shell: pwsh
+        run: |
+          $keyFile=Join-Path $env:RUNNER_TEMP ('cyandeck-test-key-'+[Guid]::NewGuid().ToString('N')+'.pem')
+          $rsa=[Security.Cryptography.RSA]::Create(2048)
+          try {
+            [IO.File]::WriteAllText($keyFile,$rsa.ExportPkcs8PrivateKeyPem(),[Text.UTF8Encoding]::new($false))
+          } finally { $rsa.Dispose() }
+          try {
+            ./package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $keyFile
+            $version=([xml](Get-Content src/CyanDeck/CyanDeck.csproj -Raw)).Project.PropertyGroup.Version
+            ./verify-release.ps1 -ManifestPath "dist/CyanDeck-$version-${{ matrix.runtime }}.update.json"
+          } finally {
+            if (Test-Path -LiteralPath $keyFile) { Remove-Item -LiteralPath $keyFile -Force }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: cyandeck-unprovisioned-${{ matrix.runtime }}
