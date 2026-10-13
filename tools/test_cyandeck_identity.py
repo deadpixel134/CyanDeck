@@ -2,12 +2,16 @@
 """Guard standalone CyanDeck names without inspecting old user data."""
 from pathlib import Path
 import xml.etree.ElementTree as ET
+import json
 root=Path(__file__).resolve().parents[1]
 source=root/'src'/'CyanDeck'
 p=ET.parse(source/'CyanDeck.csproj').getroot()
 xml={e.tag:e.text for e in p.iter() if e.text and e.tag in ('AssemblyName','RootNamespace','Product','Version')}
 assert xml['AssemblyName']==xml['RootNamespace']==xml['Product']=='CyanDeck'
-assert xml['Version']=='8.0.0'
+parts = tuple(int(v) for v in xml['Version'].split('.'))
+assert len(parts) == 3 and parts >= (8, 0, 0)
+manifest = json.loads((root/'update-manifest.example.json').read_text(encoding='utf-8'))
+assert manifest['version'] == xml['Version']
 assert (source/'AppIcon.ico').is_file()
 assert not (root/'src'/'DesktopDeck').exists()
 assert not (source/'Services'/'CyanDeckCutoverJournal.cs').exists()
