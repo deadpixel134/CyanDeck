@@ -167,6 +167,13 @@ checks.update({
     "migration blocks both executable identities": "Get-Process -Name DesktopDeck,CyanDeck" in migration_preflight,
     "migration retains legacy data": "Original DesktopDeck data remains untouched." in migration_preflight,
 })
+checks.update({
+    "prepared copy can be verified without activation": "[switch]$VerifyPrepared" in migration_preflight and "Verification does not activate" in migration_preflight,
+    "prepared verification checks file hashes": "Prepared copy differs from original:" in migration_preflight and "Get-FileHash -LiteralPath $target -Algorithm SHA256" in migration_preflight,
+    "prepared verification rejects missing directories": "Prepared copy is missing directory:" in migration_preflight,
+    "prepared verification rejects linked files": "Refusing linked migration item:" in migration_preflight,
+    "prepared verification refuses apply combination": "Use -VerifyPrepared or -Apply, not both." in migration_preflight,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
