@@ -76,6 +76,15 @@ checks.update({
     "legacy install folder preserved": 'Programs\\DesktopDeck' in installer and 'Programs\\DesktopDeck' in uninstaller,
     "data purge requires two switches": '$PurgeData -and -not $ConfirmPurgeData' in uninstaller,
 })
+# Keep the original icon and Windows integration identities unchanged.
+checks.update({
+    "shortcut icon is inherited from existing EXE": '$link.IconLocation' not in installer and '$cyanLink.IconLocation' not in installer,
+    "legacy desktop shortcut is not renamed": '$desktopShortcut = Join-Path ([Environment]::GetFolderPath(\'Desktop\')) "DesktopDeck.lnk"' in installer,
+    "CyanDeck start menu shortcut is ownership validated": 'Assert-ShortcutBelongsToDesktopDeck $cyanShortcut $expectedExe' in installer,
+    "legacy shortcut remains available for existing pins": '$link = $wsh.CreateShortcut($shortcut)' in installer,
+    "new and legacy shortcuts share working directory": '$cyanLink.WorkingDirectory = $installDir' in installer and '$link.WorkingDirectory = $installDir' in installer,
+    "uninstaller retains reparse-point protection": "ReparsePoint" in uninstaller and "ReparsePoint" in installer,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
