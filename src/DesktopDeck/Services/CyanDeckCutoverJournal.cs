@@ -38,6 +38,15 @@ public static class CyanDeckCutoverJournal
             DataRootPaths.IsPreparedCopyIdentical();
     }
 
+    // Explicit rollback-preparation record. This does not move or delete data;
+    // the legacy profile remains active throughout the current release.
+    public static void AbortPreparation()
+    {
+        var previous = Read();
+        if (previous is null || previous.Phase == Aborted) return;
+        Record(Aborted);
+    }
+
     public static void Record(string phase)
     {
         if (!IsKnownPhase(phase)) throw new ArgumentOutOfRangeException(nameof(phase));
