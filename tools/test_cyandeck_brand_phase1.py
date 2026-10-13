@@ -211,6 +211,11 @@ checks.update({
     "verified journal requires verified phase": "entry.Phase == Verified" in journal_review,
     "journal remains separate from candidate profile": 'Path.Combine(DataRootPaths.LegacyLocal,' in journal_review,
 })
+checks.update({
+    "migration preparation supports explicit abort": "AbortPreparation()" in journal_review,
+    "migration abort preserves profile data": "Record(Aborted);" in journal_review and "previous.Phase == Aborted" in journal_review,
+    "migration abort does not activate candidate": "ActiveRoaming => LegacyRoaming" in root_readiness,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
