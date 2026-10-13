@@ -131,6 +131,13 @@ checks.update({
     "migration requires app exit": "Get-Process -Name DesktopDeck" in migration,
     "migration does not activate new path": "does NOT activate the new location" in migration,
 })
+migration_preflight = source("tools/prepare-cyandeck-data-migration.ps1")
+checks.update({
+    "migration validates layout before copying": "Layout validation failed:" in migration_preflight and migration_preflight.index("Layout validation failed:") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
+    "migration rejects unsupported layout schema": "Unsupported layout schema version." in migration_preflight,
+    "migration validates calendar array": "Calendar must be an array." in migration_preflight,
+    "migration validates calendar before copying": migration_preflight.index("Calendar validation failed:") < migration_preflight.index("New-Item -ItemType Directory -Path $staging"),
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
