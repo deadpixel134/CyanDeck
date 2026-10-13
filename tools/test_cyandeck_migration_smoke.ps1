@@ -104,6 +104,15 @@ try {
   $rejected = $false
   try { & $script -Apply -AbortPreparation } catch { $rejected = $true }
   if (-not $rejected) { throw 'Conflicting abort and apply flags were accepted.' }
+  # An old verified journal must block a fresh candidate before publication.
+  $staleDestination = Join-Path $root 'CyanDeck-stale-journal-test'
+  $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+  $entry.Phase = 'verified'
+  $entry | ConvertTo-Json -Compress | Set-Content -LiteralPath $journal -Encoding utf8
+  $rejected = $false
+  try { & $script -Apply -DestinationRoot $cyan } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Existing candidate unexpectedly accepted a second preparation.' }
+  & $script -AbortPreparation
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
 finally {
