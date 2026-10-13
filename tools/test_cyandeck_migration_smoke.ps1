@@ -78,6 +78,13 @@ try {
     if ($held) { $heldMutex.ReleaseMutex() }
     $heldMutex.Dispose()
   }
+  # Once the other instance exits, a fresh migration must be able to
+  # acquire the lock and prepare a clean copy without manual cleanup.
+  & $script -Apply -DestinationRoot $invalidDestination
+  if (-not (Test-Path -LiteralPath (Join-Path $invalidDestination 'layout.json') -PathType Leaf)) {
+    throw 'Migration could not recover after mutex contention.'
+  }
+  & $script -VerifyPrepared -DestinationRoot $invalidDestination
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
 finally {
