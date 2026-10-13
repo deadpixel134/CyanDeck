@@ -53,6 +53,8 @@ jobs:
             ./package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $privateKey
             $version=([xml](Get-Content src/CyanDeck/CyanDeck.csproj -Raw)).Project.PropertyGroup.Version
             ./verify-release.ps1 -ManifestPath "dist/CyanDeck-$version-${{ matrix.runtime }}.update.json"
+            ./tools/test_cyandeck_release_package.ps1 -Runtime '${{ matrix.runtime }}' -RequireOAuth
+
           } finally {
             if (Test-Path $desktopOAuth) { Remove-Item -LiteralPath $desktopOAuth -Force }
             if (Test-Path $privateKey) { Remove-Item -LiteralPath $privateKey -Force }
