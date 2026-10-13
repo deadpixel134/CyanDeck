@@ -69,7 +69,6 @@ function Write-CutoverJournal([string]$Phase) {
     $previous = $null
     if (Test-Path -LiteralPath $journal -PathType Leaf) {
       if ((Get-Item -LiteralPath $journal -Force).Length -gt 16384) { throw 'Migration journal exceeds 16 KiB.' }
-      if ((Get-Item -LiteralPath $journal -Force).Length -gt 16384) { throw 'Migration journal exceeds 16 KiB.' }
   $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
       Assert-JournalTimestamp $previous.RecordedAtUtc
       if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
@@ -117,6 +116,9 @@ function Assert-CanPrepareJournal {
   $journal = Join-Path (Join-Path (Join-Path $env:LOCALAPPDATA 'DesktopDeck') 'migration') 'cyandeck-cutover-state.json'
   Assert-SafePath $journal
   if (-not (Test-Path -LiteralPath $journal)) { return }
+  if ((Get-Item -LiteralPath $journal -Force).Length -gt 16384) {
+    throw 'Migration journal exceeds 16 KiB; refusing to prepare.'
+  }
   $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-JournalTimestamp $previous.RecordedAtUtc
   if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
@@ -238,8 +240,15 @@ foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
   if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
   try {
     $raw = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 -ErrorAction Stop
-    $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
-    if ($name.StartsWith('calendar-events.json', [StringComparison]::OrdinalIgnoreCase) -and -not $raw.TrimStart().StartsWith('[')) { throw 'Calendar must be an array.' }
+    if ($name.StartsWith('calendar-events.json', [StringComparison]::OrdinalIgnoreCase)) {
+      if (-not $raw.TrimStart().StartsWith('[')) { throw 'Calendar must be an array.' }
+      # Both Windows PowerShell 5.1 and PowerShell 7 unwrap top-level arrays.
+      # A named JSON property retains the array, including [] and [one item].
+      $parsed = (ConvertFrom-Json -InputObject ('{"events":' + $raw + '}') -ErrorAction Stop).events
+      if ($parsed -isnot [array]) { throw 'Calendar must be an array.' }
+    } else {
+      $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+    }
     if ($name.StartsWith('layout.json', [StringComparison]::OrdinalIgnoreCase)) {
       if ($null -eq $parsed -or $parsed -isnot [pscustomobject]) { throw 'Layout must be an object.' }
       if ($null -ne $parsed.Version) {
@@ -249,10 +258,8 @@ foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
         }
       }
     } else {
-      # Windows PowerShell 5.1 enumerates JSON arrays, returning null for []
-      # and a scalar for single-element arrays. The raw JSON shape was checked
-      # above; normalize the decoded events for validation.
-      foreach ($event in @($parsed | Where-Object { $null -ne $_ })) {
+      # Reject nulls and non-object entries, even inside backup/temp arrays.
+      foreach ($event in $parsed) {
         if ($null -eq $event -or $event -isnot [pscustomobject]) { throw 'Calendar event must be an object.' }
       }
     }
