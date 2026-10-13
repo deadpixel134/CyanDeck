@@ -62,6 +62,14 @@ try
     Assert.That(oversizedRefused, "oversized writer fence fails closed");
     File.Delete(fencePath);
     CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot);
+    // A directory at the fence path must not be interpreted as an absent file.
+    Directory.CreateDirectory(fencePath);
+    var directoryRefused = false;
+    try { CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot); }
+    catch (InvalidDataException) { directoryRefused = true; }
+    Assert.That(directoryRefused, "directory-shaped writer fence fails closed");
+    Directory.Delete(fencePath);
+    CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced(fenceRoot);
 }
 finally
 {
