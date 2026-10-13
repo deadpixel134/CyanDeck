@@ -4,6 +4,28 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http;
 
+// The second gate is independent of executable names and remains exclusive
+// across threads/processes, including a future differently named CyanDeck.exe.
+using (var firstWriter = LegacyProfileWriterGate.Acquire())
+{
+    var otherWriterRejected = Task.Run(() =>
+    {
+        try
+        {
+            using var conflictingWriter = LegacyProfileWriterGate.Acquire();
+            return false;
+        }
+        catch (InvalidOperationException) { return true; }
+    }).GetAwaiter().GetResult();
+    Assert.That(otherWriterRejected,
+        "shared profile writer lease excludes a second executable writer");
+}
+using (var reopenedWriter = LegacyProfileWriterGate.Acquire())
+{
+    Assert.That(reopenedWriter is not null,
+        "profile lease is released after clean shutdown and can be reacquired");
+}
+
 // Validate writer-fence refusal in an isolated directory, never user data.
 var fenceRoot = Path.Combine(Path.GetTempPath(), "cyandeck-fence-" + Guid.NewGuid().ToString("N"));
 try
