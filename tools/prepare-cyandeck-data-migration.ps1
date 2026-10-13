@@ -1,6 +1,7 @@
 param(
   [switch]$Apply,
   [switch]$VerifyPrepared,
+  [switch]$AbortPreparation,
   [string]$DestinationRoot = (Join-Path $env:APPDATA 'CyanDeck')
 )
 # Opt-in, non-destructive preparation only. Runtime still uses DesktopDeck.
@@ -67,6 +68,7 @@ function Write-CutoverJournal([string]$Phase) {
     if ($Phase -eq 'verified' -and (-not $previous -or $previous.Phase -ne 'prepared')) {
       throw 'Verification requires a prepared migration journal.'
     }
+    if ($Phase -eq 'aborted' -and (-not $previous -or $previous.Phase -eq 'aborted')) { return }
     $record = [ordered]@{
       Version = 1; Phase = $Phase; RecordedAtUtc = [DateTimeOffset]::UtcNow.ToString('o')
       LegacyRoot = $legacy; CandidateRoot = $canonical
@@ -99,6 +101,16 @@ try {
   if (-not $ownsMigrationMutex) {
     throw 'DesktopDeck is running or another migration holds its single-instance mutex.'
   }
+if ($AbortPreparation) {
+  if ($Apply -or $VerifyPrepared) { throw 'Use -AbortPreparation by itself.' }
+  $canonical = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'CyanDeck'))
+  if (-not [string]::Equals($destination, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'AbortPreparation requires the canonical CyanDeck destination.'
+  }
+  Write-CutoverJournal 'aborted'
+  Write-Host 'Migration preparation marked aborted. Neither profile was modified.'
+  return
+}
 Assert-SafePath $legacy
 Assert-SafePath $destination
 if ([string]::Equals($legacy, $destination, [StringComparison]::OrdinalIgnoreCase)) {
