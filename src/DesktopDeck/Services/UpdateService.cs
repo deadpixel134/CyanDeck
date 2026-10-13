@@ -206,7 +206,7 @@ public static class UpdateService
     {
         if (!HasPendingRecovery()) return false;
         var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
-        if (!File.Exists(script)) throw new FileNotFoundException("DesktopDeck update rescue script is missing", script);
+        if (!File.Exists(script)) throw new FileNotFoundException("CyanDeck update recovery script is missing", script);
         var install = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -RecoverPending -InstallDir {Quote(install)} -WaitForPid {waitForPid}" + (relaunch ? " -Relaunch" : "");
         return Process.Start(new ProcessStartInfo("powershell.exe", args)
@@ -220,7 +220,7 @@ public static class UpdateService
         if (expectedSha256.Length != 64 || !expectedSha256.All(Uri.IsHexDigit))
             throw new InvalidDataException("A signed manifest's 64-character SHA-256 digest is required for installation.");
         var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
-        if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the DesktopDeck installation.", script);
+        if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the CyanDeck installation.", script);
         var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -Package {Quote(packagePath)} -ExpectedSha256 {Quote(expectedSha256)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid}" + (relaunch ? " -Relaunch" : "");
         return Process.Start(new ProcessStartInfo("powershell.exe", args) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden }) is not null;
@@ -231,7 +231,7 @@ public static class UpdateService
         var rollback = GetLatestRollbackDirectory();
         if (string.IsNullOrWhiteSpace(rollback) || !Directory.Exists(rollback)) return false;
         var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
-        if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the DesktopDeck installation.", script);
+        if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the CyanDeck installation.", script);
         var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -RollbackDir {Quote(rollback)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid}" + (relaunch ? " -Relaunch" : "");
         Process.Start(new ProcessStartInfo("powershell.exe", args) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden });

@@ -94,6 +94,19 @@ checks.update({
     "release signing and OAuth secrets remain required": "DESKTOPDECK_UPDATE_SIGNING_KEY_PEM" in release_workflow and "DESKTOPDECK_GOOGLE_DESKTOP_OAUTH_JSON" in release_workflow,
     "application icon path stays unchanged": "<ApplicationIcon>AppIcon.ico</ApplicationIcon>" in project,
 })
+# Phase 2.3: update errors show CyanDeck without altering signed package identity.
+update_service = source("src/DesktopDeck/Services/UpdateService.cs")
+apply_update = source("apply-update.ps1")
+checks.update({
+    "update recovery errors display CyanDeck": "CyanDeck update recovery script is missing" in update_service,
+    "update install errors display CyanDeck": "apply-update.ps1 is missing from the CyanDeck installation." in update_service,
+    "recovery success displays CyanDeck": "CyanDeck recovery verified." in apply_update,
+    "update process wait displays CyanDeck": "CyanDeck did not finish closing;" in apply_update,
+    "update active process warning displays CyanDeck": "CyanDeck is still running." in apply_update,
+    "update process executable remains DesktopDeck": "Get-Process -Name DesktopDeck" in apply_update,
+    "signed manifest protocol stays unchanged": '"DesktopDeck.UpdateManifest.v1"' in update_service,
+    "staged update storage stays unchanged": '"DesktopDeck", "updates", "staged"' in update_service,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")

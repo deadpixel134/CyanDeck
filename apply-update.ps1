@@ -107,7 +107,7 @@ function Restore-PendingUpdate([string]$Journal) {
   # Never remove new files that were absent from the original snapshot: the
   # updater should not destroy a user-created file even with a managed name.
   Remove-Item -LiteralPath $Journal -Force
-  Write-Host 'DesktopDeck recovery verified. Original managed files restored; other files untouched.'
+  Write-Host 'CyanDeck recovery verified. Original managed files restored; other files untouched.'
 }
 
 function Wait-DesktopDeckProcess([int]$ProcessId) {
@@ -116,7 +116,7 @@ function Wait-DesktopDeckProcess([int]$ProcessId) {
   catch { return }
   if (-not $p.WaitForExit(30000)) {
     # Never force-kill the app while it may be saving its layout/calendar.
-    throw 'DesktopDeck did not finish closing; update cancelled with existing files intact.'
+    throw 'CyanDeck did not finish closing; update cancelled with existing files intact.'
   }
 }
 
@@ -168,7 +168,7 @@ function Install-ManagedFiles([string]$SourceDir, [string]$DestinationDir) {
 Wait-DesktopDeckProcess $WaitForPid
 # Manual recovery must not replace files while another DesktopDeck instance is running.
 if (@(Get-Process -Name DesktopDeck -ErrorAction SilentlyContinue).Count -gt 0) {
-  throw 'DesktopDeck is still running. Exit all instances normally before updating or recovering.'
+  throw 'CyanDeck is still running. Exit all instances normally before updating or recovering.'
 }
 $InstallDir = Assert-OrdinaryDirectory $InstallDir 'Install directory'
 $installedExe = Assert-ManagedFile $InstallDir 'DesktopDeck.exe'
