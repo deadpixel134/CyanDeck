@@ -120,6 +120,17 @@ checks.update({
     "update signature remains required by default": "bool requireSignature = true" in update_service,
     "update manifest still uses RSA verification": "VerifyManifestSignature" in update_service,
 })
+# Migration preparation is opt-in and must not silently change live data roots.
+migration = source("tools/prepare-cyandeck-data-migration.ps1")
+checks.update({
+    "migration defaults to dry run": "[switch]$Apply" in migration and "if (-not $Apply)" in migration,
+    "migration refuses destination overwrite": "Destination already exists; refusing to merge or overwrite" in migration,
+    "migration retains legacy data": "Original DesktopDeck data remains untouched" in migration,
+    "migration verifies copied files": "Get-FileHash" in migration and "SHA256" in migration,
+    "migration rejects reparse points": "ReparsePoint" in migration,
+    "migration requires app exit": "Get-Process -Name DesktopDeck" in migration,
+    "migration does not activate new path": "does NOT activate the new location" in migration,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
