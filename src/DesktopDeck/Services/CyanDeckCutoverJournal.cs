@@ -28,6 +28,16 @@ public static class CyanDeckCutoverJournal
         return entry;
     }
 
+    // A verified journal is only evidence of an earlier check. Revalidate
+    // against the current legacy files before reporting readiness for review.
+    // This never changes the active profile or the journal on disk.
+    public static bool IsCurrentlyVerifiedForReview()
+    {
+        var entry = Read();
+        return entry is not null && entry.Phase == Verified &&
+            DataRootPaths.IsPreparedCopyIdentical();
+    }
+
     public static void Record(string phase)
     {
         if (!IsKnownPhase(phase)) throw new ArgumentOutOfRangeException(nameof(phase));
