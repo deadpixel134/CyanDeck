@@ -140,6 +140,11 @@ if ($AbortPreparation) {
   if (-not [string]::Equals($destination, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'AbortPreparation requires the canonical CyanDeck destination.'
   }
+  Assert-SafePath $legacy
+  Assert-SafePath $destination
+  if (@(Get-Process -Name DesktopDeck,CyanDeck -ErrorAction SilentlyContinue).Count -gt 0) {
+    throw 'Exit all DesktopDeck and CyanDeck processes before aborting migration preparation.'
+  }
   Write-CutoverJournal 'aborted'
   Write-Host 'Migration preparation marked aborted. Neither profile was modified.'
   return
