@@ -48,7 +48,9 @@ try {
   try {
     $ownsMigrationMutex = $migrationMutex.WaitOne(0)
   } catch [Threading.AbandonedMutexException] {
-    # An abandoned lock is not evidence that the previous writer shut down cleanly.
+    # WaitOne grants ownership even when it reports abandonment. Release it
+    # in the outer finally, but refuse to stage data after an unclean exit.
+    $ownsMigrationMutex = $true
     throw 'DesktopDeck single-instance mutex was abandoned; retry after inspecting application state.'
   }
   if (-not $ownsMigrationMutex) {
