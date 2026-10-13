@@ -109,27 +109,27 @@ function Assert-PreparedCopyIdentical {
   $originalDirs = @(Get-SafeTree $legacy | Where-Object { $_.PSIsContainer })
   $copiedDirs = @(Get-SafeTree $destination | Where-Object { $_.PSIsContainer })
   foreach ($item in @($original) + @($copied) + @($originalDirs) + @($copiedDirs)) {
-  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-  throw "Refusing linked migration item: $($item.FullName)"
-  }
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw "Refusing linked migration item: $($item.FullName)"
+    }
   }
   if ($original.Count -ne $copied.Count -or $originalDirs.Count -ne $copiedDirs.Count) {
-  throw 'Prepared copy has a different file or directory count.'
+    throw 'Prepared copy has a different file or directory count.'
   }
   foreach ($file in $original) {
-  $relative = $file.FullName.Substring($legacy.Length).TrimStart('\')
-  $target = Join-Path $destination $relative
-  if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
-  (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -cne
-  (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash) {
-  throw "Prepared copy differs from original: $relative"
-  }
+    $relative = $file.FullName.Substring($legacy.Length).TrimStart('\')
+    $target = Join-Path $destination $relative
+    if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -cne
+        (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash) {
+      throw "Prepared copy differs from original: $relative"
+    }
   }
   foreach ($dir in $originalDirs) {
-  $relative = $dir.FullName.Substring($legacy.Length).TrimStart('\')
-  if (-not (Test-Path -LiteralPath (Join-Path $destination $relative) -PathType Container)) {
-  throw "Prepared copy is missing directory: $relative"
-  }
+    $relative = $dir.FullName.Substring($legacy.Length).TrimStart('\')
+    if (-not (Test-Path -LiteralPath (Join-Path $destination $relative) -PathType Container)) {
+      throw "Prepared copy is missing directory: $relative"
+    }
   }
 }
 
