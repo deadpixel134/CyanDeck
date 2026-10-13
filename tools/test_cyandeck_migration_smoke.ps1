@@ -105,14 +105,18 @@ try {
   $rejected = $false
   try { & $script -Apply -AbortPreparation } catch { $rejected = $true }
   if (-not $rejected) { throw 'Conflicting abort and apply flags were accepted.' }
-  # An old verified journal must block a fresh candidate before publication.
-  $staleDestination = Join-Path $root 'CyanDeck-stale-journal-test'
+  # An old verified journal must block a fresh canonical candidate even
+  # when the destination does not exist. Otherwise the test only exercises
+  # the ordinary destination-exists guard, not journal preflight.
+  Remove-Item -LiteralPath $cyan -Recurse -Force
   $entry = Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
   $entry.Phase = 'verified'
   $entry | ConvertTo-Json -Compress | Set-Content -LiteralPath $journal -Encoding utf8
   $rejected = $false
-  try { & $script -Apply -DestinationRoot $cyan } catch { $rejected = $true }
-  if (-not $rejected) { throw 'Existing candidate unexpectedly accepted a second preparation.' }
+  try { & $script -Apply } catch { $rejected = $true }
+  if (-not $rejected -or (Test-Path -LiteralPath $cyan)) {
+    throw 'Stale verified journal did not prevent publishing a new candidate.'
+  }
   & $script -AbortPreparation
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
