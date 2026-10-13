@@ -18,7 +18,7 @@ checks = {
     'no indiscriminate updater install dir wipe': 'Get-ChildItem -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue | Remove-Item' not in up,
     'updater has only explicit owned file list': '$managedNames = @(' in up and "'DesktopDeck.exe'" in up,
     'only managed items may be replaced': 'if ($Name -cnotin $managedNames)' in up,
-    'atomic replacement of existing app-owned leaf file': '[IO.File]::Replace($staging, $target, $null)' in up,
+    'atomic replacement of existing app-owned leaf file': '[IO.File]::Replace($staging, $target, $replaceBackup)' in up and '.DesktopDeck-replace-' in up,
     'updater snapshot is application-owned only': 'function Copy-ManagedSnapshot' in up and 'Copy-ManagedSnapshot $InstallDir $safety' in up,
     'rollback must use app snapshot': 'Rollback source must be an application-owned snapshot' in up,
     'updater never force-kills process': 'Stop-Process -Force' not in up,
