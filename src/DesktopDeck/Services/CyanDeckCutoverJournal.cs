@@ -19,6 +19,13 @@ public static class CyanDeckCutoverJournal
 
     public static Entry? Read()
     {
+        // Validate parent paths even for read-only inspection. A linked parent
+        // can otherwise redirect the journal read outside the application root.
+        var local = new DirectoryInfo(DataRootPaths.LegacyLocal);
+        var migration = new DirectoryInfo(Path.GetDirectoryName(JournalPath)!);
+        if ((local.Exists && (local.Attributes & FileAttributes.ReparsePoint) != 0) ||
+            (migration.Exists && (migration.Attributes & FileAttributes.ReparsePoint) != 0))
+            throw new InvalidDataException("Unsafe CyanDeck migration journal directory.");
         if (!File.Exists(JournalPath)) return null;
         // A journal is metadata, never a profile or arbitrary external file.
         // Reject links and oversized/corrupt records before deserialization.
