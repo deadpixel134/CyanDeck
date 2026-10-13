@@ -118,6 +118,20 @@ try {
     throw 'Stale verified journal did not prevent publishing a new candidate.'
   }
   & $script -AbortPreparation
+  # Reject oversized journal input before either preparation or abort can
+  # interpret it; the legacy profile must remain untouched.
+  $savedJournal = Get-Content -LiteralPath $journal -Raw -Encoding UTF8
+  Set-Content -LiteralPath $journal -Value (' ' * 16385) -Encoding UTF8
+  $rejected = $false
+  try { & $script -Apply } catch { $rejected = $true }
+  if (-not $rejected -or (Test-Path -LiteralPath $cyan)) {
+    throw 'Oversized journal was accepted during migration preflight.'
+  }
+  $rejected = $false
+  try { & $script -AbortPreparation } catch { $rejected = $true }
+  if (-not $rejected) { throw 'Oversized journal was accepted during abort.' }
+  Set-Content -LiteralPath $journal -Value $savedJournal -NoNewline -Encoding UTF8
+  & $script -AbortPreparation
   Write-Host 'CyanDeck migration smoke tests passed.'
 }
 finally {
