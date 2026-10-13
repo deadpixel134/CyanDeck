@@ -19,7 +19,7 @@ public sealed class StateStore
 
     public StateStore()
     {
-        _dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DesktopDeck");
+        _dir = DataRootPaths.ActiveRoaming;
         _path = Path.Combine(_dir, "layout.json");
         _backupPath = _path + ".bak";
         _json = new JsonSerializerOptions
