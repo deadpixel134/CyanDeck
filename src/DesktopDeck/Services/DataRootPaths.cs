@@ -46,6 +46,17 @@ public static class DataRootPaths
         return true;
     }
 
+    // Preview-only transition state. No caller may infer an active cutover
+    // from this result; the legacy root remains the only writable root.
+    public static string GetCutoverReadinessReason()
+    {
+        if (!Directory.Exists(LegacyRoaming)) return "legacy-profile-missing";
+        if (!Directory.Exists(CyanRoaming)) return "prepared-copy-missing";
+        if (!HasPreparedCriticalData) return "critical-data-mismatch";
+        if (!IsPreparedCopyIdentical()) return "prepared-copy-diverged";
+        return "ready-for-manual-cutover-review";
+    }
+
     // Stronger read-only verification than the presence-only UI indicator.
     // Any changed, added or removed file invalidates the staged copy.
     public static bool IsPreparedCopyIdentical()
