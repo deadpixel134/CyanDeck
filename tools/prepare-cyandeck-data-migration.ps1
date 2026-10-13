@@ -39,6 +39,49 @@ function Get-SafeTree([string]$Root) {
     }
   }
 }
+# Mirror the non-activating C# journal format and transition rules. Only the
+# canonical CyanDeck destination is eligible for a shared journal record.
+function Write-CutoverJournal([string]$Phase) {
+  $canonical = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'CyanDeck'))
+  if (-not [string]::Equals($destination, $canonical, [StringComparison]::OrdinalIgnoreCase)) { return }
+  $journalDir = Join-Path (Join-Path $env:LOCALAPPDATA 'DesktopDeck') 'migration'
+  Assert-SafePath $journalDir
+  New-Item -ItemType Directory -Path $journalDir -Force | Out-Null
+  $journal = Join-Path $journalDir 'cyandeck-cutover-state.json'
+  Assert-SafePath $journal
+  $gate = [IO.FileStream]::new($journal + '.lock', [IO.FileMode]::OpenOrCreate,
+    [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  try {
+    $previous = $null
+    if (Test-Path -LiteralPath $journal -PathType Leaf) {
+      $previous = Get-Content -LiteralPath $journal -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($previous.Version -ne 1 -or $previous.Phase -notin @('prepared','verified','aborted') -or
+          -not [string]::Equals($previous.LegacyRoot, $legacy, [StringComparison]::OrdinalIgnoreCase) -or
+          -not [string]::Equals($previous.CandidateRoot, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Unrecognized existing migration journal.'
+      }
+    }
+    if ($Phase -eq 'prepared' -and $previous -and $previous.Phase -ne 'aborted') {
+      throw 'Existing migration journal must be aborted before preparing again.'
+    }
+    if ($Phase -eq 'verified' -and (-not $previous -or $previous.Phase -ne 'prepared')) {
+      throw 'Verification requires a prepared migration journal.'
+    }
+    $record = [ordered]@{
+      Version = 1; Phase = $Phase; RecordedAtUtc = [DateTimeOffset]::UtcNow.ToString('o')
+      LegacyRoot = $legacy; CandidateRoot = $canonical
+    }
+    $temp = $journal + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+      $bytes = [Text.Encoding]::UTF8.GetBytes(($record | ConvertTo-Json -Compress))
+      $stream = [IO.FileStream]::new($temp, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write,
+        [IO.FileShare]::None, 4096, [IO.FileOptions]::WriteThrough)
+      try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
+      finally { $stream.Dispose() }
+      [IO.File]::Move($temp, $journal, $true)
+    } finally { if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force } }
+  } finally { $gate.Dispose() }
+}
 # Share the application's actual single-instance mutex. Holding ownership
 # prevents an app instance from starting during the copy/verification window.
 # Process-name checks alone cannot close the startup race.
@@ -105,6 +148,7 @@ if ($VerifyPrepared) {
       throw "Prepared copy is missing directory: $relative"
     }
   }
+  Write-CutoverJournal 'verified'
   Write-Host 'Prepared copy matches the current legacy data. No files were changed.'
   Write-Host 'Verification does not activate the CyanDeck data root.'
   return
@@ -217,6 +261,7 @@ try {
   }
   if (Test-Path -LiteralPath $destination) { throw 'Destination appeared during migration; refusing overwrite.' }
   Move-Item -LiteralPath $staging -Destination $destination -ErrorAction Stop
+  Write-CutoverJournal 'prepared'
   Write-Host 'Verified CyanDeck data copy prepared. Original DesktopDeck data remains untouched.'
   Write-Host 'The application still reads legacy paths; this command does NOT activate the new location.'
 } finally {
