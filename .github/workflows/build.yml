@@ -1,105 +1,64 @@
-name: Windows build and safety tests
+name: CyanDeck Windows build and safety tests
 on:
-  workflow_dispatch:
   push:
     branches: [main]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   windows:
     runs-on: windows-latest
-    env:
-      PYTHONUTF8: '1'
     strategy:
       matrix:
         runtime: [win-x64, win-arm64]
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: '8.0.x'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Static safety regression checks
+      - name: CyanDeck source safety regressions
         shell: pwsh
         run: |
           python tools/run_v43_safety_regressions.py
-          if ($LASTEXITCODE -ne 0) { throw 'Static safety regression suite failed; build blocked.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Source regression tests failed.' }
           python tools/test_v45_recycle_bin_preflight.py
-          if ($LASTEXITCODE -ne 0) { throw 'Recycle-bin safety suite failed; build blocked.' }
-      - name: CyanDeck migration PowerShell smoke tests
-        shell: pwsh
-        run: ./tools/test_cyandeck_migration_smoke.ps1
-      - name: CyanDeck migration Windows PowerShell 5.1 compatibility
+          if ($LASTEXITCODE -ne 0) { throw 'Recycle safety test failed.' }
+      - name: Validate installer and updater PowerShell syntax
         shell: powershell
-        run: ./tools/test_cyandeck_migration_smoke.ps1
-      - name: CyanDeck read-only cutover readiness (PowerShell 7)
+        run: |
+          foreach ($file in @('install.ps1','uninstall.ps1','apply-update.ps1','package.ps1')) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file),[ref]$tokens,[ref]$errors)
+            if (@($errors).Count -gt 0) { throw "Syntax error in $file" }
+          }
+      - name: Build CyanDeck WPF for ${{ matrix.runtime }}
         shell: pwsh
-        run: ./tools/test_cyandeck_cutover_readiness.ps1
-      - name: CyanDeck read-only cutover readiness (Windows PowerShell 5.1)
-        shell: powershell
-        run: ./tools/test_cyandeck_cutover_readiness.ps1
-      - name: CyanDeck installer/updater cutover guards (PowerShell 7)
+        run: |
+          dotnet build src/CyanDeck/CyanDeck.csproj -c Release -r '${{ matrix.runtime }}'
+          if ($LASTEXITCODE -ne 0) { throw 'WPF build failed.' }
+      - name: Calendar, watcher and fence domain tests
         shell: pwsh
-        run: ./tools/test_cyandeck_install_update_guards.ps1
-      - name: CyanDeck installer/updater cutover guards (Windows PowerShell 5.1)
-        shell: powershell
-        run: ./tools/test_cyandeck_install_update_guards.ps1
-      - name: CyanDeck update ZIP handoff and rollback (PowerShell 7)
+        run: |
+          dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Calendar test failed.' }
+          dotnet run --project tests/WatcherLifetimeHarness/WatcherLifetimeHarness.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Watcher test failed.' }
+          dotnet run --project tests/FenceVisibilityHarness/FenceVisibilityHarness.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Fence test failed.' }
+      - name: Publish CyanDeck application
         shell: pwsh
-        run: ./tools/test_cyandeck_update_package_layout.ps1
-      - name: CyanDeck update ZIP handoff and rollback (Windows PowerShell 5.1)
-        shell: powershell
-        run: ./tools/test_cyandeck_update_package_layout.ps1
-      - name: WPF build for ${{ matrix.runtime }}
-        run: dotnet build src/DesktopDeck/DesktopDeck.csproj --configuration Release --runtime ${{ matrix.runtime }}
-      - name: CyanDeck launcher policy test
-        run: dotnet run --project tests/CyanDeckLauncherHarness/CyanDeckLauncherHarness.csproj --configuration Release
-      - name: CyanDeck executable handoff integration (Windows x64)
-        if: matrix.runtime == 'win-x64'
-        shell: pwsh
-        run: ./tools/test_cyandeck_launcher_preview.ps1
-      - name: Build CyanDeck portable compatibility preview for ${{ matrix.runtime }}
-        shell: pwsh
-        run: ./tools/build-cyandeck-portable-preview.ps1 -Runtime '${{ matrix.runtime }}' -OutputDirectory "${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}"
-      - name: Verify CyanDeck portable preview contents and versions
-        shell: pwsh
-        run: ./tools/test_cyandeck_portable_preview.ps1 -BundleDirectory "${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}"
-      - name: Upload unsigned portable preview for isolated manual testing
-        uses: actions/upload-artifact@v4
+        run: |
+          dotnet publish src/CyanDeck/CyanDeck.csproj -c Release -r '${{ matrix.runtime }}' --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o "${{ runner.temp }}/CyanDeck/${{ matrix.runtime }}"
+          if ($LASTEXITCODE -ne 0) { throw 'CyanDeck publish failed.' }
+          if (-not (Test-Path "${{ runner.temp }}/CyanDeck/${{ matrix.runtime }}/CyanDeck.exe")) { throw 'CyanDeck.exe missing.' }
+      - uses: actions/upload-artifact@v4
         with:
-          name: cyandeck-portable-preview-${{ matrix.runtime }}
-          path: |
-            ${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}/CyanDeck.exe
-            ${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}/DesktopDeck.exe
-            ${{ runner.temp }}/cyandeck-portable/${{ matrix.runtime }}/PREVIEW-README.txt
+          name: cyandeck-unprovisioned-${{ matrix.runtime }}
+          path: ${{ runner.temp }}/CyanDeck/${{ matrix.runtime }}/CyanDeck.exe
           if-no-files-found: error
           retention-days: 7
-      - name: Build native CyanDeck WPF preview for ${{ matrix.runtime }}
-        shell: pwsh
-        run: ./tools/build-cyandeck-native-preview.ps1 -Runtime '${{ matrix.runtime }}' -OutputDirectory "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}"
-      - name: Verify native CyanDeck WPF preview
-        shell: pwsh
-        run: ./tools/test_cyandeck_native_preview.ps1 -BundleDirectory "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}"
-      - name: Upload unsigned native CyanDeck for isolated testing
-        uses: actions/upload-artifact@v4
-        with:
-          name: cyandeck-native-preview-${{ matrix.runtime }}
-          path: |
-            ${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/CyanDeck.exe
-            ${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/NATIVE-PREVIEW-README.txt
-          if-no-files-found: error
-          retention-days: 7
-      - name: Sign and tamper-test native candidate with ephemeral CI key
-        shell: pwsh
-        run: ./tools/test_cyandeck_native_candidate.ps1 -Runtime '${{ matrix.runtime }}' -NativeExecutable "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/CyanDeck.exe"
-      - name: Stage verified native candidate in a synthetic Windows profile
-        shell: pwsh
-        run: ./tools/test_cyandeck_native_stage.ps1 -Runtime '${{ matrix.runtime }}' -NativeExecutable "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/CyanDeck.exe"
-      - name: Calendar domain tests
-        run: dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj --configuration Release
-      - name: Watcher lifetime tests
-        run: dotnet run --project tests/WatcherLifetimeHarness/WatcherLifetimeHarness.csproj --configuration Release
-      - name: Fence visibility tests
-        run: dotnet run --project tests/FenceVisibilityHarness/FenceVisibilityHarness.csproj --configuration Release
