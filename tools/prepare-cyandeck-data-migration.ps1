@@ -239,7 +239,7 @@ foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
   try {
     $raw = Get-Content -LiteralPath $candidate -Raw -Encoding UTF8 -ErrorAction Stop
     $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
-    if ($name -ne 'layout.json' -and -not $raw.TrimStart().StartsWith('[')) { throw 'Calendar must be an array.' }
+    if ($name.StartsWith('calendar-events.json', [StringComparison]::OrdinalIgnoreCase) -and -not $raw.TrimStart().StartsWith('[')) { throw 'Calendar must be an array.' }
     if ($name.StartsWith('layout.json', [StringComparison]::OrdinalIgnoreCase)) {
       if ($null -eq $parsed -or $parsed -isnot [pscustomobject]) { throw 'Layout must be an object.' }
       if ($null -ne $parsed.Version) {
@@ -249,8 +249,10 @@ foreach ($name in @('layout.json', 'layout.json.bak', 'layout.json.tmp',
         }
       }
     } else {
-      if ($parsed -isnot [array]) { throw 'Calendar must be an array.' }
-      foreach ($event in $parsed) {
+      # Windows PowerShell 5.1 enumerates JSON arrays, returning null for []
+      # and a scalar for single-element arrays. The raw JSON shape was checked
+      # above; normalize the decoded events for validation.
+      foreach ($event in @($parsed | Where-Object { $null -ne $_ })) {
         if ($null -eq $event -or $event -isnot [pscustomobject]) { throw 'Calendar event must be an object.' }
       }
     }
