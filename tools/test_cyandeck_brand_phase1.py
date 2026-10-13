@@ -253,6 +253,19 @@ checks.update({
     "abandoned mutex ownership is tracked": "catch [Threading.AbandonedMutexException]" in migration_script and "$ownsMigrationMutex = $true" in migration_script,
     "abandoned mutex is released in finally": "if ($ownsMigrationMutex) { $migrationMutex.ReleaseMutex() }" in migration_script,
 })
+build_workflow = source(".github/workflows/build.yml")
+release_workflow = source(".github/workflows/release.yml")
+checks.update({
+    "build blocks failed static regression scripts":
+        "throw 'Static safety regression suite failed; build blocked.'" in build_workflow
+        and "throw 'Recycle-bin safety suite failed; build blocked.'" in build_workflow,
+    "signed release blocks failed static regression scripts":
+        "throw 'Static safety regression suite failed; release blocked.'" in release_workflow
+        and "throw 'Recycle-bin safety suite failed; release blocked.'" in release_workflow,
+    "signed release tests migration on PowerShell 5.1 and 7":
+        "CyanDeck migration compatibility gate" in release_workflow
+        and "CyanDeck migration Windows PowerShell 5.1 gate" in release_workflow,
+})
 startup = source("src/DesktopDeck/App.xaml.cs")
 checks.update({
     "unsupported profile activation fails before single-instance IPC":
