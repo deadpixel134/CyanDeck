@@ -48,7 +48,17 @@ jobs:
         shell: pwsh
         run: |
           python tools/run_v43_safety_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Static safety regression suite failed; release blocked.' }
           python tools/test_v45_recycle_bin_preflight.py
+          if ($LASTEXITCODE -ne 0) { throw 'Recycle-bin safety suite failed; release blocked.' }
+      - name: CyanDeck migration compatibility gate
+        shell: pwsh
+        run: |
+          ./tools/test_cyandeck_migration_smoke.ps1
+      - name: CyanDeck migration Windows PowerShell 5.1 gate
+        shell: powershell
+        run: |
+          ./tools/test_cyandeck_migration_smoke.ps1
       - name: Execute calendar and desktop regression harnesses
         shell: pwsh
         run: |
