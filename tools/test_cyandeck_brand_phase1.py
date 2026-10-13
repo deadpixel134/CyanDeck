@@ -252,6 +252,17 @@ checks.update({
     "abandoned mutex ownership is tracked": "catch [Threading.AbandonedMutexException]" in migration_script and "$ownsMigrationMutex = $true" in migration_script,
     "abandoned mutex is released in finally": "if ($ownsMigrationMutex) { $migrationMutex.ReleaseMutex() }" in migration_script,
 })
+startup = source("src/DesktopDeck/App.xaml.cs")
+checks.update({
+    "unsupported profile activation fails before single-instance IPC":
+        startup.index('string.Equals(a, "--activate-cyandeck"') < startup.index('_mutex = new Mutex('),
+    "startup checks writer fence before opening persistent stores":
+        startup.index("CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();") < startup.index("_controller = new AppController("),
+    "blocked profile startup displays a user-facing warning and terminates":
+        '"CyanDeck - 데이터 보호"' in startup and "Shutdown(-1);" in startup,
+    "migration rejects null calendar events without discarding them":
+        "foreach ($event in $parsed)" in migration_script and "Where-Object { $null -ne $_ }" not in migration_script,
+})
 for label, passed in checks.items():
     print(("PASS" if passed else "FAIL") + ": " + label)
 print(f"CyanDeck phase-1 compatibility: {sum(checks.values())}/{len(checks)}")
