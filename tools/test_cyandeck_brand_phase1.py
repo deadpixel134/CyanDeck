@@ -21,7 +21,7 @@ checks = {
     "root namespace stays DesktopDeck": "<RootNamespace>DesktopDeck</RootNamespace>" in project,
     "existing executable path is preserved": 'Join-Path $installDir "DesktopDeck.exe"' in source("install.ps1"),
     "existing state folder is preserved": 'DataRootPaths.ActiveRoaming' in source("src/DesktopDeck/Services/StateStore.cs") and 'ActiveRoaming => LegacyRoaming' in source("src/DesktopDeck/Services/DataRootPaths.cs"),
-    "existing single-instance mutex is preserved": 'Local\\DesktopDeck.SingleInstance' in source("src/DesktopDeck/App.xaml.cs"),
+    "existing single-instance mutex is preserved": 'Local\\DesktopDeck.SingleInstance' in source("src/DesktopDeck/Services/LegacySingleInstanceGate.cs") and 'LegacySingleInstanceGate.TryAcquire()' in source("src/DesktopDeck/App.xaml.cs"),
     "existing activation IPC is preserved": 'DesktopDeck.Activation.v1' in source("src/DesktopDeck/App.xaml.cs"),
     "OAuth embedded resource identifier is preserved": 'DesktopDeck.OAuthDesktopClient' in source("src/DesktopDeck/Calendar/GoogleOAuthClientConfiguration.cs"),
     "signed update canonical protocol is preserved": 'DesktopDeck.UpdateManifest.v1' in source("src/DesktopDeck/Services/UpdateService.cs"),
@@ -315,7 +315,7 @@ checks.update({
 startup = source("src/DesktopDeck/App.xaml.cs")
 checks.update({
     "unsupported profile activation fails before single-instance IPC":
-        startup.index('string.Equals(a, "--activate-cyandeck"') < startup.index('_mutex = new Mutex('),
+        startup.index('string.Equals(a, "--activate-cyandeck"') < startup.index('_instanceGate = LegacySingleInstanceGate.TryAcquire()'),
     "startup checks writer fence before opening persistent stores":
         startup.index("CyanDeckCutoverJournal.ThrowIfLegacyWriterFenced();") < startup.index("_controller = new AppController("),
     "blocked profile startup displays a user-facing warning and terminates":
