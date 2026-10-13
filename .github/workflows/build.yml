@@ -94,6 +94,9 @@ jobs:
       - name: Sign and tamper-test native candidate with ephemeral CI key
         shell: pwsh
         run: ./tools/test_cyandeck_native_candidate.ps1 -Runtime '${{ matrix.runtime }}' -NativeExecutable "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/CyanDeck.exe"
+      - name: Stage verified native candidate in a synthetic Windows profile
+        shell: pwsh
+        run: ./tools/test_cyandeck_native_stage.ps1 -Runtime '${{ matrix.runtime }}' -NativeExecutable "${{ runner.temp }}/cyandeck-native/${{ matrix.runtime }}/CyanDeck.exe"
       - name: Calendar domain tests
         run: dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj --configuration Release
       - name: Watcher lifetime tests

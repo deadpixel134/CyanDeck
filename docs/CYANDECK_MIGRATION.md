@@ -258,3 +258,21 @@ GitHub Actions artifact. The public signed DesktopDeck update ZIP/manifest
 and existing auto-updaters are unchanged. No candidate is installed,
 published as an end-user release asset, or activated as CyanDeck storage.
 A signed candidate is NOT a safe install/update/migration by itself.
+
+
+## Phase 5 signed native handoff staging (test-only; NOT activation)
+
+The opt-in stage-cyandeck-native-handoff.ps1 accepts the signed candidate
+manifest, but verifies its RSA signature with the already-installed
+DesktopDeck.update-public-key.pem trust root. It never trusts the public key
+provided by the candidate archive. The default invocation is DRY RUN;
+-Apply acquires both legacy writer locks, refuses running apps, writes two
+allowlisted files into a new, initially absent Programs/CyanDeck folder via
+a verified temporary sibling, and performs an atomic directory rename.
+It never overwrites the legacy executable, desktop data, registry/startup
+entries, shortcuts or signed update system. It does not launch CyanDeck.
+
+CI uses disposable fake Windows profiles to prove dry run, pinned-key mismatch
+rejection, original EXE preservation, strict destination no-overwrite,
+and successful safe staging. The candidate still runs with legacy data and
+its updater is not activated: this step is NOT a production migration.
