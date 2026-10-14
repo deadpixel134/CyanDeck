@@ -207,3 +207,9 @@ CyanDeck은 계속 개선 중입니다. 새 기능 제안이나 오류 제보는
 ## 업데이트 서명 공개키 누락 복구
 
 v8.0.6 이전 설치에서 키가 없다면 공식 릴리스 ZIP의 `CyanDeck.update-public-key.pem`을 `CyanDeck.exe` 옆에 배치하세요. 기본 설치 경로는 `%LOCALAPPDATA%\Programs\CyanDeck`입니다. 설정에서 별도로 입력한 공개키 경로가 잘못되었다면 비우세요. 임의의 공개키 생성이나 서명 검증 비활성화는 금지합니다. v8.0.7 이후 공식 빌드는 동일한 검증 공개키를 EXE에 내장하면서 ZIP 내의 PEM도 유지합니다.
+
+## 단일 EXE 배포 / EXE-only distribution (v8.0.8+)
+
+Windows x64: 공식 베타 릴리스의 `CyanDeck.exe` 파일 하나만 배포하면 됩니다. Windows ARM64: `CyanDeck-ARM64.exe`를 받은 후 `CyanDeck.exe`로 이름을 바꾸어 배포하세요. 공식 EXE에는 서명 검증용 RSA 공개키와 안전한 설치/롤백용 PowerShell 스크립트가 내장됩니다. 외부 PEM/PS1을 직접 배포할 필요가 없습니다. 업데이트할 때만 `%LOCALAPPDATA%\\CyanDeck\\updates` 아래에 스크립트 및 검증된 ZIP 패키지가 자동으로 만들어집니다.
+
+v8.0.4에서 EXE만 배포한 사용자는 기존 앱에 공개키가 없어 자동 업데이트를 실행할 수 없습니다. 해당 사용자는 작업 표시줄 트레이에서 CyanDeck을 정상 종료하고 공식 v8.0.8 이상 `CyanDeck.exe`로 기존 EXE를 한 번 수동 교체해야 합니다. 이후 베타 채널에서 서명 검증된 자동 업데이트가 가능합니다. 아이콘/레이아웃/로컬 일정 등 사용자 데이터 폴더를 삭제하거나 이동하지 마세요.

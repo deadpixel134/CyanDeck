@@ -30,6 +30,9 @@ package = (root/'package.ps1').read_text(encoding='utf-8-sig')
 assert 'CyanDeck.TrustedUpdatePublicKey' in csproj and 'CyanDeck.TrustedUpdatePublicKey' in updater
 assert 'ReleasePublicKeyPath' in package and 'embeddedKeyFingerprint' in package
 assert 'VerifyData(' in updater
+assert 'CyanDeck.BundledUpdaterScript' in csproj and 'CyanDeck.BundledUpdaterScript' in updater
+assert 'GetManifestResourceStream("CyanDeck.BundledUpdaterScript")' in updater
+assert updater.count('var script = PrepareBundledUpdaterScript();') == 3
 for name in ['build.ps1','package.ps1','install.ps1','uninstall.ps1','apply-update.ps1']:
     assert 'CyanDeck.exe' in (root/name).read_text(encoding='utf-8-sig'),name
 release=(source/'Services'/'GitHubReleaseSource.cs').read_text(encoding='utf-8')

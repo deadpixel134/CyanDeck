@@ -14,9 +14,20 @@ $version = [string]$project.Project.PropertyGroup.Version
 $dist = Join-Path $repositoryRoot 'dist'
 $zip = Join-Path $dist "CyanDeck-$version-$Runtime.zip"
 $manifest = Join-Path $dist "CyanDeck-$version-$Runtime.update.json"
+$standaloneName = if ($Runtime -eq 'win-x64') { 'CyanDeck.exe' } else { 'CyanDeck-ARM64.exe' }
+$standaloneExe = Join-Path $dist $standaloneName
 if (-not (Test-Path -LiteralPath $zip -PathType Leaf) -or
     -not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
   throw 'A signed CyanDeck release ZIP and manifest must exist before the package smoke test.'
+}
+
+if (-not (Test-Path -LiteralPath $standaloneExe -PathType Leaf)) {
+  throw 'Standalone EXE release asset is missing.'
+}
+$zipExe = Join-Path $dist "CyanDeck-$version-$Runtime/CyanDeck.exe"
+if ((Get-FileHash -LiteralPath $standaloneExe -Algorithm SHA256).Hash -cne
+    (Get-FileHash -LiteralPath $zipExe -Algorithm SHA256).Hash) {
+  throw 'Standalone EXE differs from the verified updater ZIP executable.'
 }
 
 # The production verifier checks the package SHA-256 and RSA-PSS signature

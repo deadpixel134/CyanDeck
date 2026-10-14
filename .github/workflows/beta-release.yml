@@ -93,6 +93,8 @@ jobs:
             if (-not $?) { throw 'Signature check failed.' }
             ./tools/test_cyandeck_release_package.ps1 -Runtime '${{ matrix.runtime }}' -RequireOAuth
             if (-not $?) { throw 'Actual ZIP install/uninstall failed.' }
+            $standalone = if ('${{ matrix.runtime }}' -eq 'win-x64') { 'CyanDeck.exe' } else { 'CyanDeck-ARM64.exe' }
+            if (-not (Test-Path -LiteralPath "dist/$standalone")) { throw 'EXE-only release asset missing.' }
           } finally {
             if (Test-Path $oauthPath) { Remove-Item -LiteralPath $oauthPath -Force }
             if (Test-Path $key) { Remove-Item -LiteralPath $key -Force }
@@ -103,6 +105,7 @@ jobs:
           path: |
             dist/CyanDeck-*.zip
             dist/CyanDeck-*.update.json
+            dist/CyanDeck*.exe
           if-no-files-found: error
   publish:
     needs: [prepare, sign]
@@ -127,13 +130,14 @@ jobs:
           tag="v$VERSION"
           test "$(find release-assets -name '*.zip' | wc -l)" -eq 2
           test "$(find release-assets -name '*.update.json' | wc -l)" -eq 2
+          test "$(find release-assets -name '*.exe' | wc -l)" -eq 2
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release version already exists; refuse overwrite."; exit 1
           fi
           git archive --format=zip --output "release-assets/CyanDeck-${tag}-full-source.zip" "$GITHUB_SHA"
-          (cd release-assets && sha256sum -- *.zip > SHA256SUMS.txt)
+          (cd release-assets && sha256sum -- *.zip *.exe > SHA256SUMS.txt)
           gh release create "$tag" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
             --title "CyanDeck $tag (Beta)" \
-            --notes "CyanDeck beta: early startup update check before desktop groups/calendar appear; installer progress-window readiness handshake before old app exits; safer failed-update reporting/relaunch; early single-instance activation listener. Signed RSA-PSS manifests, SHA-256 package verification, Windows x64/ARM64 smoke tests. Opt in using the Beta update channel. Stable users do not receive prereleases." \
-            release-assets/*.zip release-assets/*.update.json release-assets/SHA256SUMS.txt
+            --notes "CyanDeck EXE-only beta: RSA-PSS update verification key and independent update/rollback installer are embedded in CyanDeck.exe. Direct Windows x64 CyanDeck.exe and CyanDeck-ARM64.exe (rename to CyanDeck.exe) are provided. Existing v8.0.4 EXE-only installations without a PEM require one manual EXE replacement; never disable signature verification. Stable users do not receive prereleases." \
+            release-assets/*.zip release-assets/*.exe release-assets/*.update.json release-assets/SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == true)')" = true

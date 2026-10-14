@@ -230,8 +230,7 @@ public static class UpdateService
     public static bool TryLaunchPendingRecovery(int waitForPid, bool relaunch = true)
     {
         if (!HasPendingRecovery()) return false;
-        var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
-        if (!File.Exists(script)) throw new FileNotFoundException("CyanDeck update recovery script is missing", script);
+        var script = PrepareBundledUpdaterScript();
         var install = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -RecoverPending -InstallDir {Quote(install)} -WaitForPid {waitForPid}" + (relaunch ? " -Relaunch" : "");
         return Process.Start(new ProcessStartInfo("powershell.exe", args)
@@ -257,8 +256,7 @@ public static class UpdateService
             (!readyEventName.StartsWith("Local\\CyanDeck.UpdateReady.", StringComparison.Ordinal) ||
              !Guid.TryParseExact(readyEventName.Substring("Local\\CyanDeck.UpdateReady.".Length), "N", out _)))
             throw new ArgumentException("Invalid installer readiness event name.", nameof(readyEventName));
-        var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
-        if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the CyanDeck installation.", script);
+        var script = PrepareBundledUpdaterScript();
         var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -Package {Quote(packagePath)} -ExpectedSha256 {Quote(expectedSha256)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid} -ShowProgress" +
             (readyEventName is null ? "" : $" -ReadyEventName {Quote(readyEventName)}") +
@@ -270,8 +268,7 @@ public static class UpdateService
     {
         var rollback = GetLatestRollbackDirectory();
         if (string.IsNullOrWhiteSpace(rollback) || !Directory.Exists(rollback)) return false;
-        var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
-        if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the CyanDeck installation.", script);
+        var script = PrepareBundledUpdaterScript();
         var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -RollbackDir {Quote(rollback)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid}" + (relaunch ? " -Relaunch" : "");
         Process.Start(new ProcessStartInfo("powershell.exe", args) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden });
@@ -288,6 +285,32 @@ public static class UpdateService
             return Directory.Exists(path) ? path : null;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Extract the updater bundled inside CyanDeck.exe to a unique user-local
+    /// script. The process can then exit while this independent installer safely
+    /// replaces the EXE; no distributed adjacent PS1 or PEM is required.
+    /// </summary>
+    private static string PrepareBundledUpdaterScript()
+    {
+        using var scriptResource = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream("CyanDeck.BundledUpdaterScript");
+        if (scriptResource is null)
+            throw new InvalidOperationException("The CyanDeck executable is missing its bundled updater. Use the verified official release.");
+
+        var scriptRoot = Path.Combine(DataRootPaths.ActiveLocal, "updates", "bootstrap");
+        Directory.CreateDirectory(scriptRoot);
+        if ((new DirectoryInfo(scriptRoot).Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException("Updater script staging directory is a junction or symbolic link.");
+        var scriptPath = Path.Combine(scriptRoot, $"apply-update-{Guid.NewGuid():N}.ps1");
+        using (var output = new FileStream(scriptPath, FileMode.CreateNew, FileAccess.Write,
+                   FileShare.None, 64 * 1024, FileOptions.WriteThrough))
+        {
+            scriptResource.CopyTo(output);
+            output.Flush(flushToDisk: true);
+        }
+        return scriptPath;
     }
 
     private static async Task<string> ReadTextAsync(string source, CancellationToken cancellationToken)

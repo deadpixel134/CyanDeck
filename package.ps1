@@ -62,6 +62,10 @@ if (Test-Path -LiteralPath $stage) {
 }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item (Join-Path $root "publish\$Runtime\CyanDeck.exe") $stage
+# Direct standalone downloads use exactly the signed ZIP's own executable.
+# x64 retains the CyanDeck.exe name for one-time EXE-only bootstrap.
+$standaloneName = if ($Runtime -eq 'win-x64') { 'CyanDeck.exe' } else { 'CyanDeck-ARM64.exe' }
+Copy-Item -LiteralPath (Join-Path $stage 'CyanDeck.exe') -Destination (Join-Path $root "dist\$standaloneName") -Force
 # Desktop OAuth client ID is public application metadata, not a user's token.
 $oauthId = Join-Path $root "publish\$Runtime\cyandeck-google-client-id.txt"
 if (Test-Path $oauthId) { Copy-Item $oauthId $stage -Force }
