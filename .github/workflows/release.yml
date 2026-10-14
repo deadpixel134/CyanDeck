@@ -1,13 +1,49 @@
-name: CyanDeck signed release
+name: CyanDeck signed Stable release
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['.github/stable-release-request.txt']
 permissions:
   contents: write
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c "import xml.etree.ElementTree as e;print(e.parse('src/CyanDeck/CyanDeck.csproj').findtext('.//Version'))")"
+          request="$(tr -d '[:space:]' < .github/stable-release-request.txt)"
+          echo "publish=false" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          python3 - "$version" "$request" <<'PY'
+          import sys
+          version, request = sys.argv[1:]
+          values = version.split('.')
+          if len(values) != 3 or any(not part.isdigit() for part in values):
+              raise SystemExit('Stable version must have three numeric components.')
+          if version != request or tuple(map(int, values)) <= (8, 0, 9):
+              raise SystemExit('Explicit Stable request must equal project version and exceed v8.0.9.')
+          PY
+          tag="v$version"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to overwrite an existing release: $tag"
+            exit 1
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
   sign:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         runtime: [win-x64, win-arm64]
     env:
@@ -22,73 +58,89 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate release identity and credentials
+      - name: Verify Stable identity and safety regressions
         shell: pwsh
         run: |
-          if (-not $env:CYANDECK_UPDATE_SIGNING_KEY_PEM -or -not $env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON) { throw 'Missing signing key or Desktop OAuth JSON.' }
-          [xml]$p=Get-Content src/CyanDeck/CyanDeck.csproj -Raw
-          if ('${{ github.ref_name }}' -cne ('v'+[string]$p.Project.PropertyGroup.Version)) { throw 'Release tag must match CyanDeck version.' }
-          try {
-            $oauth=$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON | ConvertFrom-Json
-            if (-not $oauth.installed.client_id -or -not $oauth.installed.client_secret) { throw 'Invalid Desktop OAuth JSON.' }
-          } catch { throw 'Invalid Google Desktop OAuth JSON.' }
-      - name: Safety and calendar tests
-        shell: pwsh
-        run: |
+          if (-not $env:CYANDECK_UPDATE_SIGNING_KEY_PEM -or -not $env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON) {
+            throw 'Missing signed-update private key or Desktop OAuth client JSON.'
+          }
+          $oauth=$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON | ConvertFrom-Json
+          if (-not $oauth.installed.client_id -or -not $oauth.installed.client_secret) {
+            throw 'Invalid Desktop OAuth client JSON.'
+          }
           python tools/run_v43_safety_regressions.py
-          if ($LASTEXITCODE -ne 0) { throw 'Safety regression failed.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Safety regressions failed.' }
           python tools/test_v45_recycle_bin_preflight.py
-          if ($LASTEXITCODE -ne 0) { throw 'Recycle regression failed.' }
-          dotnet run --project tests/CalendarDomainHarness/CalendarDomainHarness.csproj -c Release
-          if ($LASTEXITCODE -ne 0) { throw 'Calendar regression failed.' }
-      - name: Sign and independently verify CyanDeck package
+          if ($LASTEXITCODE -ne 0) { throw 'Recycle regressions failed.' }
+          python tools/test_cyandeck_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'CyanDeck identity regressions failed.' }
+          foreach ($name in @('CalendarDomainHarness','FenceVisibilityHarness','WatcherLifetimeHarness')) {
+            dotnet run --project "tests/$name/$name.csproj" -c Release
+            if ($LASTEXITCODE -ne 0) { throw "Domain tests failed: $name" }
+          }
+      - name: Build, sign and verify Stable ZIP and standalone EXE
         shell: pwsh
         run: |
-          $privateKey=Join-Path $env:RUNNER_TEMP ('cyandeck-sign-'+[Guid]::NewGuid().ToString('N')+'.pem')
-          $desktopOAuth='json/client_secret.json'
+          $key=Join-Path $env:RUNNER_TEMP ('stable-sign-'+[Guid]::NewGuid().ToString('N')+'.pem')
+          $oauthPath='json/client_secret.json'
           try {
-            [IO.File]::WriteAllText($privateKey,$env:CYANDECK_UPDATE_SIGNING_KEY_PEM,[Text.UTF8Encoding]::new($false))
-            New-Item -ItemType Directory -Path json -Force | Out-Null
-            [IO.File]::WriteAllText($desktopOAuth,$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON,[Text.UTF8Encoding]::new($false))
-            ./package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $privateKey
-            $version=([xml](Get-Content src/CyanDeck/CyanDeck.csproj -Raw)).Project.PropertyGroup.Version
-            ./verify-release.ps1 -ManifestPath "dist/CyanDeck-$version-${{ matrix.runtime }}.update.json"
+            [IO.File]::WriteAllText($key,$env:CYANDECK_UPDATE_SIGNING_KEY_PEM,[Text.UTF8Encoding]::new($false))
+            New-Item -ItemType Directory json -Force | Out-Null
+            [IO.File]::WriteAllText($oauthPath,$env:CYANDECK_GOOGLE_DESKTOP_OAUTH_JSON,[Text.UTF8Encoding]::new($false))
+            ./package.ps1 -Runtime '${{ matrix.runtime }}' -SigningKeyPath $key
+            if (-not $?) { throw 'Production package creation failed.' }
+            ./verify-release.ps1 -ManifestPath "dist/CyanDeck-${{ needs.prepare.outputs.version }}-${{ matrix.runtime }}.update.json"
+            if (-not $?) { throw 'Signed update manifest verification failed.' }
             ./tools/test_cyandeck_release_package.ps1 -Runtime '${{ matrix.runtime }}' -RequireOAuth
-
+            if (-not $?) { throw 'Real signed package smoke test failed.' }
+            $standalone=if ('${{ matrix.runtime }}' -eq 'win-x64') { 'CyanDeck.exe' } else { 'CyanDeck-ARM64.exe' }
+            if (-not (Test-Path -LiteralPath "dist/$standalone" -PathType Leaf)) {
+              throw 'Standalone EXE is missing from signed Stable package.'
+            }
           } finally {
-            if (Test-Path $desktopOAuth) { Remove-Item -LiteralPath $desktopOAuth -Force }
-            if (Test-Path $privateKey) { Remove-Item -LiteralPath $privateKey -Force }
+            if (Test-Path -LiteralPath $oauthPath) { Remove-Item -LiteralPath $oauthPath -Force }
+            if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Force }
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: signed-${{ matrix.runtime }}
+          name: signed-stable-${{ matrix.runtime }}
           path: |
             dist/CyanDeck-*.zip
             dist/CyanDeck-*.update.json
+            dist/CyanDeck*.exe
           if-no-files-found: error
   publish:
-    needs: sign
+    needs: [prepare, sign]
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          pattern: signed-*
+          pattern: signed-stable-*
           path: release-assets
           merge-multiple: true
-      - name: Archive source and checksums
-        env:
-          TAG: ${{ github.ref_name }}
+      - name: Publish public Stable release with verified assets
+        shell: bash
         run: |
           set -euo pipefail
-          git archive --format=zip --output "release-assets/CyanDeck-${TAG}-full-source.zip" HEAD
-          (cd release-assets && sha256sum -- *.zip > SHA256SUMS.txt)
-      - name: Publish signed CyanDeck release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
+          tag="v$VERSION"
+          test "$(find release-assets -name '*.zip' | wc -l)" -eq 2
           test "$(find release-assets -name '*.update.json' | wc -l)" -eq 2
-          test "$(find release-assets -name '*.zip' | wc -l)" -eq 3
-          gh release create "$TAG" release-assets/*.zip release-assets/*.update.json release-assets/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --title "CyanDeck $TAG" --notes "Signed CyanDeck Windows packages for x64 and ARM64."
+          test "$(find release-assets -name '*.exe' | wc -l)" -eq 2
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Refusing to overwrite existing public release $tag"; exit 1
+          fi
+          git archive --format=zip --output "release-assets/CyanDeck-$tag-full-source.zip" "$GITHUB_SHA"
+          (cd release-assets && sha256sum -- *.zip *.exe > SHA256SUMS.txt)
+          gh release create "$tag" --latest --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            --title "CyanDeck $tag (Stable)" \
+            --notes "CyanDeck Stable v$VERSION. Calendar fixes: all-day and time-specific event rows are independent per date, while multi-day all-day bars stay continuous across overlapping dates. Self-contained CyanDeck.exe (x64) or CyanDeck-ARM64.exe (rename to CyanDeck.exe) distributes without adjacent PEM/PS1; includes embedded RSA-PSS update trust anchor and installer. Signed update ZIP and manifests remain available for automatic updates. Existing v8.0.4 EXE-only users with no public key require a one-time manual replacement. RSA-PSS update signing is NOT Windows Authenticode signing." \
+            release-assets/*.zip release-assets/*.exe release-assets/*.update.json release-assets/SHA256SUMS.txt
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)')" = true
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isLatest --jq '.isLatest')" = true

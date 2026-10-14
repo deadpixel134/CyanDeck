@@ -29,6 +29,13 @@ jobs:
           PY
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "publish=false" >> "$GITHUB_OUTPUT"
+          # An explicitly approved Stable release must NEVER be consumed by
+          # the public prerelease publisher on the same main-branch push.
+          if [ -f .github/stable-release-request.txt ] && \
+             [ "$(tr -d '[:space:]' < .github/stable-release-request.txt)" = "$version" ]; then
+            echo "v$version was explicitly requested as Stable; skipping Beta publication."
+            exit 0
+          fi
           if [ "$version" = 8.0.2 ]; then
             echo "8.0.2 is reserved for the specifically requested stable release."
             exit 0
