@@ -203,3 +203,7 @@ v8.0.4부터 날짜 영역에 불필요한 세로 스크롤바가 표시되지 �
 
 ---
 CyanDeck은 계속 개선 중입니다. 새 기능 제안이나 오류 제보는 [Issues](https://github.com/deadpixel134/CyanDeck/issues)에 남겨 주세요.
+
+## 업데이트 서명 공개키 누락 복구
+
+v8.0.6 이전 설치에서 키가 없다면 공식 릴리스 ZIP의 `CyanDeck.update-public-key.pem`을 `CyanDeck.exe` 옆에 배치하세요. 기본 설치 경로는 `%LOCALAPPDATA%\Programs\CyanDeck`입니다. 설정에서 별도로 입력한 공개키 경로가 잘못되었다면 비우세요. 임의의 공개키 생성이나 서명 검증 비활성화는 금지합니다. v8.0.7 이후 공식 빌드는 동일한 검증 공개키를 EXE에 내장하면서 ZIP 내의 PEM도 유지합니다.

@@ -114,6 +114,17 @@ try {
       throw "Required installed helper/public key missing: $name"
     }
   }
+  # Every release ZIP must install a verification PEM matching its
+  # signed manifest (the executable also pins the same public key).
+  $installedRsa = [Security.Cryptography.RSA]::Create()
+  try {
+    $installedRsa.ImportFromPem((Get-Content -LiteralPath (Join-Path $installed 'CyanDeck.update-public-key.pem') -Raw))
+    $installedKeyId = [Convert]::ToHexString(
+      [Security.Cryptography.SHA256]::HashData($installedRsa.ExportSubjectPublicKeyInfo())).ToLowerInvariant()
+    if ($installedKeyId -cne [string]$metadata.keyId) {
+      throw 'Installed public key does not match the signed release manifest.'
+    }
+  } finally { $installedRsa.Dispose() }
   if ($RequireOAuth) {
     $id = (Get-Content -LiteralPath (Join-Path $installed 'cyandeck-google-client-id.txt') -Raw).Trim()
     if ($id -notmatch '^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$') {

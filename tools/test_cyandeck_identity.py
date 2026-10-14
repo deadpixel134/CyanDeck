@@ -24,6 +24,12 @@ assert 'CyanDeck.Activation.v1' in app and 'CyanDeckSingleInstanceGate.TryAcquir
 assert 'LegacyProfileWriterGate' not in app
 oauth=(source/'Calendar'/'GoogleOAuthClientConfiguration.cs').read_text(encoding='utf-8')
 assert 'CyanDeck.OAuthDesktopClient' in oauth
+csproj = (source/'CyanDeck.csproj').read_text(encoding='utf-8')
+updater = (source/'Services'/'UpdateService.cs').read_text(encoding='utf-8')
+package = (root/'package.ps1').read_text(encoding='utf-8-sig')
+assert 'CyanDeck.TrustedUpdatePublicKey' in csproj and 'CyanDeck.TrustedUpdatePublicKey' in updater
+assert 'ReleasePublicKeyPath' in package and 'embeddedKeyFingerprint' in package
+assert 'VerifyData(' in updater
 for name in ['build.ps1','package.ps1','install.ps1','uninstall.ps1','apply-update.ps1']:
     assert 'CyanDeck.exe' in (root/name).read_text(encoding='utf-8-sig'),name
 release=(source/'Services'/'GitHubReleaseSource.cs').read_text(encoding='utf-8')

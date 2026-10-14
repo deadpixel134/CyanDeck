@@ -1,7 +1,8 @@
 param(
   [ValidateSet("win-x64", "win-arm64")]
   [string]$Runtime = "win-x64",
-  [switch]$RequireGoogleOAuth
+  [switch]$RequireGoogleOAuth,
+  [string]$ReleasePublicKeyPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,14 +45,17 @@ if (Test-Path -LiteralPath $oauthDesktopJson -PathType Leaf) {
 # folder: developers sometimes keep unrelated data beside CyanDeck.exe.
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-dotnet publish $project `
-  -c Release `
-  -r $Runtime `
-  --self-contained true `
-  -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true `
-  -o $out
+$publishArgs = @('publish', $project, '-c', 'Release', '-r', $Runtime,
+  '--self-contained', 'true', '-p:PublishSingleFile=true',
+  '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:EnableCompressionInSingleFile=true',
+  '-o', $out)
+if (-not [string]::IsNullOrWhiteSpace($ReleasePublicKeyPath)) {
+  if (-not (Test-Path -LiteralPath $ReleasePublicKeyPath -PathType Leaf)) {
+    throw 'Release verification public key was not generated before building.'
+  }
+  $publishArgs += ('-p:CyanDeckReleasePublicKeyPath=' + [IO.Path]::GetFullPath($ReleasePublicKeyPath))
+}
+& dotnet @publishArgs
 
 if ($LASTEXITCODE -ne 0) {
   throw "dotnet publish failed with exit code $LASTEXITCODE"

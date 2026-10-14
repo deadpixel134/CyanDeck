@@ -140,12 +140,37 @@ public static class UpdateService
         if (!string.Equals(manifest.SignatureAlgorithm, "RSA-PSS-SHA256", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Unsupported update signature algorithm: '{manifest.SignatureAlgorithm}'. Expected RSA-PSS-SHA256.");
 
+        // Explicit user/admin overrides remain strict; otherwise trust the key
+        // pinned inside the official EXE before any separately writable PEM.
         var keyPath = ResolvePublicKeyPath(configuredPublicKeyPath);
-        if (string.IsNullOrWhiteSpace(keyPath) || !File.Exists(keyPath))
-            throw new FileNotFoundException("The update manifest is signed, but a trusted local public key was not found. Configure the public-key PEM path in About & troubleshooting.", keyPath);
+        var explicitKey = !string.IsNullOrWhiteSpace(configuredPublicKeyPath) ||
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CYANDECK_UPDATE_PUBLIC_KEY"));
+        string publicPem;
+        if (explicitKey)
+        {
+            if (string.IsNullOrWhiteSpace(keyPath) || !File.Exists(keyPath))
+                throw new FileNotFoundException(
+                    "Configured update public-key PEM is missing. Clear the override to use CyanDeck's built-in key.", keyPath);
+            publicPem = File.ReadAllText(keyPath);
+        }
+        else
+        {
+            using var embedded = Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream("CyanDeck.TrustedUpdatePublicKey");
+            if (embedded is not null)
+            {
+                using var reader = new StreamReader(embedded, Encoding.UTF8);
+                publicPem = reader.ReadToEnd();
+            }
+            else if (!string.IsNullOrWhiteSpace(keyPath) && File.Exists(keyPath))
+                publicPem = File.ReadAllText(keyPath);
+            else
+                throw new FileNotFoundException(
+                    "The update manifest is signed, but a trusted public key is unavailable. Restore CyanDeck.update-public-key.pem from the official release ZIP alongside CyanDeck.exe.", keyPath);
+        }
 
         using var rsa = RSA.Create();
-        rsa.ImportFromPem(File.ReadAllText(keyPath));
+        rsa.ImportFromPem(publicPem);
         keyId = GetPublicKeyFingerprint(rsa);
         if (!string.IsNullOrWhiteSpace(manifest.KeyId) && !string.Equals(NormalizeHash(manifest.KeyId), keyId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Update signing key fingerprint mismatch. Manifest keyId={manifest.KeyId}; trusted key={keyId}.");

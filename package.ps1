@@ -9,7 +9,28 @@ if ([string]::IsNullOrWhiteSpace($SigningKeyPath)) {
   throw 'Production release packaging requires -SigningKeyPath (RSA PEM). Use build.cmd for local builds without signing.'
 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-& (Join-Path $root "build.ps1") -Runtime $Runtime
+
+# Embed the verified signing key's PUBLIC SPKI into the release executable.
+# Never embed or distribute the private signing key.
+$releasePublicPemPath = Join-Path ([IO.Path]::GetTempPath()) ('CyanDeck-public-' + [Guid]::NewGuid().ToString('N') + '.pem')
+$releaseBuildRsa = $null
+try {
+  $expandedSigningKey = [Environment]::ExpandEnvironmentVariables($SigningKeyPath)
+  if (-not (Test-Path -LiteralPath $expandedSigningKey -PathType Leaf)) {
+    throw 'Release signing private key was not found.'
+  }
+  $releaseBuildRsa = [Security.Cryptography.RSA]::Create()
+  $releaseBuildRsa.ImportFromPem((Get-Content -LiteralPath $expandedSigningKey -Raw))
+  $embeddedKeyFingerprint = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData($releaseBuildRsa.ExportSubjectPublicKeyInfo())).ToLowerInvariant()
+  [IO.File]::WriteAllText($releasePublicPemPath,
+    $releaseBuildRsa.ExportSubjectPublicKeyInfoPem(), [Text.UTF8Encoding]::new($false))
+} finally {
+  if ($null -ne $releaseBuildRsa) { $releaseBuildRsa.Dispose() }
+}
+
+try {
+& (Join-Path $root "build.ps1") -Runtime $Runtime -ReleasePublicKeyPath $releasePublicPemPath
 
 # Keep the signed manifest in lockstep with the actual compiled app and state
 # format. Hard-coded values previously advertised schema 34 for schema 35 data.
@@ -62,6 +83,9 @@ if (-not [string]::IsNullOrWhiteSpace($SigningKeyPath)) {
   $rsa.ImportFromPem((Get-Content -LiteralPath $SigningKeyPath -Raw))
   $publicBytes = $rsa.ExportSubjectPublicKeyInfo()
   $keyId = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($publicBytes)).ToLowerInvariant()
+  if ($keyId -cne $embeddedKeyFingerprint) {
+    throw 'Signing key changed between compiling the EXE and signing its manifest.'
+  }
   [IO.File]::WriteAllText((Join-Path $stage "CyanDeck.update-public-key.pem"), $rsa.ExportSubjectPublicKeyInfoPem(), [Text.UTF8Encoding]::new($false))
   # The manifest lives in dist/, so copy the public key next to it too: the
   # verify-release.ps1 verifier reads it from the manifest directory.
@@ -124,3 +148,9 @@ Write-Host "Packaged: $zip"
 Write-Host "Update manifest: $manifestPath"
 Write-Host "SHA-256: $hash"
 if (-not [string]::IsNullOrWhiteSpace($keyId)) { Write-Host "Signed manifest key ID: $keyId" }
+
+} finally {
+  if (Test-Path -LiteralPath $releasePublicPemPath -PathType Leaf) {
+    Remove-Item -LiteralPath $releasePublicPemPath -Force
+  }
+}

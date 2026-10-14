@@ -14,8 +14,13 @@
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64;ARM64</Platforms>
     <LangVersion>12.0</LangVersion>
-    <Version>8.0.6</Version>
+    <Version>8.0.7</Version>
   </PropertyGroup>
+  <!-- Production builds pin the PUBLIC update verification SPKI in CyanDeck.exe. -->
+  <ItemGroup Condition="'$(CyanDeckReleasePublicKeyPath)' != '' and Exists('$(CyanDeckReleasePublicKeyPath)')">
+    <EmbeddedResource Include="$(CyanDeckReleasePublicKeyPath)"
+                      LogicalName="CyanDeck.TrustedUpdatePublicKey" />
+  </ItemGroup>
   <!-- Native Desktop OAuth is public-client application metadata; never a user token.
        The distributor provisions this once. Release users need no JSON next to EXE. -->
   <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/../../json/client_secret.json')">
