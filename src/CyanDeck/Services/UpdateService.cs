@@ -217,13 +217,28 @@ public static class UpdateService
 
     public static bool TryLaunchInstall(string packagePath, string expectedSha256, int waitForPid, bool relaunch = true)
     {
+        using var installer = StartInstall(packagePath, expectedSha256, waitForPid, relaunch);
+        return installer is not null;
+    }
+
+    // Startup preflight retains the process handle until its ready signal arrives.
+    // Manual installs use the same verified launcher without requiring a handshake.
+    public static Process? StartInstall(string packagePath, string expectedSha256, int waitForPid,
+        bool relaunch = true, string? readyEventName = null)
+    {
         if (expectedSha256.Length != 64 || !expectedSha256.All(Uri.IsHexDigit))
             throw new InvalidDataException("A signed manifest's 64-character SHA-256 digest is required for installation.");
+        if (readyEventName is not null &&
+            (!readyEventName.StartsWith("Local\\CyanDeck.UpdateReady.", StringComparison.Ordinal) ||
+             !Guid.TryParseExact(readyEventName.Substring("Local\\CyanDeck.UpdateReady.".Length), "N", out _)))
+            throw new ArgumentException("Invalid installer readiness event name.", nameof(readyEventName));
         var script = Path.Combine(AppContext.BaseDirectory, "apply-update.ps1");
         if (!File.Exists(script)) throw new FileNotFoundException("apply-update.ps1 is missing from the CyanDeck installation.", script);
         var installDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -Package {Quote(packagePath)} -ExpectedSha256 {Quote(expectedSha256)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid} -ShowProgress" + (relaunch ? " -Relaunch" : "");
-        return Process.Start(new ProcessStartInfo("powershell.exe", args) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden }) is not null;
+        var args = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(script)} -Package {Quote(packagePath)} -ExpectedSha256 {Quote(expectedSha256)} -InstallDir {Quote(installDir)} -WaitForPid {waitForPid} -ShowProgress" +
+            (readyEventName is null ? "" : $" -ReadyEventName {Quote(readyEventName)}") +
+            (relaunch ? " -Relaunch" : "");
+        return Process.Start(new ProcessStartInfo("powershell.exe", args) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden });
     }
 
     public static bool TryLaunchRollback(int waitForPid, bool relaunch = true)

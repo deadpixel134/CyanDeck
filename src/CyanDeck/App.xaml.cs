@@ -15,6 +15,8 @@ public partial class App : Application
     private AppController? _controller;
     private CancellationTokenSource? _activationCts;
     private Task? _activationTask;
+    private StartupUpdateWindow? _startupUpdateWindow;
+    private readonly List<string> _pendingActivationCommands = new();
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -60,13 +62,16 @@ public partial class App : Application
             Shutdown(-1);
         };
         DiagnosticsLog.Info("CyanDeck starting");
+        // Accept second-instance commands even while the startup updater is checking/downloading.
+        StartActivationServer();
         var preflight = await RunStartupUpdatePreflightAsync(
             safeMode, ignoreCrashLoop, peekToggle || recoverGroups, managedPolicyPath);
         if (preflight.ExitForUpdate) return;
         _controller = new AppController(Dispatcher, safeMode, ignoreCrashLoop, managedPolicyPath,
             suppressStartupUpdateCheck: preflight.Attempted);
         _controller.Start();
-        StartActivationServer();
+        foreach (var command in _pendingActivationCommands) HandleActivationCommand(command);
+        _pendingActivationCommands.Clear();
         if (peekToggle) Dispatcher.BeginInvoke(() => _controller?.TogglePeekFromExternalCommand());
         if (recoverGroups && recoveryMonitor is not null)
             Dispatcher.BeginInvoke(() => _controller?.RecoverAllGroupsToMonitor(recoveryMonitor));
@@ -98,6 +103,7 @@ public partial class App : Application
 
             using var skip = new CancellationTokenSource();
             splash = new StartupUpdateWindow();
+            _startupUpdateWindow = splash;
             splash.SkipRequested += () => skip.Cancel();
             splash.SetStage("새 버전을 확인하고 있습니다.", true);
             splash.Show();
@@ -120,15 +126,36 @@ public partial class App : Application
             skip.Token.ThrowIfCancellationRequested();
             store.SaveRecoveryCheckpoint(loaded, $"before-startup-auto-update-{check.LatestVersion}");
             splash.SetStage("업데이트 설치 프로그램을 실행합니다.\\n설치가 끝나면 CyanDeck이 자동으로 시작됩니다.", false);
-            if (!UpdateService.TryLaunchInstall(package, check.Manifest.Sha256,
-                    Environment.ProcessId, relaunch: true))
-                throw new InvalidOperationException("업데이트 설치 프로그램을 시작하지 못했습니다.");
-            DiagnosticsLog.Info($"Startup update preflight handed off to updater: version={check.LatestVersion}");
-            // The independent installer displays its own progress window before
-            // waiting for CyanDeck to close; avoid a visible gap in handoff.
-            await Task.Delay(450);
+            // Keep the WPF window visible until the installer has actually painted
+            // its independent WinForms progress window. A fixed sleep cannot do this.
+            var readyName = "Local\\CyanDeck.UpdateReady." + Guid.NewGuid().ToString("N");
+            using var readySignal = new EventWaitHandle(false, EventResetMode.ManualReset, readyName);
+            using var installer = UpdateService.StartInstall(package, check.Manifest.Sha256,
+                Environment.ProcessId, relaunch: true, readyEventName: readyName)
+                ?? throw new InvalidOperationException("업데이트 설치 프로그램을 시작하지 못했습니다.");
+            var installerReady = await Task.Run(() => readySignal.WaitOne(TimeSpan.FromSeconds(8)));
+            if (!StartupUpdatePolicy.ShouldHandOffToInstaller(installerReady, !installer.HasExited))
+            {
+                // The old application has not exited yet, so the installer cannot
+                // have replaced files. Abort the stalled installer and start normally.
+                if (!installer.HasExited)
+                {
+                    try
+                    {
+                        installer.Kill(entireProcessTree: true);
+                        await installer.WaitForExitAsync();
+                    }
+                    catch (Exception killError)
+                    {
+                        DiagnosticsLog.Error("Could not stop updater after handoff timeout", killError);
+                    }
+                }
+                throw new InvalidOperationException("설치 진행 화면이 준비되지 않아 업데이트를 취소했습니다.");
+            }
+            DiagnosticsLog.Info($"Startup update preflight confirmed installer UI ready: version={check.LatestVersion}");
             splash.Close();
             splash = null;
+            _startupUpdateWindow = null;
             Shutdown();
             return (true, true);
         }
@@ -142,7 +169,11 @@ public partial class App : Application
             DiagnosticsLog.Error("Startup update preflight failed; opening installed application", ex);
             return (false, true);
         }
-        finally { try { splash?.Close(); } catch { } }
+        finally
+        {
+            _startupUpdateWindow = null;
+            try { splash?.Close(); } catch { }
+        }
     }
 
     private static string? GetOptionValue(string[] args, string option)
@@ -185,15 +216,8 @@ public partial class App : Application
                     await server.WaitForConnectionAsync(token).ConfigureAwait(false);
                     using var reader = new StreamReader(server, Encoding.UTF8, false, 1024, leaveOpen: true);
                     var command = await reader.ReadLineAsync().ConfigureAwait(false);
-                    if (string.Equals(command, "activate", StringComparison.OrdinalIgnoreCase))
-                        _ = Dispatcher.BeginInvoke(() => _controller?.ActivateFromSecondInstance());
-                    else if (string.Equals(command, "peek-toggle", StringComparison.OrdinalIgnoreCase))
-                        _ = Dispatcher.BeginInvoke(() => _controller?.TogglePeekFromExternalCommand());
-                    else if (command is not null && command.StartsWith("recover-groups|", StringComparison.Ordinal))
-                    {
-                        var monitorName = command.Substring("recover-groups|".Length);
-                        _ = Dispatcher.BeginInvoke(() => _controller?.RecoverAllGroupsToMonitor(monitorName));
-                    }
+                    if (!string.IsNullOrEmpty(command))
+                        _ = Dispatcher.BeginInvoke(() => HandleActivationCommand(command));
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
                 catch (Exception ex)
@@ -203,6 +227,26 @@ public partial class App : Application
                 }
             }
         }, token);
+    }
+
+    private void HandleActivationCommand(string command)
+    {
+        // Called on the WPF dispatcher, so queued commands preserve arrival order.
+        if (_controller is null)
+        {
+            if (string.Equals(command, "activate", StringComparison.OrdinalIgnoreCase))
+                _startupUpdateWindow?.Activate();
+            else if (_pendingActivationCommands.Count < 32)
+                _pendingActivationCommands.Add(command);
+            return;
+        }
+
+        if (string.Equals(command, "activate", StringComparison.OrdinalIgnoreCase))
+            _controller.ActivateFromSecondInstance();
+        else if (string.Equals(command, "peek-toggle", StringComparison.OrdinalIgnoreCase))
+            _controller.TogglePeekFromExternalCommand();
+        else if (command.StartsWith("recover-groups|", StringComparison.Ordinal))
+            _controller.RecoverAllGroupsToMonitor(command.Substring("recover-groups|".Length));
     }
 
     private static void NotifyExistingInstance(string command)

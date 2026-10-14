@@ -61,6 +61,16 @@ foreach (var external in new[] { false, true })
 }
 Console.WriteLine($"PASS: {startupCases} startup update preflight safety combinations");
 
+// Never dismiss the startup status window until the independent updater has
+// acknowledged its GUI is shown and the updater process is still alive.
+foreach (var ready in new[] { false, true })
+foreach (var running in new[] { false, true })
+{
+    if (StartupUpdatePolicy.ShouldHandOffToInstaller(ready, running) != (ready && running))
+        throw new Exception("Startup updater window handoff decision mismatch");
+}
+Console.WriteLine("PASS: updater progress-window handoff safety combinations");
+
 // Regression: Explorer WorkerW can obscure all groups without minimizing or
 // hiding a single HWND. Older builds attempted one repair and then permanently
 // suppressed retries until the desktop became healthy on its own.

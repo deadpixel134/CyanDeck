@@ -11,4 +11,7 @@ public static class StartupUpdatePolicy
         bool safeMode, bool readOnly, bool pendingRecovery, bool externalCommand)
         => autoCheckEnabled && autoInstallEnabled && !safeMode && !readOnly
             && !pendingRecovery && !externalCommand;
+
+    public static bool ShouldHandOffToInstaller(bool progressWindowReady, bool installerRunning)
+        => progressWindowReady && installerRunning;
 }

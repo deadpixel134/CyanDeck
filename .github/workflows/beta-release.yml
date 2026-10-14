@@ -134,6 +134,6 @@ jobs:
           (cd release-assets && sha256sum -- *.zip > SHA256SUMS.txt)
           gh release create "$tag" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
             --title "CyanDeck $tag (Beta)" \
-            --notes "Opt-in beta release of CyanDeck. Starting with v8.0.5, an automatic update is checked and staged before desktop groups/calendar appear, with a startup progress window, cancellation and installer-side progress UI. Signed RSA-PSS manifests, package SHA-256, Windows x64/ARM64 installation smoke tests. To receive prereleases, enable Beta update channel in CyanDeck settings. Stable-channel clients do not receive prereleases." \
+            --notes "CyanDeck beta: early startup update check before desktop groups/calendar appear; installer progress-window readiness handshake before old app exits; safer failed-update reporting/relaunch; early single-instance activation listener. Signed RSA-PSS manifests, SHA-256 package verification, Windows x64/ARM64 smoke tests. Opt in using the Beta update channel. Stable users do not receive prereleases." \
             release-assets/*.zip release-assets/*.update.json release-assets/SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == true)')" = true
