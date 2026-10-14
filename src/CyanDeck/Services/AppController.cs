@@ -3599,23 +3599,29 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             if (survivingMonitors.Count == 0 || _state.Fences.Count == 0)
                 return false;
-            var saved = (targetProfile?.Fences?.Count > 0 ? targetProfile : previousProfile)?
-                .Fences.ToDictionary(p => p.FenceId) ??
-                new Dictionary<Guid, DeckFencePlacement>();
+            // Incomplete one-monitor profiles are common when new groups were
+            // added after the last time the second monitor was disconnected.
+            // Start with the previous dual-monitor geometry, then override only
+            // entries actually present in the saved target profile.
+            var previousSaved = previousProfile?.Fences.ToDictionary(p => p.FenceId);
+            var targetSaved = targetProfile?.Fences.ToDictionary(p => p.FenceId);
             var current = CapturePlacements().ToDictionary(p => p.FenceId);
             var areas = survivingMonitors.Select(m =>
             {
                 var dpi = ResolveBestKnownMonitorDpi(m.DeviceName);
                 var scale = dpi is >= 48 and <= 960 ? dpi / 96d : 1d;
-                return new MonitorDisconnectLayoutPlanner.WorkArea(
+                return new MonitorDisconnectLayoutPlanner.SurvivingArea(
                     m.DeviceName, m.WorkingX / scale, m.WorkingY / scale,
                     m.WorkingWidth / scale, m.WorkingHeight / scale, m.Primary);
             }).ToArray();
             var groups = _state.Fences.Select(f =>
             {
-                var source = saved.TryGetValue(f.Id, out var stored)
-                    ? stored : current[f.Id];
-                return new MonitorDisconnectLayoutPlanner.Group(
+                var source = current[f.Id];
+                if (previousSaved?.TryGetValue(f.Id, out var fromPrevious) == true)
+                    source = fromPrevious;
+                if (targetSaved?.TryGetValue(f.Id, out var fromTarget) == true)
+                    source = fromTarget;
+                return new MonitorDisconnectLayoutPlanner.DisconnectedGroup(
                     f.Id, f.PageIndex, f.ShowOnAllPages,
                     source.X, source.Y, source.Width,
                     f.RolledUp ? Math.Max(140d, source.ExpandedHeight) : source.Height);
@@ -3625,9 +3631,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var changes = plan.Placements.Where(p =>
             {
                 var old = current[p.Id];
+                var fence = _state.Fences.First(f => f.Id == p.Id);
+                var originalHeight = fence.RolledUp ? old.ExpandedHeight : old.Height;
                 return Math.Abs(old.X - p.X) > .5 || Math.Abs(old.Y - p.Y) > .5 ||
                     Math.Abs(old.Width - p.Width) > .5 ||
-                    Math.Abs((groups.First(g => g.Id == p.Id).Height) - p.Height) > .5;
+                    Math.Abs(originalHeight - p.Height) > .5;
             }).ToArray();
             if (changes.Length > 0)
             {
@@ -3646,10 +3654,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                     group.Y = placement.Y;
                     group.Width = placement.Width;
                     group.Height = placement.Height;
-                    if (group.RolledUp)
-                        group.ExpandedHeight = placement.Height;
-                    else
-                        group.ExpandedHeight = placement.Height;
+                    group.ExpandedHeight = placement.Height;
                     _windows.FirstOrDefault(w => w.Model.Id == placement.Id)?.ApplyModelLayout();
                 }
                 DiagnosticsLog.Info($"Auto monitor rehome: {changes.Length} placements updated; " +

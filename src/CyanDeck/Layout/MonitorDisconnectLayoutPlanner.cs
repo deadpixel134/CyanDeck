@@ -13,7 +13,7 @@ namespace CyanDeck.Layout;
 /// </summary>
 internal static class MonitorDisconnectLayoutPlanner
 {
-    internal readonly record struct WorkArea(string DeviceName, double X, double Y,
+    internal readonly record struct SurvivingArea(string DeviceName, double X, double Y,
         double Width, double Height, bool Primary)
     {
         internal double Right => X + Width;
@@ -24,18 +24,18 @@ internal static class MonitorDisconnectLayoutPlanner
             Width > 0 && Height > 0;
     }
 
-    internal readonly record struct Group(Guid Id, int PageIndex, bool ShowOnAllPages,
+    internal readonly record struct DisconnectedGroup(Guid Id, int PageIndex, bool ShowOnAllPages,
         double X, double Y, double Width, double Height);
-    internal readonly record struct Placement(Guid Id, double X, double Y,
+    internal readonly record struct RehomePlacement(Guid Id, double X, double Y,
         double Width, double Height, bool Relocated);
-    internal sealed record PlanResult(IReadOnlyList<Placement> Placements,
+    internal sealed record RehomeResult(IReadOnlyList<RehomePlacement> Placements,
         int RelocatedCount, bool OverlapUnavoidable);
 
     internal static bool IsMonitorReduction(int previousCount, int currentCount) =>
         previousCount > currentCount && currentCount > 0;
 
-    internal static PlanResult Plan(IReadOnlyList<WorkArea> remaining,
-        IReadOnlyList<Group> groups, double requestedGap = 12)
+    internal static RehomeResult Plan(IReadOnlyList<SurvivingArea> remaining,
+        IReadOnlyList<DisconnectedGroup> groups, double requestedGap = 12)
     {
         ArgumentNullException.ThrowIfNull(remaining);
         ArgumentNullException.ThrowIfNull(groups);
@@ -48,15 +48,15 @@ internal static class MonitorDisconnectLayoutPlanner
             throw new ArgumentException("Groups must have unique IDs and finite positive rectangles.", nameof(groups));
 
         var gap = Math.Clamp(double.IsFinite(requestedGap) ? requestedGap : 12, 0, 24);
-        var result = new List<Placement>(groups.Count);
-        var occupied = new List<(Group Group, Placement Placement)>(groups.Count);
-        var toMove = new List<Group>();
+        var result = new List<RehomePlacement>(groups.Count);
+        var occupied = new List<(DisconnectedGroup DisconnectedGroup, RehomePlacement RehomePlacement)>(groups.Count);
+        var toMove = new List<DisconnectedGroup>();
 
         foreach (var group in groups)
         {
             if (remaining.Any(area => FullyWithin(group, area)))
             {
-                var keep = new Placement(group.Id, group.X, group.Y,
+                var keep = new RehomePlacement(group.Id, group.X, group.Y,
                     group.Width, group.Height, false);
                 result.Add(keep);
                 occupied.Add((group, keep));
@@ -71,8 +71,8 @@ internal static class MonitorDisconnectLayoutPlanner
                                     .ThenBy(g => Math.Max(0, g.PageIndex))
                                     .ThenBy(g => g.Id))
         {
-            Placement? bestClear = null;
-            Placement? bestFallback = null;
+            RehomePlacement? bestClear = null;
+            RehomePlacement? bestFallback = null;
             double bestClearScore = double.PositiveInfinity;
             double bestFallbackScore = double.PositiveInfinity;
             foreach (var area in remaining)
@@ -91,8 +91,8 @@ internal static class MonitorDisconnectLayoutPlanner
                 var yCandidates = new SortedSet<double> { minY, maxY, preferredY };
                 foreach (var obstacle in occupied)
                 {
-                    if (!Conflicts(group, obstacle.Group)) continue;
-                    var rect = obstacle.Placement;
+                    if (!Conflicts(group, obstacle.DisconnectedGroup)) continue;
+                    var rect = obstacle.RehomePlacement;
                     xCandidates.Add(Math.Clamp(rect.X + rect.Width + gap, minX, maxX));
                     xCandidates.Add(Math.Clamp(rect.X - width - gap, minX, maxX));
                     xCandidates.Add(Math.Clamp(rect.X + rect.Width, minX, maxX));
@@ -110,12 +110,12 @@ internal static class MonitorDisconnectLayoutPlanner
                 foreach (var x in xCandidates)
                 foreach (var y in yCandidates)
                 {
-                    var candidate = new Placement(group.Id, x, y, width, height, true);
+                    var candidate = new RehomePlacement(group.Id, x, y, width, height, true);
                     var score = monitorDistance * 2 + Math.Abs(x - preferredX) +
                         Math.Abs(y - preferredY) + y * 0.000001 + x * 0.0000001;
                     var overlapArea = occupied
-                        .Where(o => Conflicts(group, o.Group))
-                        .Sum(o => IntersectionArea(candidate, o.Placement));
+                        .Where(o => Conflicts(group, o.DisconnectedGroup))
+                        .Sum(o => IntersectionArea(candidate, o.RehomePlacement));
                     if (overlapArea <= .000001 && score < bestClearScore)
                     {
                         bestClear = candidate;
@@ -137,10 +137,10 @@ internal static class MonitorDisconnectLayoutPlanner
             result.Add(selected);
             occupied.Add((group, selected));
         }
-        return new PlanResult(result, toMove.Count, unavoidable);
+        return new RehomeResult(result, toMove.Count, unavoidable);
     }
 
-    private static bool FullyWithin(Group g, WorkArea area)
+    private static bool FullyWithin(DisconnectedGroup g, SurvivingArea area)
     {
         const double tolerance = 1d;
         return g.X >= area.X - tolerance && g.Y >= area.Y - tolerance &&
@@ -148,11 +148,11 @@ internal static class MonitorDisconnectLayoutPlanner
             g.Y + g.Height <= area.Bottom + tolerance;
     }
 
-    private static bool Conflicts(Group left, Group right) =>
+    private static bool Conflicts(DisconnectedGroup left, DisconnectedGroup right) =>
         left.ShowOnAllPages || right.ShowOnAllPages ||
         Math.Max(0, left.PageIndex) == Math.Max(0, right.PageIndex);
 
-    private static double IntersectionArea(Placement a, Placement b) =>
+    private static double IntersectionArea(RehomePlacement a, RehomePlacement b) =>
         Math.Max(0d, Math.Min(a.X + a.Width, b.X + b.Width) - Math.Max(a.X, b.X)) *
         Math.Max(0d, Math.Min(a.Y + a.Height, b.Y + b.Height) - Math.Max(a.Y, b.Y));
 }

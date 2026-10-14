@@ -167,12 +167,12 @@ if (!MonitorDisconnectLayoutPlanner.IsMonitorReduction(2, 1) ||
     MonitorDisconnectLayoutPlanner.IsMonitorReduction(2, 2) ||
     MonitorDisconnectLayoutPlanner.IsMonitorReduction(2, 0))
     throw new Exception("Auto rehome triggers only after an actual monitor count decrease.");
-var screen = new MonitorDisconnectLayoutPlanner.WorkArea("DISPLAY1", 0, 0, 1500, 900, true);
-var primaryGroup = new MonitorDisconnectLayoutPlanner.Group(
+var screen = new MonitorDisconnectLayoutPlanner.SurvivingArea("DISPLAY1", 0, 0, 1500, 900, true);
+var primaryGroup = new MonitorDisconnectLayoutPlanner.DisconnectedGroup(
     Guid.NewGuid(), 0, false, 40, 45, 500, 400);
-var missingGroup = new MonitorDisconnectLayoutPlanner.Group(
+var missingGroup = new MonitorDisconnectLayoutPlanner.DisconnectedGroup(
     Guid.NewGuid(), 0, false, 1950, 45, 500, 400);
-var globalGroup = new MonitorDisconnectLayoutPlanner.Group(
+var globalGroup = new MonitorDisconnectLayoutPlanner.DisconnectedGroup(
     Guid.NewGuid(), 0, true, 650, 55, 330, 290);
 var plan = MonitorDisconnectLayoutPlanner.Plan([screen],
     [primaryGroup, missingGroup, globalGroup], 12);
@@ -185,14 +185,14 @@ if (keep.Relocated || keep.X != 40 || keep.Y != 45 ||
     moved.X < 0 || moved.Y < 0 || moved.X + moved.Width > 1500 ||
     moved.Y + moved.Height > 900)
     throw new Exception("Unplug must keep visible group positions and bring only missing groups into bounds.");
-static bool Overlap(MonitorDisconnectLayoutPlanner.Placement a,
-    MonitorDisconnectLayoutPlanner.Placement b) =>
+static bool Overlap(MonitorDisconnectLayoutPlanner.RehomePlacement a,
+    MonitorDisconnectLayoutPlanner.RehomePlacement b) =>
     Math.Min(a.X + a.Width, b.X + b.Width) > Math.Max(a.X, b.X) &&
     Math.Min(a.Y + a.Height, b.Y + b.Height) > Math.Max(a.Y, b.Y);
 if (Overlap(moved, keep) || Overlap(moved, keepGlobal))
     throw new Exception("Moved group overlaps an already visible desktop group.");
 // Per-page groups may reuse coordinates, but show-on-all-page groups must not.
-var otherPage = new MonitorDisconnectLayoutPlanner.Group(
+var otherPage = new MonitorDisconnectLayoutPlanner.DisconnectedGroup(
     Guid.NewGuid(), 2, false, 1940, 50, 500, 400);
 var pagePlan = MonitorDisconnectLayoutPlanner.Plan([screen],
     [primaryGroup, globalGroup, otherPage], 12);
@@ -211,9 +211,9 @@ if (savedPlan.RelocatedCount != 0 ||
     throw new Exception("A stored one-monitor layout must remain intact.");
 // Crowded work areas must keep every group on-screen while reporting that
 // overlap is unavoidable, rather than writing off-screen coordinates.
-var tight = new MonitorDisconnectLayoutPlanner.WorkArea("SMALL", 0, 0, 280, 200, true);
+var tight = new MonitorDisconnectLayoutPlanner.SurvivingArea("SMALL", 0, 0, 280, 200, true);
 var dense = Enumerable.Range(0, 5).Select(i =>
-    new MonitorDisconnectLayoutPlanner.Group(
+    new MonitorDisconnectLayoutPlanner.DisconnectedGroup(
         Guid.NewGuid(), 0, false, 2000 + i * 100, 2000, 250, 180)).ToArray();
 var densePlan = MonitorDisconnectLayoutPlanner.Plan([tight], dense, 12);
 if (densePlan.Placements.Count != 5 || !densePlan.OverlapUnavoidable ||
