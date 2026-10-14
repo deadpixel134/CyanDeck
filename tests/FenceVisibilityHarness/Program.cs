@@ -139,3 +139,23 @@ foreach (var dragging in new[] { false, true })
     tabSwitchScenarios++;
 }
 Console.WriteLine($"PASS: {tabSwitchScenarios} tab activation combinations (default click, optional hover)");
+
+// Display unplug/replug: Explorer may rebuild FolderView and make all native
+// icons visible again. Re-hide only when the desktop is active, display is
+// stable, settings still require hidden icons and a live visible view exists.
+var iconRecoveryCases = 0;
+foreach (var desktopStarted in new[] { false, true })
+foreach (var safeMode in new[] { false, true })
+foreach (var intendedHidden in new[] { false, true })
+foreach (var stableDisplay in new[] { false, true })
+foreach (bool? listViewVisible in new bool?[] { null, false, true })
+{
+    var expected = desktopStarted && !safeMode && intendedHidden &&
+        stableDisplay && listViewVisible == true;
+    var actual = NativeDesktopIconRecoveryPolicy.ShouldRehide(
+        desktopStarted, safeMode, intendedHidden, stableDisplay, listViewVisible);
+    if (expected != actual)
+        throw new Exception($"Native desktop icon repair policy mismatch: runtime={desktopStarted}, safe={safeMode}, hidden={intendedHidden}, stable={stableDisplay}, explorerVisible={listViewVisible}");
+    iconRecoveryCases++;
+}
+Console.WriteLine($"PASS: {iconRecoveryCases} safe native Explorer icon repair combinations");

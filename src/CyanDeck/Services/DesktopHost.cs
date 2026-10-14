@@ -407,6 +407,17 @@ public sealed class DesktopHost
     }
 
     /// <summary>
+    /// Read-only, tri-state Explorer FolderView probe. A missing FolderView is
+    /// UNKNOWN, not an instruction to show or hide native desktop icons.
+    /// </summary>
+    public bool TryGetNativeDesktopIconsVisible(out bool visible)
+    {
+        var list = FindDesktopListView();
+        visible = list != IntPtr.Zero && IsWindowVisible(list);
+        return list != IntPtr.Zero;
+    }
+
+    /// <summary>
     /// Refreshes the cached Explorer desktop HWNDs without changing any CyanDeck window.
     /// Returns true only when Explorer rebuilt/switched the live desktop host.
     /// </summary>

@@ -60,6 +60,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private DesktopShellRecoveryScheduler? _shellRecoveryScheduler;
     private bool _shellRecoveryIdleSuppressed;
     private DispatcherTimer? _displayRestoreTimer;
+    // A monitor unplug can rebuild Explorer's FolderView AFTER topology settling.
+    // Short, bounded checks repair only its icon visibility; never restack WPF groups.
+    private DispatcherTimer? _nativeIconDisplayRepairTimer;
+    private int _nativeIconDisplayRepairChecksRemaining;
     private WpfDisplayTransitionBridge? _displayTransition;
     private MonitorContentSwapCoordinator? _monitorContentSwap;
     private bool _monitorContentSwapInProgress;
@@ -1484,23 +1488,81 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         RebuildTrayMenu();
     }
 
+    private bool ShouldKeepNativeDesktopIconsHidden()
+    {
+        // Preserve the user's emergency "show Explorer icons until restart" choice
+        // even if a monitor is unplugged after it was selected.
+        if (_forceNativeIconsVisibleUntilRestart) return false;
+        if (_state.Settings.HideNativeDesktopIcons) return true;
+        return _quickHidden && _state.Settings.EnableQuickHide &&
+            _state.Settings.QuickHideMode is DeckQuickHideMode.AllDesktop or DeckQuickHideMode.UngroupedIconsOnly;
+    }
+
     private void ApplyNativeDesktopVisibility()
     {
-        // When CyanDeck owns the desktop-icon presentation, keep Explorer's ListView hidden
-        // for every Quick-hide mode. The managed loose-icon host can then hide groups and loose
-        // items independently instead of exposing every physical desktop file at once.
-        var visible = !_state.Settings.HideNativeDesktopIcons;
-        if (visible && _quickHidden && _state.Settings.EnableQuickHide)
+        // The Explorer ListView is only a DISPLAY target. Never move/delete its
+        // desktop items or modify Windows icon-visibility Registry settings.
+        _host.SetNativeDesktopIconsVisible(!ShouldKeepNativeDesktopIconsHidden());
+    }
+
+    // A display topology change can recreate/re-show Explorer's FolderView.
+    // Reassert only the intended HIDE transition, never raise/activate/reparent
+    // CyanDeck windows or toggle explicitly restored native icons.
+    private void RepairNativeIconVisibilityAfterStableDisplay()
+    {
+        try
         {
-            visible = _state.Settings.QuickHideMode switch
+            if (_disposed || !_desktopRuntimeStarted || _safeMode) return;
+            var stable = _displayTransition?.IsStableForUserLayoutAction != false;
+            if (!ShouldKeepNativeDesktopIconsHidden() || !stable) return;
+            var found = _host.TryGetNativeDesktopIconsVisible(out var isVisible);
+            if (!NativeDesktopIconRecoveryPolicy.ShouldRehide(
+                    desktopRuntimeStarted: _desktopRuntimeStarted,
+                    safeMode: _safeMode,
+                    shouldKeepHidden: ShouldKeepNativeDesktopIconsHidden(),
+                    displayStable: stable,
+                    explorerListViewVisible: found ? isVisible : null))
             {
-                DeckQuickHideMode.GroupsOnly => true,
-                DeckQuickHideMode.AllDesktop => false,
-                DeckQuickHideMode.UngroupedIconsOnly => false,
-                _ => visible
-            };
+                // The shell may not have built a new FolderView yet. Subsequent
+                // one-shot probes are scheduled after topology stabilization.
+                return;
+            }
+            _host.SetNativeDesktopIconsVisible(false);
+            if (_host.TryGetNativeDesktopIconsVisible(out var afterRepair) && !afterRepair)
+                DiagnosticsLog.Info("Explorer native desktop icons re-hidden after stable display transition.");
+            else
+                DiagnosticsLog.Warn("Explorer native desktop icon re-hide not yet confirmed; bounded retry remains scheduled.");
         }
-        _host.SetNativeDesktopIconsVisible(_forceNativeIconsVisibleUntilRestart || visible);
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Stable display native icon visibility recovery failed", ex);
+        }
+    }
+
+    private void StartNativeIconDisplayRepairChecks()
+    {
+        _nativeIconDisplayRepairTimer?.Stop();
+        if (_disposed || !_desktopRuntimeStarted || _safeMode || !ShouldKeepNativeDesktopIconsHidden())
+            return;
+        // One immediate repair plus up to three spaced probes for late Explorer
+        // rebuilds. Do NOT turn this into an always-running focus/Z-order poll.
+        RepairNativeIconVisibilityAfterStableDisplay();
+        _nativeIconDisplayRepairChecksRemaining = 3;
+        _nativeIconDisplayRepairTimer ??= new DispatcherTimer(
+            DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        _nativeIconDisplayRepairTimer.Tick -= NativeIconDisplayRepairTimer_Tick;
+        _nativeIconDisplayRepairTimer.Tick += NativeIconDisplayRepairTimer_Tick;
+        _nativeIconDisplayRepairTimer.Start();
+    }
+
+    private void NativeIconDisplayRepairTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_disposed || --_nativeIconDisplayRepairChecksRemaining <= 0)
+            _nativeIconDisplayRepairTimer?.Stop();
+        RepairNativeIconVisibilityAfterStableDisplay();
     }
 
     private void RescueNativeExplorerIcons()
@@ -2782,6 +2844,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             RebuildDesktopMonitorTopology();
         }
         UpdateWindowVisibility();
+        // Explorer can re-show native icons while rebuilding FolderView as a
+        // monitor disconnects. Restore the intended hidden state only AFTER the
+        // monitor topology is stable, then re-check late shell reconstruction.
+        StartNativeIconDisplayRepairChecks();
         _calendar?.EnsureBoundsAfterDisplayTransition();
         RefreshPeekCommandSurfaces();
         Persist();
@@ -5121,6 +5187,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void Exit()
     {
+        _nativeIconDisplayRepairTimer?.Stop();
         _shellRecoveryScheduler?.Dispose();
         _shellRecoveryScheduler = null;
         _calendar?.Dispose();
@@ -5162,6 +5229,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _shellRecoveryScheduler?.Dispose();
         _shellRecoveryScheduler = null;
         _displayRestoreTimer?.Stop();
+        _nativeIconDisplayRepairTimer?.Stop();
+        _nativeIconDisplayRepairTimer = null;
         _managedPolicyWatcher?.Dispose();
         _managedPolicyWatcher = null;
         _quickHideStartupCoordinator?.Dispose();

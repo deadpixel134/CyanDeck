@@ -145,6 +145,6 @@ jobs:
           (cd release-assets && sha256sum -- *.zip *.exe > SHA256SUMS.txt)
           gh release create "$tag" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
             --title "CyanDeck $tag (Beta)" \
-            --notes "CyanDeck v8.0.9 Beta fixes week calendar placement: all-day multi-date bars remain continuous in their lane, while unrelated dates' timed events start at the top and overlapping dates clear only their own all-day lanes. Includes EXE-only distribution, embedded signed-update trust key and updater script, x64/ARM64 builds. Stable users do not receive prereleases." \
+            --notes "CyanDeck v8.0.11 Beta re-hides Explorer native desktop icons after stable monitor unplug/replug and retries for delayed FolderView recreation without moving any desktop file or restacking desktop windows. Calendar independent all-day lanes retained. Includes EXE-only distribution, embedded signed-update trust key and updater script, x64/ARM64 builds. Stable users do not receive prereleases." \
             release-assets/*.zip release-assets/*.exe release-assets/*.update.json release-assets/SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == true)')" = true
