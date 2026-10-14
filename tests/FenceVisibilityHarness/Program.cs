@@ -159,3 +159,65 @@ foreach (bool? listViewVisible in new bool?[] { null, false, true })
     iconRecoveryCases++;
 }
 Console.WriteLine($"PASS: {iconRecoveryCases} safe native Explorer icon repair combinations");
+
+// The monitor-unplug planner is pure geometry. Every scenario must preserve
+// existing groups, metadata and saved layouts without changing desktop files.
+if (!MonitorDisconnectLayoutPlanner.IsMonitorReduction(2, 1) ||
+    MonitorDisconnectLayoutPlanner.IsMonitorReduction(1, 2) ||
+    MonitorDisconnectLayoutPlanner.IsMonitorReduction(2, 2) ||
+    MonitorDisconnectLayoutPlanner.IsMonitorReduction(2, 0))
+    throw new Exception("Auto rehome triggers only after an actual monitor count decrease.");
+var screen = new MonitorDisconnectLayoutPlanner.WorkArea("DISPLAY1", 0, 0, 1500, 900, true);
+var primaryGroup = new MonitorDisconnectLayoutPlanner.Group(
+    Guid.NewGuid(), 0, false, 40, 45, 500, 400);
+var missingGroup = new MonitorDisconnectLayoutPlanner.Group(
+    Guid.NewGuid(), 0, false, 1950, 45, 500, 400);
+var globalGroup = new MonitorDisconnectLayoutPlanner.Group(
+    Guid.NewGuid(), 0, true, 650, 55, 330, 290);
+var plan = MonitorDisconnectLayoutPlanner.Plan([screen],
+    [primaryGroup, missingGroup, globalGroup], 12);
+var keep = plan.Placements.Single(p => p.Id == primaryGroup.Id);
+var moved = plan.Placements.Single(p => p.Id == missingGroup.Id);
+var keepGlobal = plan.Placements.Single(p => p.Id == globalGroup.Id);
+if (keep.Relocated || keep.X != 40 || keep.Y != 45 ||
+    keepGlobal.Relocated || keepGlobal.X != 650 || keepGlobal.Y != 55 ||
+    !moved.Relocated || plan.RelocatedCount != 1 || plan.OverlapUnavoidable ||
+    moved.X < 0 || moved.Y < 0 || moved.X + moved.Width > 1500 ||
+    moved.Y + moved.Height > 900)
+    throw new Exception("Unplug must keep visible group positions and bring only missing groups into bounds.");
+static bool Overlap(MonitorDisconnectLayoutPlanner.Placement a,
+    MonitorDisconnectLayoutPlanner.Placement b) =>
+    Math.Min(a.X + a.Width, b.X + b.Width) > Math.Max(a.X, b.X) &&
+    Math.Min(a.Y + a.Height, b.Y + b.Height) > Math.Max(a.Y, b.Y);
+if (Overlap(moved, keep) || Overlap(moved, keepGlobal))
+    throw new Exception("Moved group overlaps an already visible desktop group.");
+// Per-page groups may reuse coordinates, but show-on-all-page groups must not.
+var otherPage = new MonitorDisconnectLayoutPlanner.Group(
+    Guid.NewGuid(), 2, false, 1940, 50, 500, 400);
+var pagePlan = MonitorDisconnectLayoutPlanner.Plan([screen],
+    [primaryGroup, globalGroup, otherPage], 12);
+if (pagePlan.OverlapUnavoidable ||
+    Overlap(pagePlan.Placements.Single(p => p.Id == otherPage.Id),
+            pagePlan.Placements.Single(p => p.Id == globalGroup.Id)))
+    throw new Exception("All-page groups must reserve their space across desktop pages.");
+// A saved one-screen layout should already be within bounds; planner must
+// preserve it exactly and never compact a deliberately customized layout.
+var savedA = primaryGroup with { X = 95, Y = 100 };
+var savedB = missingGroup with { X = 850, Y = 140 };
+var savedPlan = MonitorDisconnectLayoutPlanner.Plan([screen], [savedA, savedB]);
+if (savedPlan.RelocatedCount != 0 ||
+    savedPlan.Placements.Single(p => p.Id == savedA.Id).X != savedA.X ||
+    savedPlan.Placements.Single(p => p.Id == savedB.Id).Y != savedB.Y)
+    throw new Exception("A stored one-monitor layout must remain intact.");
+// Crowded work areas must keep every group on-screen while reporting that
+// overlap is unavoidable, rather than writing off-screen coordinates.
+var tight = new MonitorDisconnectLayoutPlanner.WorkArea("SMALL", 0, 0, 280, 200, true);
+var dense = Enumerable.Range(0, 5).Select(i =>
+    new MonitorDisconnectLayoutPlanner.Group(
+        Guid.NewGuid(), 0, false, 2000 + i * 100, 2000, 250, 180)).ToArray();
+var densePlan = MonitorDisconnectLayoutPlanner.Plan([tight], dense, 12);
+if (densePlan.Placements.Count != 5 || !densePlan.OverlapUnavoidable ||
+    densePlan.Placements.Any(p => p.X < -1 || p.Y < -1 ||
+        p.X + p.Width > 281 || p.Y + p.Height > 201))
+    throw new Exception("Crowded monitor must have bounded fallback and a diagnostic overlap flag.");
+Console.WriteLine("PASS: monitor unplug automatic placement, saved layout, pages and crowded fallback");

@@ -86,6 +86,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private bool _automaticUpdateInProgress;
     private bool _restoringMonitorLayout;
     private string _activeMonitorSignature = "";
+    // Track the most recent stable topology, independently of persisted profiles.
+    // The layout planner runs only when the monitor COUNT actually decreases.
+    private int _lastStableMonitorCount;
     private int _pageTransitionToken;
     private DesktopPageTouchSwipeDirection? _touchPagePreviewDirection;
     private double _touchPagePreviewProgress;
@@ -165,6 +168,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (runtimePlan.StartCyanDeck) InitializeQuickHideFeatureRuntime();
         InitializeManagedDeployment();
         _activeMonitorSignature = MonitorConfigurationService.GetSignature();
+        _lastStableMonitorCount = MonitorConfigurationService.CaptureMonitors().Count;
         _state.CurrentPage = Math.Clamp(_state.CurrentPage, 0, GetMaxPage());
 
         if (runtimePlan.IsSafeMode)
@@ -2794,6 +2798,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var previousProfile = _state.MonitorProfiles.FirstOrDefault(p => string.Equals(p.Signature, previousSignature, StringComparison.Ordinal));
         var currentMonitors = MonitorConfigurationService.CaptureMonitors();
         var signatureChanged = !string.Equals(signature, previousSignature, StringComparison.Ordinal);
+        var monitorsReduced = MonitorDisconnectLayoutPlanner.IsMonitorReduction(
+            _lastStableMonitorCount, currentMonitors.Count);
 
         if (signatureChanged)
         {
@@ -2801,12 +2807,22 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _restoringMonitorLayout = true;
             try
             {
-                switch (_state.Settings.LayoutAdjustmentMode)
+                var targetProfile = _state.MonitorProfiles.FirstOrDefault(p =>
+                    string.Equals(p.Signature, signature, StringComparison.Ordinal));
+                // On monitor loss, restore the saved one-monitor layout if any;
+                // otherwise preserve groups already on the surviving monitor
+                // and relocate ONLY groups that lost their screen.
+                var handledReduction = monitorsReduced &&
+                    _state.Settings.LayoutAdjustmentMode != DeckLayoutAdjustmentMode.None &&
+                    TryRehomeGroupsAfterMonitorReduction(previousProfile,
+                        _state.Settings.LayoutAdjustmentMode == DeckLayoutAdjustmentMode.PerMonitor
+                            ? targetProfile : null,
+                        currentMonitors);
+                if (!handledReduction) switch (_state.Settings.LayoutAdjustmentMode)
                 {
                     case DeckLayoutAdjustmentMode.PerMonitor:
                     {
-                        var profile = _state.MonitorProfiles.FirstOrDefault(p => string.Equals(p.Signature, signature, StringComparison.Ordinal));
-                        if (profile is not null) ApplyPlacements(profile.Fences);
+                        if (targetProfile is not null) ApplyPlacements(targetProfile.Fences);
                         else foreach (var window in _windows.ToArray()) window.EnsureVisibleOnMonitor();
                         break;
                     }
@@ -2828,6 +2844,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             foreach (var window in _windows.ToArray()) window.EnsureVisibleOnMonitor();
         }
 
+        _lastStableMonitorCount = currentMonitors.Count;
         foreach (var window in _windows.ToArray())
         {
             try { window.RefreshAfterStableDisplayTransition(); } catch (Exception ex) { DiagnosticsLog.Error("Stable display refresh failed", ex); }
@@ -3566,8 +3583,108 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
     }
 
+    /// <summary>
+    /// Rehome only off-screen groups after an actual topology reduction. A
+    /// complete saved target profile takes precedence; when none exists, the
+    /// previous larger topology profile provides accurate pre-unplug geometry.
+    /// Never rewrite the old dual-monitor profile. An on-disk checkpoint is
+    /// mandatory before any group changes.
+    /// </summary>
+    private bool TryRehomeGroupsAfterMonitorReduction(
+        DeckMonitorLayoutProfile? previousProfile,
+        DeckMonitorLayoutProfile? targetProfile,
+        IReadOnlyList<DeckMonitorDescriptor> survivingMonitors)
+    {
+        try
+        {
+            if (survivingMonitors.Count == 0 || _state.Fences.Count == 0)
+                return false;
+            var saved = (targetProfile?.Fences?.Count > 0 ? targetProfile : previousProfile)?
+                .Fences.ToDictionary(p => p.FenceId) ??
+                new Dictionary<Guid, DeckFencePlacement>();
+            var current = CapturePlacements().ToDictionary(p => p.FenceId);
+            var areas = survivingMonitors.Select(m =>
+            {
+                var dpi = ResolveBestKnownMonitorDpi(m.DeviceName);
+                var scale = dpi is >= 48 and <= 960 ? dpi / 96d : 1d;
+                return new MonitorDisconnectLayoutPlanner.WorkArea(
+                    m.DeviceName, m.WorkingX / scale, m.WorkingY / scale,
+                    m.WorkingWidth / scale, m.WorkingHeight / scale, m.Primary);
+            }).ToArray();
+            var groups = _state.Fences.Select(f =>
+            {
+                var source = saved.TryGetValue(f.Id, out var stored)
+                    ? stored : current[f.Id];
+                return new MonitorDisconnectLayoutPlanner.Group(
+                    f.Id, f.PageIndex, f.ShowOnAllPages,
+                    source.X, source.Y, source.Width,
+                    f.RolledUp ? Math.Max(140d, source.ExpandedHeight) : source.Height);
+            }).ToArray();
+            var plan = MonitorDisconnectLayoutPlanner.Plan(
+                areas, groups, _state.Settings.GroupSnapGap);
+            var changes = plan.Placements.Where(p =>
+            {
+                var old = current[p.Id];
+                return Math.Abs(old.X - p.X) > .5 || Math.Abs(old.Y - p.Y) > .5 ||
+                    Math.Abs(old.Width - p.Width) > .5 ||
+                    Math.Abs((groups.First(g => g.Id == p.Id).Height) - p.Height) > .5;
+            }).ToArray();
+            if (changes.Length > 0)
+            {
+                var checkpoint = _store.SaveRecoveryCheckpoint(_state,
+                    "before-auto-monitor-reduction-" + Guid.NewGuid().ToString("N"));
+                if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint))
+                {
+                    DiagnosticsLog.Warn("Auto monitor rehome skipped: durable recovery checkpoint unavailable.");
+                    return false;
+                }
+                var byId = _state.Fences.ToDictionary(f => f.Id);
+                foreach (var placement in changes)
+                {
+                    var group = byId[placement.Id];
+                    group.X = placement.X;
+                    group.Y = placement.Y;
+                    group.Width = placement.Width;
+                    group.Height = placement.Height;
+                    if (group.RolledUp)
+                        group.ExpandedHeight = placement.Height;
+                    else
+                        group.ExpandedHeight = placement.Height;
+                    _windows.FirstOrDefault(w => w.Model.Id == placement.Id)?.ApplyModelLayout();
+                }
+                DiagnosticsLog.Info($"Auto monitor rehome: {changes.Length} placements updated; " +
+                    $"offscreen={plan.RelocatedCount}; overlap-unavoidable={plan.OverlapUnavoidable}; " +
+                    $"surviving-monitors={survivingMonitors.Count}; " +
+                    $"saved-target-profile={targetProfile is not null}; checkpoint={Path.GetFileName(checkpoint)}");
+            }
+            else DiagnosticsLog.Info($"Auto monitor rehome: all {_state.Fences.Count} groups already in surviving screen bounds.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Automatic monitor reduction rehome failed; falling back to existing layout recovery", ex);
+            return false;
+        }
+    }
+
     private void ApplyInitialLayoutAdjustment()
     {
+        // Cold launch after unplug: use the last saved multi-monitor profile
+        // when this one-monitor configuration has no saved layout yet.
+        var monitors = MonitorConfigurationService.CaptureMonitors();
+        var activeProfile = _state.MonitorProfiles.FirstOrDefault(p =>
+            string.Equals(p.Signature, _activeMonitorSignature, StringComparison.Ordinal));
+        if (_state.Settings.LayoutAdjustmentMode != DeckLayoutAdjustmentMode.None &&
+            activeProfile is null)
+        {
+            var oldProfile = _state.MonitorProfiles.Where(p =>
+                MonitorDisconnectLayoutPlanner.IsMonitorReduction(
+                    p.Monitors.Count, monitors.Count))
+                .OrderByDescending(p => p.UpdatedUtc).FirstOrDefault();
+            if (oldProfile is not null &&
+                TryRehomeGroupsAfterMonitorReduction(oldProfile, null, monitors))
+                return;
+        }
         switch (_state.Settings.LayoutAdjustmentMode)
         {
             case DeckLayoutAdjustmentMode.PerMonitor:
