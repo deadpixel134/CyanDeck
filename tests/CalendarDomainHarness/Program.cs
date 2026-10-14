@@ -279,6 +279,74 @@ var crowded = Enumerable.Range(0, 10).Select(i => new CalendarEvent
 var crowdedBars = WeekBarLayout.Build(sunday, crowded);
 Assert.That(crowdedBars.Count == 10 && crowdedBars.Select(x => x.Lane).Distinct().Count() == 10,
     "ten simultaneous events get distinct visible rows");
+// Regression: all-day bars on Wednesday/Thursday must not push Tuesday's
+// time-specific events down. A three-day and two-day all-day overlap has two
+// distinct, continuous lanes only on the affected dates.
+var localWeekStart = new DateTime(2026, 10, 11); // Sunday
+var tue13 = localWeekStart.AddDays(2);
+var wed14 = localWeekStart.AddDays(3);
+var thu15 = localWeekStart.AddDays(4);
+var fri16 = localWeekStart.AddDays(5);
+var sat17 = localWeekStart.AddDays(6);
+var weekOffset = TimeZoneInfo.Local.GetUtcOffset(tue13);
+CalendarEvent TimedEvent(DateTime date, int hour, string title) => new()
+{
+    Date = date, Title = title,
+    StartAt = new DateTimeOffset(date.Year, date.Month, date.Day, hour, 0, 0, weekOffset),
+    EndAt = new DateTimeOffset(date.Year, date.Month, date.Day, hour + 1, 0, 0, weekOffset)
+};
+var tueMorning = TimedEvent(tue13, 10, "Tuesday 10");
+var tueAfternoon = TimedEvent(tue13, 13, "Tuesday 13");
+var tueEvening = TimedEvent(tue13, 22, "Tuesday 22");
+var wedTimed = TimedEvent(wed14, 11, "Wednesday timed");
+var thuTimed = TimedEvent(thu15, 11, "Thursday timed");
+var satTimed = TimedEvent(sat17, 11, "Saturday timed");
+var threeDayAllDay = new CalendarEvent { Date = wed14, EndDate = fri16, Title = "3-day all-day" };
+var twoDayAllDay = new CalendarEvent { Date = thu15, EndDate = fri16, Title = "2-day all-day" };
+var independentDates = WeekBarLayout.Build(localWeekStart,
+    [tueEvening, twoDayAllDay, satTimed, thuTimed, tueMorning, threeDayAllDay, wedTimed, tueAfternoon]);
+int LaneOf(IReadOnlyList<WeekBar> bars, CalendarEvent calendarEvent) =>
+    bars.Single(x => ReferenceEquals(x.Event, calendarEvent)).Lane;
+Assert.That(LaneOf(independentDates, tueMorning) == 0 &&
+    LaneOf(independentDates, tueAfternoon) == 1 &&
+    LaneOf(independentDates, tueEvening) == 2,
+    "Tuesday timed items begin at the top despite later all-day spans and preserve time order");
+Assert.That(LaneOf(independentDates, threeDayAllDay) == 0 &&
+    LaneOf(independentDates, twoDayAllDay) == 1 &&
+    independentDates.Single(x => ReferenceEquals(x.Event, threeDayAllDay)).ColumnSpan == 3 &&
+    independentDates.Single(x => ReferenceEquals(x.Event, twoDayAllDay)).ColumnSpan == 2,
+    "overlapping three-day and two-day all-day bars remain continuous in separate lanes");
+Assert.That(LaneOf(independentDates, wedTimed) == 1 &&
+    LaneOf(independentDates, thuTimed) == 2 &&
+    LaneOf(independentDates, satTimed) == 0,
+    "a date's timed entries begin below only the all-day lanes on that date");
+// Staggered ranges: B's lane stays fixed even after A ends. An empty lower
+// lane on Saturday must not cause the B bar to jump or timed items to overlap.
+var staggerA = new CalendarEvent { Date = wed14, EndDate = fri16, Title = "A: Wed-Fri" };
+var staggerB = new CalendarEvent { Date = fri16, EndDate = sat17, Title = "B: Fri-Sat" };
+var staggered = WeekBarLayout.Build(localWeekStart, [satTimed, staggerB, staggerA]);
+Assert.That(LaneOf(staggered, staggerA) == 0 &&
+    LaneOf(staggered, staggerB) == 1 &&
+    LaneOf(staggered, satTimed) == 2,
+    "staggered all-day events retain their multi-day lanes; Saturday timed event clears remaining bar");
+// A timed bar spanning Thursday and Friday must clear every all-day lane on
+// both dates, including a two-day event beginning after the timed start date.
+var thuToFriTimed = new CalendarEvent
+{
+    Date = thu15, Title = "Timed Thursday-Friday",
+    StartAt = new DateTimeOffset(thu15.Year, thu15.Month, thu15.Day, 23, 0, 0, weekOffset),
+    EndAt = new DateTimeOffset(sat17.Year, sat17.Month, sat17.Day, 0, 0, 0, weekOffset)
+};
+var spanWithTimed = WeekBarLayout.Build(localWeekStart, [threeDayAllDay, twoDayAllDay, thuToFriTimed]);
+Assert.That(LaneOf(spanWithTimed, thuToFriTimed) == 2 &&
+    spanWithTimed.Single(x => ReferenceEquals(x.Event, thuToFriTimed)).ColumnSpan == 2,
+    "a timed multi-day bar stays below all-day occupancy throughout its full column span");
+// No per-day cross-talk after crossing into a different calendar week.
+var nextSundayTimed = TimedEvent(localWeekStart.AddDays(7), 9, "Next Sunday");
+var nextWeek = WeekBarLayout.Build(localWeekStart.AddDays(7), [threeDayAllDay, twoDayAllDay, nextSundayTimed]);
+Assert.That(nextWeek.Count == 1 && LaneOf(nextWeek, nextSundayTimed) == 0,
+    "previous week's all-day occupancy does not affect the next week's dated items");
+
 // All-day bars take the top lanes; timed bars follow increasing local start time.
 // Unsorted input must not make the visible order depend on Google sync arrival.
 var localOffsetForSorting = TimeZoneInfo.Local.GetUtcOffset(monday);

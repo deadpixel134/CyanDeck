@@ -138,6 +138,6 @@ jobs:
           (cd release-assets && sha256sum -- *.zip *.exe > SHA256SUMS.txt)
           gh release create "$tag" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
             --title "CyanDeck $tag (Beta)" \
-            --notes "CyanDeck EXE-only beta: RSA-PSS update verification key and independent update/rollback installer are embedded in CyanDeck.exe. Direct Windows x64 CyanDeck.exe and CyanDeck-ARM64.exe (rename to CyanDeck.exe) are provided. Existing v8.0.4 EXE-only installations without a PEM require one manual EXE replacement; never disable signature verification. Stable users do not receive prereleases." \
+            --notes "CyanDeck v8.0.9 Beta fixes week calendar placement: all-day multi-date bars remain continuous in their lane, while unrelated dates' timed events start at the top and overlapping dates clear only their own all-day lanes. Includes EXE-only distribution, embedded signed-update trust key and updater script, x64/ARM64 builds. Stable users do not receive prereleases." \
             release-assets/*.zip release-assets/*.exe release-assets/*.update.json release-assets/SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == true)')" = true
