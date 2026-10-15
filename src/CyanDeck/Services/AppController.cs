@@ -3619,6 +3619,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         DeckMonitorLayoutProfile? targetProfile,
         IReadOnlyList<DeckMonitorDescriptor> survivingMonitors)
     {
+        List<DeckFencePlacement>? beforeMutation = null;
         try
         {
             if (survivingMonitors.Count == 0 || _state.Fences.Count == 0)
@@ -3665,11 +3666,14 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             {
                 var checkpoint = _store.SaveRecoveryCheckpoint(_state,
                     "before-auto-monitor-reduction-" + Guid.NewGuid().ToString("N"));
-                if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint))
+                if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint) ||
+                    new FileInfo(checkpoint).Length == 0)
                 {
-                    DiagnosticsLog.Warn("Auto monitor rehome skipped: durable recovery checkpoint unavailable.");
-                    return false;
+                    _monitorProfileRestoreBlockedSignature = _activeMonitorSignature;
+                    DiagnosticsLog.Warn("Auto monitor rehome skipped: durable recovery checkpoint unavailable; refusing unsafe fallback.");
+                    return true; // Handled as fail-closed: never mutate layout without a checkpoint.
                 }
+                beforeMutation = CapturePlacements();
                 var byId = _state.Fences.ToDictionary(f => f.Id);
                 foreach (var placement in changes)
                 {
@@ -3691,8 +3695,20 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
         catch (Exception ex)
         {
-            DiagnosticsLog.Error("Automatic monitor reduction rehome failed; falling back to existing layout recovery", ex);
-            return false;
+            // A partial WPF layout update must not be persisted as the only
+            // good monitor profile, nor pass into a second uncheckpointed
+            // EnsureVisibleOnMonitor fallback.
+            _monitorProfileRestoreBlockedSignature = _activeMonitorSignature;
+            if (beforeMutation is not null)
+            {
+                try { ApplyPlacements(beforeMutation); }
+                catch (Exception rollbackEx)
+                {
+                    DiagnosticsLog.Error("Automatic monitor reduction rollback failed", rollbackEx);
+                }
+            }
+            DiagnosticsLog.Error("Automatic monitor reduction blocked; original profile kept", ex);
+            return true; // Intentionally suppress the unsafe fallback.
         }
     }
 
