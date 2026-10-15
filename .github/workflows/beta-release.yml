@@ -81,7 +81,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Recycle safety failed.' }
           python tools/test_cyandeck_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Identity test failed.' }
-          foreach ($name in @('CalendarDomainHarness','FenceVisibilityHarness','WatcherLifetimeHarness')) {
+          foreach ($name in @('CalendarDomainHarness','FenceVisibilityHarness','WatcherLifetimeHarness','CompleteResetHarness')) {
             dotnet run --project "tests/$name/$name.csproj" -c Release
             if ($LASTEXITCODE -ne 0) { throw "Domain tests failed: $name" }
           }
@@ -145,6 +145,6 @@ jobs:
           (cd release-assets && sha256sum -- *.zip *.exe > SHA256SUMS.txt)
           gh release create "$tag" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
             --title "CyanDeck $tag (Beta)" \
-            --notes "CyanDeck v8.0.22 Beta repairs the Program Reset settings text, verifies restorable settings and layout backups plus nonempty recovery checkpoints before applying resets, and preserves existing state when backup verification fails. Failed factory resets now attempt a durable rollback. New reset safety regressions run in CI. Calendar events, Google OAuth data, desktop files and the separate full settings reset behavior are unchanged." \
+            --notes "CyanDeck v8.0.23 Beta adds an explicitly confirmed complete LOCAL profile reset alongside the existing data-preserving factory reset. A second process verifies a short-lived one-time request and purges CyanDeck roaming settings, local events, OAuth tokens, backups and logs, then offers first-run setup. Windows Desktop source files and events on Google servers remain intact. Disposable filesystem reset tests run on both Windows architectures." \
             release-assets/*.zip release-assets/*.exe release-assets/*.update.json release-assets/SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == true)')" = true
