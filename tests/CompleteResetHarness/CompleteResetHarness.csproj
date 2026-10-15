@@ -8,5 +8,6 @@
   <ItemGroup>
     <Compile Include="../../src/CyanDeck/Services/CompleteLocalResetService.cs" Link="Production/CompleteLocalResetService.cs" />
     <Compile Include="../../src/CyanDeck/Services/FirstRunOnboardingPolicy.cs" Link="Production/FirstRunOnboardingPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/FailedUpdateRetryPolicy.cs" Link="Production/FailedUpdateRetryPolicy.cs" />
   </ItemGroup>
 </Project>
