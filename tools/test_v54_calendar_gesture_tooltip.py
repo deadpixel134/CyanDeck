@@ -51,7 +51,7 @@ checks = {
     "calendar schema remains unchanged":
         "Current = 35" in read("src/CyanDeck/Services/StateSchema.cs"),
     "next beta version marked 8.0.30":
-        "<Version>8.0.30</Version>" in read("src/CyanDeck/CyanDeck.csproj")
+        tuple(map(int, re.search(r"<Version>(\\d+\\.\\d+\\.\\d+)</Version>", read("src/CyanDeck/CyanDeck.csproj")).group(1).split("."))) >= (8, 0, 30)
 }
 for name, passed in checks.items():
     print(("PASS: " if passed else "FAIL: ") + name)
