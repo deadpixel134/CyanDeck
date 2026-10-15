@@ -67,7 +67,7 @@ checks={
         all('Click="'+action+'"' in xaml for action in
             ["Apply_Click","Ok_Click","Cancel_Click"]),
     "v8.0.32 appearance navigation is data-migration free":
-        "<Version>8.0.32</Version>" in project and
+        tuple(map(int,re.search(r"<Version>(\d+\.\d+\.\d+)</Version>", project).group(1).split("."))) >= (8,0,32) and
         "Current = 35" in read("src/CyanDeck/Services/StateSchema.cs"),
 }
 for k,v in checks.items():print(("PASS" if v else "FAIL")+": "+k)
