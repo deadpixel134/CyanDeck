@@ -322,6 +322,7 @@ public partial class SettingsWindow : Window
         CalendarTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         SystemIconsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         GroupsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGroups");
+        StandaloneAppearanceCard.IsEnabled = GroupsTab.IsEnabled;
         SwapScreenContentsButton.IsEnabled = !_safeMode && !_compatibilityReadOnly && _isManagedCapabilityAllowed("Layout.SwapScreenContents");
         ImportConfigurationButton.IsEnabled = _isManagedCapabilityAllowed("ImportExport.Import");
         FactoryResetButton.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
