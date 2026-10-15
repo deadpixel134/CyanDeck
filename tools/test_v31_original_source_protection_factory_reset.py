@@ -51,7 +51,8 @@ checks={
 'factory reset handler wired to controller': ('ResetCyanDeckToDefaults);' in a or
     ('ResetCyanDeckToDefaults,' in a and
      ('ResetVisualGeometryToDefaults);' in a or
-      'ResetVisualGeometryToDefaults, ResetAllWindowGeometryToDefaults);' in a))) and
+      'ResetVisualGeometryToDefaults, ResetAllWindowGeometryToDefaults);' in a or
+      '(resetGroups, resetCalendar) => ResetVisualGeometryToDefaults(resetGroups, resetCalendar)' in a))) and
     'private readonly Func<bool> _factoryReset;' in c and
     'private readonly Func<bool, bool, bool> _resetPlacement;' in c,
 'reset requires user confirmation': 'MessageBoxButton.YesNo' in reset and "'초기화'" in reset,
