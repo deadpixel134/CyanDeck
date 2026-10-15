@@ -126,6 +126,7 @@ public partial class SettingsWindow : Window
         LastUpdateCheckText.Text = state.Settings.LastUpdateCheckUtc is DateTime lastUpdate
             ? $"마지막 업데이트 확인: {lastUpdate.ToLocalTime():g}"
             : "마지막 업데이트 확인: 없음";
+        RefreshUpdateDiagnostics();
         CrashLoopProtectionCheck.IsChecked = state.Settings.EnableCrashLoopProtection;
         CrashLoopThresholdSlider.Value = state.Settings.CrashLoopThreshold;
         CrashLoopWindowSlider.Value = state.Settings.CrashLoopWindowMinutes;
@@ -1096,7 +1097,37 @@ public partial class SettingsWindow : Window
         if (!ApplyChanges()) return;
         await _checkForUpdates();
         LastUpdateCheckText.Text = _state.Settings.LastUpdateCheckUtc is DateTime lastUpdate ? $"마지막 업데이트 확인: {lastUpdate.ToLocalTime():g}" : "마지막 업데이트 확인: 없음";
+        RefreshUpdateDiagnostics();
     }
+    private void RefreshUpdateDiagnostics()
+    {
+        var result = UpdateFailureDiagnostics.Inspect(DataRootPaths.ActiveLocal, DateTime.UtcNow);
+        UpdateFailureSummaryText.Text = result.Text +
+            (UpdateService.HasPendingRecovery() ? "\\n미완료 업데이트 복구 기록 있음 · 새 설치 전 복구 필요" : "");
+        OpenUpdateFailureLogButton.IsEnabled = result.HasLog;
+    }
+
+    private void RefreshUpdateDiagnostics_Click(object sender, RoutedEventArgs e)
+        => RefreshUpdateDiagnostics();
+
+    private void OpenUpdateFailureLog_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var summary = UpdateFailureDiagnostics.Inspect(DataRootPaths.ActiveLocal, DateTime.UtcNow);
+            if (!summary.HasLog) { RefreshUpdateDiagnostics(); return; }
+            var path = UpdateFailureDiagnostics.LogPath(DataRootPaths.ActiveLocal);
+            var process = new System.Diagnostics.ProcessStartInfo("notepad.exe",
+                "\"" + path + "\"") { UseShellExecute = true };
+            System.Diagnostics.Process.Start(process);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "업데이트 오류 로그를 열지 못했습니다.\\n" + ex.Message,
+                "CyanDeck 업데이트 진단", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void RollbackUpdate_Click(object sender, RoutedEventArgs e) => _rollbackLastUpdate();
     private void ResetStartupHealth_Click(object sender, RoutedEventArgs e)
     {
