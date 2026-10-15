@@ -36,6 +36,14 @@ public sealed class CalendarWindow : Window
     private readonly List<Grid> _renderedWeekRows = new();
     private double _dayHeadingHeight = 24;
     private readonly ScrollViewer _weekScroll;
+    // One shared hint for the empty date surface, the day number and the
+    // scroll viewport. Describe only gestures actually implemented below.
+    private const string EmptyDateInteractionHelp =
+        "빈 날짜 더블클릭 → 새 일정 추가\n" +
+        "기존 일정 더블클릭 → 일정 수정 (읽기 전용 일정 제외)\n" +
+        "일정 막대 우클릭 → 배경색·글자색 변경\n" +
+        "수정 가능한 일정 막대를 왼쪽 버튼으로 1초 누른 채 드래그 → 날짜 이동\n" +
+        "마우스 휠·터치 스크롤 → 다른 주 보기";
     private DateTime _visibleMonth = DateTime.Today;
     private readonly SolidColorBrush _frameBackground = new();
     private readonly SolidColorBrush _dayBackground = new();
@@ -122,7 +130,7 @@ public sealed class CalendarWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             PanningMode = PanningMode.VerticalOnly,
-            ToolTip = "일정이 화면보다 많을 때는 마우스 휠이나 터치 스크롤로 다른 주를 볼 수 있습니다."
+            ToolTip = EmptyDateInteractionHelp
         };
         // ScrollViewer measures StackPanel content with unbounded vertical space.
         // Stretch normal weeks to fill the viewport. Dense event lanes can
@@ -260,7 +268,7 @@ public sealed class CalendarWindow : Window
         DockPanel.SetDock(grip, Dock.Right); footer.Children.Add(grip);
         _status.Foreground = new SolidColorBrush(Color.FromRgb(168, 185, 205));
         _status.FontSize = 11;
-        _status.Text = "날짜 두 번 클릭: 추가 · 일정 두 번 클릭: 수정 · 2초 누르기: 이동";
+        _status.Text = "빈 날짜 더블클릭: 추가 · 일정 더블클릭: 수정 · 일정 우클릭: 색상 · 일정 1초 누른 채 드래그: 이동";
         _status.TextTrimming = TextTrimming.CharacterEllipsis;
         footer.Children.Add(_status);
         Grid.SetRow(footer, 2); _root.Children.Add(footer);
@@ -403,6 +411,7 @@ public sealed class CalendarWindow : Window
                 var isToday = date.Date == DateTime.Today;
                 var dayCell = new Border { Margin = new Thickness(1, 0, 1, 0), CornerRadius = new CornerRadius(4),
                     Background = isToday ? _todayBackground : _dayBackground,
+                    ToolTip = EmptyDateInteractionHelp,
                     BorderThickness = isToday ? new Thickness(1.5) : new Thickness(0.5),
                     BorderBrush = isToday ? TodayOutline : new SolidColorBrush(Color.FromRgb(55, 64, 80)) };
                 dayCell.MouseLeftButtonDown += (_, e) =>
@@ -419,7 +428,8 @@ public sealed class CalendarWindow : Window
                         _settings.CalendarViewMode == "Month" && date.Month != _visibleMonth.Month),
                     FontWeight = date.Date == DateTime.Today ? FontWeights.Bold : FontWeights.Normal,
                     FontSize = dateFontSize,
-                    Cursor = Cursors.Hand
+                    Cursor = Cursors.Hand,
+                    ToolTip = EmptyDateInteractionHelp
                 };
                 number.MouseLeftButtonDown += (_, e) =>
                 {
