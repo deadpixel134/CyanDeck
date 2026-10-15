@@ -1,3 +1,10 @@
+using CyanDeck.Calendar;
+using CyanDeck.Services;
+using System.Text.Json;
+using System.IO.Compression;
+using System.Net;
+using System.Net.Http;
+
 // First-run setup must be offered only when it cannot overwrite user state.
 var setupRoot = Path.Combine(Path.GetTempPath(), "cyandeck-first-run-" + Guid.NewGuid().ToString("N"));
 Assert.That(FirstRunOnboardingPolicy.ShouldOffer(setupRoot), "new install gets guided setup");
@@ -32,12 +39,6 @@ try
 }
 finally { Directory.Delete(setupRoot, recursive: true); }
 
-using CyanDeck.Calendar;
-using CyanDeck.Services;
-using System.Text.Json;
-using System.IO.Compression;
-using System.Net;
-using System.Net.Http;
 
 // ZIP contents are security boundaries even after the manifest signature:
 // reject side-by-side roots, duplicate names, traversal, and alternate EXEs.
