@@ -314,6 +314,11 @@ public partial class SettingsWindow : Window
     private void ApplyManagedPolicyRestrictions()
     {
         GeneralTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
+        InteractionTab.IsEnabled = GeneralTab.IsEnabled;
+        AppearanceTab.IsEnabled = GeneralTab.IsEnabled;
+        AnimationTab.IsEnabled = GeneralTab.IsEnabled;
+        PerformanceTab.IsEnabled = GeneralTab.IsEnabled;
+        LayoutTab.IsEnabled = GeneralTab.IsEnabled;
         CalendarTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         SystemIconsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         GroupsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGroups");
@@ -721,6 +726,11 @@ public partial class SettingsWindow : Window
         var tab = parts[0] switch
         {
             "GeneralTab" => GeneralTab,
+            "InteractionTab" => InteractionTab,
+            "AppearanceTab" => AppearanceTab,
+            "AnimationTab" => AnimationTab,
+            "PerformanceTab" => PerformanceTab,
+            "LayoutTab" => LayoutTab,
             "CalendarTab" => CalendarTab,
             "SystemIconsTab" => SystemIconsTab,
             "GroupsTab" => GroupsTab,
@@ -769,11 +779,18 @@ public partial class SettingsWindow : Window
         // Unlike the previous coarse tab-only search, results link directly to a section.
         var aliases = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["DesktopSection"] = "바탕화면 아이콘 자동 분류 썸네일 프리뷰 onedrive 단축 아이콘 가져오기",
+            ["DesktopSection"] = "바탕화면 자동 분류 시작 프로그램 onedrive 새 항목 가져오기",
+            ["DesktopIconStyleSection"] = "아이콘 썸네일 미리보기 배지 바로가기 화살표 파일 폴더 모양 외관",
+            ["GroupChromeSection"] = "그룹 헤더 제목줄 제목 표시 버튼 스크롤바 비활성",
+            ["PageAnimationSection"] = "애니메이션 페이지 전환 이징 시간 부드럽게 바운스",
+            ["ItemAnimationSection"] = "애니메이션 아이콘 이동 효과 항목 배치 시간 최대 항목 수",
+            ["LoadingPerformanceSection"] = "성능 대량 작업 확인 폴더 포털 로딩 캐시",
+            ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 표시 숨김",
+            ["BackupSection"] = "백업 내보내기 가져오기 복원",
             ["TabsSection"] = "탭 전환 클릭 포인터 호버 그룹 접기 마우스",
             ["GesturesSection"] = "제스처 페이지 마우스 터치 휠 드래그 스와이프",
             ["PeekSection"] = "peek 핫코너 빠른 숨김 quick hide",
-            ["PerformanceSection"] = "캐시 스크롤바 최적화 백그라운드 성능 애니메이션 저장 복구",
+            ["PerformanceSection"] = "성능 저장 지연 Peek 화면 작업영역 복구",
             ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온",
             ["SnapshotsSection"] = "레이아웃 백업 모니터 스냅샷 자동 조정",
             ["ResetSection"] = "초기화 복구 백업 가져오기 내보내기",
