@@ -40,7 +40,7 @@ checks={
      'x:Name="FactoryResetButton"' in ui,
  'routing is exercised by compiled domain harness': 'trayCases' in harness and
      'TrayMenuRoutingPolicy.Route(id, label)' in harness,
- 'version 8.0.24; schema unchanged': '<Version>8.0.24</Version>' in read('src/CyanDeck/CyanDeck.csproj') and
+ 'tray UX release or later; schema unchanged': tuple(map(int, __import__('re').search(r'<Version>(\d+\.\d+\.\d+)</Version>', read('src/CyanDeck/CyanDeck.csproj')).group(1).split('.'))) >= (8, 0, 24) and
      'Current = 35' in read('src/CyanDeck/Services/StateSchema.cs'),
 }
 for k,v in checks.items(): print(('PASS' if v else 'FAIL')+': '+k)
