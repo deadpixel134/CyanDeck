@@ -45,6 +45,7 @@ public partial class SettingsWindow : Window
     private readonly Action _addSystemIconGroup;
     private readonly Action _resetStandaloneRecycleBinPosition;
     private readonly Func<bool> _factoryReset;
+    private readonly Func<bool> _completeLocalReset;
     private readonly Func<bool, bool, bool> _resetPlacement;
     private readonly Func<bool> _resetAllWindowGeometry;
     private readonly Dictionary<Guid, GroupDraft> _drafts = new();
@@ -60,7 +61,8 @@ public partial class SettingsWindow : Window
 
     public SettingsWindow(DeckState state, Func<bool> apply, Action applyRulesNow, Action export, Func<bool> import, Action resetMonitorLayouts, Action automaticLayout, Action swapScreenContents, Action clearIconCache, Action validateConfiguration, Action openSettingsFolder, Action openDiagnosticLogs, Action createDiagnosticBundle, Action openSettingsAuditLog, Action runSelfTest, Func<Task> checkForUpdates, Action rollbackLastUpdate, Action restartSafeMode, Action restartNormal, bool safeMode, bool compatibilityReadOnly, Func<string, bool> isManagedSettingLocked, Func<string, bool> isManagedCapabilityAllowed, Func<string> getManagedPolicyStatus, Action reloadManagedPolicy,
         Action addSystemIconGroup, Action resetStandaloneRecycleBinPosition, Func<bool> factoryReset,
-        Func<bool, bool, bool> resetPlacement, Func<bool> resetAllWindowGeometry)
+        Func<bool, bool, bool> resetPlacement, Func<bool> resetAllWindowGeometry,
+        Func<bool> completeLocalReset)
     {
         _state = state;
         _apply = apply;
@@ -89,6 +91,7 @@ public partial class SettingsWindow : Window
         _addSystemIconGroup = addSystemIconGroup;
         _resetStandaloneRecycleBinPosition = resetStandaloneRecycleBinPosition;
         _factoryReset = factoryReset;
+        _completeLocalReset = completeLocalReset ?? throw new ArgumentNullException(nameof(completeLocalReset));
         _resetPlacement = resetPlacement ?? throw new ArgumentNullException(nameof(resetPlacement));
         _resetAllWindowGeometry = resetAllWindowGeometry ?? throw new ArgumentNullException(nameof(resetAllWindowGeometry));
         _reloadManagedPolicy = reloadManagedPolicy ?? throw new ArgumentNullException(nameof(reloadManagedPolicy));
@@ -106,6 +109,7 @@ public partial class SettingsWindow : Window
         RestartNormalButton.IsEnabled = safeMode;
         FactoryResetButton.IsEnabled = !compatibilityReadOnly && !_safeMode &&
             _isManagedCapabilityAllowed("ImportExport.Import") && _isManagedCapabilityAllowed("Settings.EditGeneral");
+        CompleteLocalResetButton.IsEnabled = FactoryResetButton.IsEnabled;
         ResetPlacementButton.IsEnabled = !compatibilityReadOnly && !_safeMode;
         ResetAllWindowGeometryButton.IsEnabled = !compatibilityReadOnly && !_safeMode &&
             _isManagedCapabilityAllowed("Layout.MoveResizeGroups") &&
@@ -316,6 +320,7 @@ public partial class SettingsWindow : Window
         ImportConfigurationButton.IsEnabled = _isManagedCapabilityAllowed("ImportExport.Import");
         FactoryResetButton.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
             _isManagedCapabilityAllowed("ImportExport.Import") && _isManagedCapabilityAllowed("Settings.EditGeneral");
+        CompleteLocalResetButton.IsEnabled = FactoryResetButton.IsEnabled;
         ResetGroupGeometryCheck.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
             _isManagedCapabilityAllowed("Layout.MoveResizeGroups");
         ResetCalendarGeometryCheck.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
@@ -771,7 +776,7 @@ public partial class SettingsWindow : Window
             ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온",
             ["SnapshotsSection"] = "레이아웃 백업 모니터 스냅샷 자동 조정",
             ["ResetSection"] = "초기화 복구 백업 가져오기 내보내기",
-            ["FactoryResetSection"] = "프로그램 초기화 모든 창 위치 크기 배치 그룹 복원 삭제된 그룹 빠진 아이콘 캘린더 초기 설정 전체 프로그램 공장 초기화 백업",
+            ["FactoryResetSection"] = "프로그램 초기화 모든 창 위치 크기 배치 그룹 복원 삭제된 그룹 빠진 아이콘 캘린더 초기 설정 전체 프로그램 공장 초기화 백업 개인정보 데이터 삭제 완전 초기화 계정 로그아웃 로컬 일정",
             ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
             ["CalendarSection"] = "달력 캘린더 calendar 배경색 투명도 크기 날짜",
             ["StandaloneSection"] = "개별 독립 아이콘 카멜레온 불투명도",
@@ -1124,6 +1129,12 @@ public partial class SettingsWindow : Window
         if (_compatibilityReadOnly || _safeMode || !_isManagedCapabilityAllowed("ImportExport.Import") ||
             !_isManagedCapabilityAllowed("Settings.EditGeneral")) return;
         if (_factoryReset() && IsVisible) Close();
+    }
+
+    private void CompleteLocalReset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_compatibilityReadOnly || _safeMode || !CompleteLocalResetButton.IsEnabled) return;
+        if (_completeLocalReset() && IsVisible) Close();
     }
 
     private void RestartSafeMode_Click(object sender, RoutedEventArgs e) => _restartSafeMode();
