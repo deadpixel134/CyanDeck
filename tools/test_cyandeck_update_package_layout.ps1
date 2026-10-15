@@ -62,6 +62,11 @@ try {
   foreach ($fixture in $fixtures) {
     $zip = New-FixtureZip $fixture.name $fixture.files
     Invoke-Update $zip $false
+    $failedHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    $failureMarker = Join-Path $env:LOCALAPPDATA ('CyanDeck\updates\failed-' + $failedHash + '.txt')
+    if (-not (Test-Path -LiteralPath $failureMarker -PathType Leaf)) {
+      throw "Rejected package did not record its exact failed digest: $($fixture.name)"
+    }
     $after = (Get-FileHash -LiteralPath (Join-Path $installed 'CyanDeck.exe') -Algorithm SHA256).Hash
     if ($after -cne $before) { throw "Rejected package changed installed EXE: $($fixture.name)" }
     if (-not (Test-Path -LiteralPath (Join-Path $installed 'user-notes.txt'))) {
@@ -76,7 +81,16 @@ try {
     'CyanDeck-test-win-x64/CyanDeck.exe'='new-exe'
     'CyanDeck-test-win-x64/README.md'='test-only readme'
   })
+  # Confirm a successful retry of the same digest clears its old failure
+  # marker without removing anything in the disposable installation profile.
+  $validHash = (Get-FileHash -LiteralPath $valid -Algorithm SHA256).Hash.ToLowerInvariant()
+  $successfulMarker = Join-Path $env:LOCALAPPDATA ('CyanDeck\updates\failed-' + $validHash + '.txt')
+  New-Item -ItemType Directory -Path (Split-Path -Parent $successfulMarker) -Force | Out-Null
+  Set-Content -LiteralPath $successfulMarker -Value 'older failure'
   Invoke-Update $valid $true
+  if (Test-Path -LiteralPath $successfulMarker) {
+    throw 'Successful update failed to remove the exact package retry marker.'
+  }
   if ((Get-Content -LiteralPath (Join-Path $installed 'CyanDeck.exe') -Raw).Trim() -ne 'new-exe') {
     throw 'Valid wrapped package was not installed.'
   }
