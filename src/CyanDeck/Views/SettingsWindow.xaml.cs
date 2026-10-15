@@ -1103,7 +1103,7 @@ public partial class SettingsWindow : Window
     {
         var result = UpdateFailureDiagnostics.Inspect(DataRootPaths.ActiveLocal, DateTime.UtcNow);
         UpdateFailureSummaryText.Text = result.Text +
-            (UpdateService.HasPendingRecovery() ? "\\n미완료 업데이트 복구 기록 있음 · 새 설치 전 복구 필요" : "");
+            (UpdateService.HasPendingRecovery() ? Environment.NewLine + "미완료 업데이트 복구 기록 있음 · 새 설치 전 복구 필요" : "");
         OpenUpdateFailureLogButton.IsEnabled = result.HasLog;
     }
 
@@ -1123,7 +1123,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "업데이트 오류 로그를 열지 못했습니다.\\n" + ex.Message,
+            MessageBox.Show(this, "업데이트 오류 로그를 열지 못했습니다." + Environment.NewLine + ex.Message,
                 "CyanDeck 업데이트 진단", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
