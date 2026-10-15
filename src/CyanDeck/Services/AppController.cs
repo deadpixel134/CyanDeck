@@ -4398,7 +4398,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         var original = menu.Items.Cast<Forms.ToolStripItem>()
             .Where(item => item is not Forms.ToolStripSeparator).ToArray();
-        menu.Items.Clear();
+        // Detach, do not Clear/clone: WinForms owns each item and we must
+        // keep the original Click handlers, Enabled and Checked state.
+        foreach (var item in original) menu.Items.Remove(item);
+        foreach (Forms.ToolStripItem separator in menu.Items.Cast<Forms.ToolStripItem>().ToArray())
+            menu.Items.Remove(separator);
 
         var calendar = new Forms.ToolStripMenuItem("캘린더");
         var groups = new Forms.ToolStripMenuItem("그룹 및 화면");
