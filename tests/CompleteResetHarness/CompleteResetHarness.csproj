@@ -10,5 +10,6 @@
     <Compile Include="../../src/CyanDeck/Services/FirstRunOnboardingPolicy.cs" Link="Production/FirstRunOnboardingPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/FailedUpdateRetryPolicy.cs" Link="Production/FailedUpdateRetryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/UpdateFailureDiagnostics.cs" Link="Production/UpdateFailureDiagnostics.cs" />
+    <Compile Include="../../src/CyanDeck/Services/WindowsSessionExitPolicy.cs" Link="Production/WindowsSessionExitPolicy.cs" />
   </ItemGroup>
 </Project>
