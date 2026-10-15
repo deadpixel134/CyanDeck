@@ -10,6 +10,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using CyanDeck.Models;
 using CyanDeck.Services;
+using Forms = System.Windows.Forms;
 
 namespace CyanDeck.Calendar;
 
@@ -20,6 +21,7 @@ public sealed class CalendarWindow : Window
     private readonly DeckSettings _settings;
     private readonly CalendarEventStore _store;
     private readonly CalendarPreferencesStore _preferences;
+    private readonly CalendarEventAppearanceStore _eventAppearance = new();
     private readonly Action _onPositionChanged;
     private readonly Func<Task> _sync;
     private readonly Func<CancellationToken, bool, Task<IReadOnlyList<GoogleCalendarSource>>> _loadSources;
@@ -428,7 +430,11 @@ public sealed class CalendarWindow : Window
             }
             foreach (var bar in bars)
             {
-                var brush = ParseColor(_preferences.ColorFor(bar.Event.CalendarId));
+                var appearance = _eventAppearance.Get(bar.Event.Id);
+                var brush = ParseColor(appearance.BackgroundColor ??
+                    _preferences.ColorFor(bar.Event.CalendarId));
+                var fontColor = appearance.TextColor is { } customText
+                    ? ParseColor(customText) : Colors.White;
                 var line = new Border
                 {
                     CornerRadius = new CornerRadius(3), Margin = new Thickness(2, 1, 2, 1),
@@ -437,7 +443,7 @@ public sealed class CalendarWindow : Window
                 };
                 var name = (bar.Event.Conflict ? "⚠ " : "") + bar.Event.Title;
                 if (bar.Event.StartAt is { } time) name = time.ToLocalTime().ToString("HH:mm") + " " + name;
-                line.Child = new TextBlock { Text = name, Foreground = Brushes.White, FontSize = eventFontSize,
+                line.Child = new TextBlock { Text = name, Foreground = new SolidColorBrush(fontColor), FontSize = eventFontSize,
                     TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(4, 0, 3, 0) };
                 line.MouseLeftButtonDown += (_, e) =>
                 {
@@ -449,9 +455,13 @@ public sealed class CalendarWindow : Window
                     else if (e.ClickCount == 1 && e.ChangedButton == MouseButton.Left)
                         BeginEventMoveHold(bar.Event, line, e.GetPosition(_body));
                 };
+                // Every calendar event supports visual-only appearance settings,
+                // including read-only Google and deterministic holiday feed events.
+                // These never mark Google events Dirty or send calendar API calls.
+                var menu = CreateEventAppearanceMenu(bar.Event);
+                line.MouseRightButtonDown += (_, _) => CancelEventMove();
                 if (bar.Event.Conflict)
                 {
-                    var menu = new ContextMenu();
                     if (bar.Event.RemoteId is not null && !bar.Event.RemoteCreatePending)
                     {
                         var restore = new MenuItem { Header = "Google 원격 버전으로 복원 (로컬 변경 취소)" };
@@ -477,8 +487,8 @@ public sealed class CalendarWindow : Window
                         };
                         menu.Items.Add(retry);
                     }
-                    line.ContextMenu = menu;
                 }
+                line.ContextMenu = menu;
                 Grid.SetColumn(line, bar.StartColumn); Grid.SetColumnSpan(line, bar.ColumnSpan);
                 Grid.SetRow(line, bar.Lane + 1); grid.Children.Add(line);
             }
@@ -487,6 +497,111 @@ public sealed class CalendarWindow : Window
         }
         StretchWeekRowsToViewport();
         ApplyCalendarAppearance();
+    }
+
+    private ContextMenu CreateEventAppearanceMenu(CalendarEvent ev)
+    {
+        var menu = new ContextMenu();
+        var baseStyle = _eventAppearance.Get(ev.Id);
+        var canEdit = !_eventAppearance.IsReadOnly;
+        AddColorSubmenu(menu, ev, "배경색 변경", background: true,
+            baseStyle.BackgroundColor, canEdit);
+        AddColorSubmenu(menu, ev, "글자색 변경", background: false,
+            baseStyle.TextColor, canEdit);
+        var reset = new MenuItem { Header = "색상 모두 기본값으로", IsEnabled = canEdit };
+        reset.Click += (_, _) => SaveEventAppearance(ev, null, null);
+        menu.Items.Add(reset);
+        if (!canEdit)
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(new MenuItem
+            {
+                Header = "색상 설정 저장소가 읽기 전용입니다. 진단 로그를 확인하세요.",
+                IsEnabled = false
+            });
+        }
+        menu.Items.Add(new Separator());
+        return menu;
+    }
+
+    private void AddColorSubmenu(ContextMenu menu, CalendarEvent ev, string title,
+        bool background, string? selectedColor, bool canEdit)
+    {
+        var submenu = new MenuItem { Header = title, IsEnabled = canEdit };
+        var palette = new (string Name, string Hex)[]
+        {
+            ("빨강", "#F83A22"), ("주황", "#FFB347"), ("노랑", "#FFD166"),
+            ("초록", "#78D390"), ("청록", "#26B7A9"), ("파랑", "#5D91DD"),
+            ("보라", "#A48FFF"), ("분홍", "#E58CCB"), ("흰색", "#FFFFFF"),
+            ("검정", "#101318"), ("회색", "#708090"), ("짙은 남색", "#273B62")
+        };
+        foreach (var (name, hex) in palette)
+        {
+            var swatch = new System.Windows.Shapes.Rectangle
+            {
+                Width = 13, Height = 13,
+                Fill = new SolidColorBrush(ParseColor(hex)),
+                Stroke = Brushes.Gray, StrokeThickness = 0.5,
+                Margin = new Thickness(0, 0, 5, 0)
+            };
+            var item = new MenuItem
+            {
+                Header = name + " (" + hex + ")",
+                Icon = swatch,
+                IsChecked = string.Equals(selectedColor, hex, StringComparison.OrdinalIgnoreCase)
+            };
+            var chosenColor = hex;
+            item.Click += (_, _) => ChangeEventColor(ev, background, chosenColor);
+            submenu.Items.Add(item);
+        }
+        submenu.Items.Add(new Separator());
+        var custom = new MenuItem { Header = "사용자 지정 색상…" };
+        custom.Click += (_, _) =>
+        {
+            try
+            {
+                var style = _eventAppearance.Get(ev.Id);
+                var defaultColor = background ? _preferences.ColorFor(ev.CalendarId) : "#FFFFFF";
+                var initial = background ? style.BackgroundColor : style.TextColor;
+                using var dialog = new Forms.ColorDialog
+                {
+                    FullOpen = true, AnyColor = true,
+                    Color = System.Drawing.ColorTranslator.FromHtml(initial ?? defaultColor)
+                };
+                if (dialog.ShowDialog() == Forms.DialogResult.OK)
+                    ChangeEventColor(ev, background,
+                        $"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}");
+            }
+            catch (Exception ex) { SetStatus("사용자 지정 색상 오류: " + ex.Message); }
+        };
+        submenu.Items.Add(custom);
+        var clear = new MenuItem { Header = "이 색상만 기본값으로 복원" };
+        clear.Click += (_, _) => ChangeEventColor(ev, background, null);
+        submenu.Items.Add(clear);
+        menu.Items.Add(submenu);
+    }
+
+    private void ChangeEventColor(CalendarEvent ev, bool background, string? selected)
+    {
+        var style = _eventAppearance.Get(ev.Id);
+        SaveEventAppearance(ev,
+            background ? selected : style.BackgroundColor,
+            background ? style.TextColor : selected);
+    }
+
+    private void SaveEventAppearance(CalendarEvent ev, string? background, string? textColor)
+    {
+        try
+        {
+            _eventAppearance.Set(ev.Id, background, textColor);
+            SetStatus("일정 표시 색상 저장 완료 · 로컬 표시 설정만 변경 (Google 일정 원본 유지)");
+            RenderMonth();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Calendar event-local appearance update failed", ex);
+            SetStatus("일정 색상 저장 실패: " + ex.Message);
+        }
     }
 
     private bool CanRelocateEvent(CalendarEvent ev, out string reason)
@@ -542,14 +657,17 @@ public sealed class CalendarWindow : Window
             StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 3, 2 },
             Fill = Brushes.Transparent, IsHitTestVisible = false
         };
-        var color = ParseColor(_preferences.ColorFor(ev.CalendarId));
+        var eventStyle = _eventAppearance.Get(ev.Id);
+        var color = ParseColor(eventStyle.BackgroundColor ?? _preferences.ColorFor(ev.CalendarId));
+        var ghostTextColor = eventStyle.TextColor is { } customText
+            ? ParseColor(customText) : Colors.White;
         _moveGhost = new Border
         {
             Width = Math.Max(80, bar.ActualWidth), Height = Math.Max(21, bar.ActualHeight),
             Background = new SolidColorBrush(color), BorderBrush = Brushes.White,
             BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
             Opacity = 0.85, IsHitTestVisible = false,
-            Child = new TextBlock { Text = ev.Title, Foreground = Brushes.White,
+            Child = new TextBlock { Text = ev.Title, Foreground = new SolidColorBrush(ghostTextColor),
                 FontSize = Math.Clamp(_settings.CalendarEventFontSize, 9, 24),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 6, 0) }
