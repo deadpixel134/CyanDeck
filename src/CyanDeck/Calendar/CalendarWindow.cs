@@ -462,6 +462,7 @@ public sealed class CalendarWindow : Window
                 line.MouseRightButtonDown += (_, _) => CancelEventMove();
                 if (bar.Event.Conflict)
                 {
+                    menu.Items.Add(new Separator());
                     if (bar.Event.RemoteId is not null && !bar.Event.RemoteCreatePending)
                     {
                         var restore = new MenuItem { Header = "Google 원격 버전으로 복원 (로컬 변경 취소)" };
@@ -520,7 +521,6 @@ public sealed class CalendarWindow : Window
                 IsEnabled = false
             });
         }
-        menu.Items.Add(new Separator());
         return menu;
     }
 
