@@ -27,6 +27,7 @@ scripts = [
   'test_v53_event_appearance_update_diagnostics.py',
   'test_v54_calendar_gesture_tooltip.py',
   'test_v55_settings_information_architecture.py',
+  'test_v56_group_editor_appearance_navigation.py',
   'test_full_source_structure.py',
 ]
 results = []
