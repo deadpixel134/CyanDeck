@@ -49,7 +49,9 @@ checks={
 'all-window reset exposed independently from destructive group restore': 'ResetAllWindowGeometryButton' in x and 'ResetAllWindowGeometry_Click' in c and 'ResetAllWindowGeometryToDefaults' in a and 'resetGroupContent: false' in a,
 'tray menu categorizes commands without discarding callbacks': 'CompactTrayMenu(menu);' in a and 'var calendar = new Forms.ToolStripMenuItem("캘린더")' in a and 'var recovery = new Forms.ToolStripMenuItem("백업 및 복구")' in a,
 'factory reset handler wired to controller': ('ResetCyanDeckToDefaults);' in a or
-    ('ResetCyanDeckToDefaults,' in a and 'ResetVisualGeometryToDefaults);' in a)) and
+    ('ResetCyanDeckToDefaults,' in a and
+     ('ResetVisualGeometryToDefaults);' in a or
+      'ResetVisualGeometryToDefaults, ResetAllWindowGeometryToDefaults);' in a))) and
     'private readonly Func<bool> _factoryReset;' in c and
     'private readonly Func<bool, bool, bool> _resetPlacement;' in c,
 'reset requires user confirmation': 'MessageBoxButton.YesNo' in reset and "'초기화'" in reset,
