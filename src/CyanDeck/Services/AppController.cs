@@ -3928,6 +3928,71 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     }
 
 
+    // Explicit user action only; not part of automatic display/Explorer repair
+    // or the group-to-monitor recovery pipeline. Prevents an unnecessary
+    // calendar Z-order retry when the desktop surface is already healthy.
+    private void RecoverVisibleSurfacesFromTray()
+    {
+        if (_disposed) return;
+        var plan = DisplaySurfaceRecoveryPlan.Create(
+            _safeMode,
+            _state.Settings.EnableCyanDeck,
+            _desktopRuntimeStarted,
+            _state.Settings.EnableCalendar,
+            _displayTransition?.IsStableForUserLayoutAction != false);
+        if (plan.BlockedByDisplayTransition)
+        {
+            _trayController?.ShowBalloonTip(4500, "CyanDeck 표시 복구",
+                "모니터 변경 처리가 진행 중입니다. 화면이 안정된 뒤 다시 실행하세요.",
+                Forms.ToolTipIcon.Warning);
+            return;
+        }
+        if (!plan.HasWork)
+        {
+            _trayController?.ShowBalloonTip(4500, "CyanDeck 표시 복구",
+                "복구할 그룹 또는 캘린더가 활성화되어 있지 않습니다.",
+                Forms.ToolTipIcon.Info);
+            return;
+        }
+
+        var groupsRepaired = false;
+        var calendarResult = "";
+        try
+        {
+            if (plan.RepairGroups)
+            {
+                RecoverDesktopVisibility();
+                groupsRepaired = true;
+            }
+            if (plan.InspectCalendar)
+            {
+                StartCalendarModule();
+                if (_calendar?.IsSurfaceVisible == true)
+                    calendarResult = "캘린더 표시 정상";
+                else if (_calendar?.TryRepairVisibleSurface() == true)
+                    calendarResult = "캘린더 표시 복구 완료";
+                else
+                    calendarResult = "캘린더 표시 실패 또는 재시도 제한 — 캘린더 상태 진단 확인";
+            }
+            var groupResult = groupsRepaired ? "그룹 표시 복구 완료" : "";
+            var result = string.Join(" · ", new[] { groupResult, calendarResult }
+                .Where(value => !string.IsNullOrEmpty(value)));
+            DiagnosticsLog.Info("Tray surface recovery: " + result);
+            _trayController?.ShowBalloonTip(5000, "CyanDeck 표시 복구",
+                result,
+                calendarResult.Contains("실패", StringComparison.Ordinal)
+                    ? Forms.ToolTipIcon.Warning : Forms.ToolTipIcon.Info);
+            RebuildTrayMenu();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Unified tray visibility recovery failed", ex);
+            _trayController?.ShowBalloonTip(5000, "CyanDeck 표시 복구 실패",
+                "표시 상태 진단을 확인하세요. 기존 그룹과 일정 데이터는 변경하지 않았습니다.",
+                Forms.ToolTipIcon.Warning);
+        }
+    }
+
     private void RecoverDesktopVisibility()
     {
         if (_safeMode) return;
@@ -4138,6 +4203,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(OpenCalendarStandaloneWindow)));
         menu.Items.Add("캘린더 위치 초기화 / 표시 복구", null, (_, _) =>
             QueueTrayDialog(ResetCalendarPositionAndRepair));
+        // Available in combined and calendar-only modes. The command respects
+        // display-transition barriers and the calendar's 15-second retry limit.
+        if (!_safeMode && (_state.Settings.EnableCyanDeck || _state.Settings.EnableCalendar))
+            menu.Items.Add("표시 상태 복구", null, (_, _) =>
+                _dispatcher.BeginInvoke(DispatcherPriority.Background,
+                    new Action(RecoverVisibleSurfacesFromTray)));
         menu.Items.Add("Windows Explorer 기본 아이콘 긴급 복구", null, (_, _) =>
             _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RescueNativeExplorerIcons)));
         if (UpdateService.HasPendingRecovery())
@@ -4240,7 +4311,6 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             menu.Items.Add(templates);
         }
         menu.Items.Add("바탕화면 분류 규칙 다시 적용", null, (_, _) => _dispatcher.Invoke(ApplyRulesNow));
-        menu.Items.Add("표시 상태 복구", null, (_, _) => _dispatcher.Invoke(RecoverDesktopVisibility));
         var pages = new Forms.ToolStripMenuItem($"바탕화면 페이지 (페이지 {_state.CurrentPage + 1})");
         for (var page = 0; page <= GetMaxPage(); page++)
         {
