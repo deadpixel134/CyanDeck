@@ -6,6 +6,7 @@ using System.Windows;
 using CyanDeck.Services;
 using CyanDeck.Views;
 using CyanDeck.Models;
+using Microsoft.Win32;
 using Forms = System.Windows.Forms;
 
 namespace CyanDeck;
@@ -41,6 +42,35 @@ public partial class App : Application
                 : peekToggle ? "peek-toggle" : "activate");
             Shutdown();
             return;
+        }
+
+        // Only the user-confirmed, token-authorized second process can erase
+        // local application state, after the previous instance has stopped.
+        var completeResetTicket = GetOptionValue(e.Args, "--complete-local-reset");
+        if (completeResetTicket is not null)
+        {
+            try
+            {
+                CompleteLocalResetService.ExecutePending(DataRootPaths.ActiveRoaming, completeResetTicket);
+                try
+                {
+                    using var key = Registry.CurrentUser.OpenSubKey(
+                        @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+                    key?.DeleteValue("CyanDeck", throwOnMissingValue: false);
+                }
+                catch (Exception startupEx)
+                {
+                    MessageBox.Show("사용자 데이터는 삭제했지만 Windows 자동 시작 항목을 지우지 못했습니다.\n" +
+                        startupEx.Message, "CyanDeck 완전 초기화", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception resetEx)
+            {
+                MessageBox.Show("완전 초기화에 실패했습니다. 데이터 보호를 위해 앱을 시작하지 않습니다.\n\n" +
+                    resetEx.Message, "CyanDeck 완전 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+                return;
+            }
         }
 
         // Do not create desktop group or calendar HWNDs until auto-update preflight
@@ -235,7 +265,8 @@ public partial class App : Application
         try
         {
             using var process = System.Diagnostics.Process.GetProcessById(pid);
-            process.WaitForExit(8000);
+            process.WaitForExit(args.Any(a => string.Equals(a, "--complete-local-reset",
+                StringComparison.OrdinalIgnoreCase)) ? 25000 : 8000);
         }
         catch { }
     }
