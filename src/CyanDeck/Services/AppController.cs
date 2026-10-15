@@ -4482,7 +4482,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             return;
         }
         var settings = new SettingsWindow(_state, ApplySettingsChanges, ApplyRulesNow, ExportConfiguration, ImportConfiguration, ResetSavedMonitorLayouts, PerformAutomaticLayout, OpenMonitorContentSwapDialog, ClearIconCache, ValidateAndRepairConfiguration, OpenSettingsFolder, OpenDiagnosticLogs, CreateDiagnosticBundle, OpenSettingsAuditLog, RunSelfTest, CheckForUpdatesInteractiveAsync, RollbackLastUpdate, () => Restart(true), () => Restart(false), _safeMode, _compatibilityReadOnly, IsManagedSettingLocked, IsManagedCapabilityAllowed, GetManagedPolicyStatusText, ReloadManagedPolicyInteractive,
-            AddSystemIconGroup, ResetStandaloneRecycleBinPosition, ResetCyanDeckToDefaults);
+            AddSystemIconGroup, ResetStandaloneRecycleBinPosition, ResetCyanDeckToDefaults,
+            ResetVisualGeometryToDefaults);
         DiagnosticsLog.Info("Settings dialog opening after tray/context-menu dispatch");
         settings.ShowDialog();
         DiagnosticsLog.Info("Settings dialog closed");
@@ -4772,6 +4773,137 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             DiagnosticsLog.Error("Failed to import CyanDeck configuration", ex);
             System.Windows.MessageBox.Show(ex.Message, "CyanDeck 가져오기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reset visible geometry ONLY. Never replace group content or calendar data.
+    /// A durable full-state export and a recovery checkpoint are mandatory.
+    /// Models are changed before a forced durable save; HWNDs are not moved
+    /// until the relaunched process reads the new layout.
+    /// </summary>
+    private bool ResetVisualGeometryToDefaults(bool groups, bool calendar)
+    {
+        if ((!groups && !calendar) || _safeMode || _compatibilityReadOnly ||
+            _disposed || (_displayTransition?.IsStableForUserLayoutAction == false) ||
+            _monitorContentSwapInProgress) return false;
+        if (groups && !EnsureManagedCapability("Layout.MoveResizeGroups", "그룹 위치 초기화"))
+            return false;
+        if (calendar && !EnsureManagedCapability("Settings.EditGeneral", "캘린더 위치 초기화"))
+            return false;
+
+        var what = groups && calendar ? "그룹 위치·크기·접힘 상태와 캘린더 위치·크기"
+            : groups ? "그룹 위치·크기·접힘 상태" : "캘린더 위치·크기";
+        if (System.Windows.MessageBox.Show(
+            $"{what}를 기본값으로 되돌리시겠습니까?\\n\\n" +
+            "그룹 이름·탭·아이콘·정리 규칙과 캘린더 일정·Google 계정·개인 설정은 변경하지 않습니다.\\n" +
+            "기존 배치를 백업하며 완료 후 CyanDeck을 재시작합니다.\\n" +
+            "설정 창에서 아직 적용하지 않은 편집 내용은 저장되지 않습니다.",
+            "CyanDeck — 위치 및 크기 초기화", MessageBoxButton.YesNo,
+            MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
+
+        string? backup = null;
+        List<DeckFencePlacement>? previous = null;
+        List<DeckMonitorLayoutProfile>? monitorProfiles = null;
+        var oldCalendarLeft = _state.Settings.CalendarLeft;
+        var oldCalendarTop = _state.Settings.CalendarTop;
+        var oldCalendarWidth = _state.Settings.CalendarWidth;
+        var oldCalendarHeight = _state.Settings.CalendarHeight;
+        var oldPage = _state.CurrentPage;
+        try
+        {
+            // Include the latest on-screen positions in the exported rollback.
+            if (_desktopRuntimeStarted)
+                CaptureMonitorProfile();
+            var backupDir = Path.Combine(_store.SettingsFolder, "reset-backups");
+            Directory.CreateDirectory(backupDir);
+            backup = Path.Combine(backupDir,
+                $"CyanDeck-before-position-reset-{DateTime.Now:yyyyMMdd-HHmmss-fff}.json");
+            _store.Export(_state, backup);
+            if (!File.Exists(backup) || new FileInfo(backup).Length == 0)
+                throw new IOException("원본 레이아웃 백업을 생성하지 못했습니다.");
+            var checkpoint = _store.SaveRecoveryCheckpoint(_state, "before-geometry-reset");
+            if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint))
+                throw new IOException("레이아웃 복구 체크포인트를 만들지 못했습니다.");
+
+            previous = CapturePlacements();
+            monitorProfiles = _state.MonitorProfiles.ToList();
+            if (groups)
+            {
+                var work = SystemParameters.WorkArea; // Primary display, DIPs.
+                var primary = new MonitorGroupRecoveryPlanner.WorkArea(
+                    work.Left, work.Top, work.Width, work.Height);
+                var models = _state.Fences.Select(f =>
+                    new InitialGeometryResetPolicy.ExistingGroup(
+                        f.Id, f.PageIndex, f.ShowOnAllPages)).ToArray();
+                var plan = InitialGeometryResetPolicy.Plan(
+                    primary, models, _state.Settings.GroupSnapGap);
+                var fences = _state.Fences.ToDictionary(f => f.Id);
+                foreach (var placement in plan.Placements)
+                {
+                    var fence = fences[placement.Id];
+                    fence.X = placement.X;
+                    fence.Y = placement.Y;
+                    fence.Width = placement.Width;
+                    fence.Height = placement.Height;
+                    fence.ExpandedHeight = placement.Height;
+                    fence.RolledUp = false;
+                    fence.RollupDockEdge = DeckRollupDockEdge.None;
+                    // Preserve IDs, titles, tab contents, rules, desktop pages,
+                    // group visibility, group locks and all per-icon coordinates.
+                }
+                _state.CurrentPage = 0;
+                // Old per-monitor profiles override reset positions on startup.
+                // Remove them only from live state; export/checkpoint keeps them.
+                _state.MonitorProfiles.Clear();
+                DiagnosticsLog.Info($"Group geometry reset planned: count={plan.Placements.Count}; " +
+                    $"overlap-unavoidable={plan.OverlapUnavoidable}");
+            }
+            if (calendar)
+            {
+                var defaults = InitialGeometryResetPolicy.CalendarDefaults;
+                _state.Settings.CalendarLeft = defaults.Left;
+                _state.Settings.CalendarTop = defaults.Top;
+                _state.Settings.CalendarWidth = defaults.Width;
+                _state.Settings.CalendarHeight = defaults.Height;
+            }
+            PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true);
+            DiagnosticsLog.Info($"Visual geometry reset durably saved: groups={groups}; " +
+                $"calendar={calendar}; backup={backup}; checkpoint={checkpoint}");
+            System.Windows.MessageBox.Show(
+                $"선택한 위치·크기를 초기화했습니다.\\n\\n" +
+                $"복구 백업: {backup}\\n프로그램을 다시 시작합니다.",
+                "CyanDeck 위치 초기화 완료", MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Restart(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Visual geometry reset failed", ex);
+            // Restore the live models so a later auto-save cannot silently
+            // commit a partially reset desktop.
+            if (previous is not null)
+            {
+                try { ApplyPlacements(previous); }
+                catch (Exception restoreError)
+                { DiagnosticsLog.Error("Group geometry rollback failed", restoreError); }
+            }
+            if (monitorProfiles is not null)
+                _state.MonitorProfiles = monitorProfiles;
+            _state.CurrentPage = oldPage;
+            _state.Settings.CalendarLeft = oldCalendarLeft;
+            _state.Settings.CalendarTop = oldCalendarTop;
+            _state.Settings.CalendarWidth = oldCalendarWidth;
+            _state.Settings.CalendarHeight = oldCalendarHeight;
+            _persistTimer?.Stop();
+            try { PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true); }
+            catch (Exception rollbackEx) { DiagnosticsLog.Error("Geometry rollback save failed; exported backup still available", rollbackEx); }
+            System.Windows.MessageBox.Show(
+                $"위치 초기화에 실패했습니다. 기존 배치로 복원했습니다.\\n" +
+                $"백업: {backup ?? "생성 실패"}\\n\\n{ex.Message}",
+                "CyanDeck 위치 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
     }

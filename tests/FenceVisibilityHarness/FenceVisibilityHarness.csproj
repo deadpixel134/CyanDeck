@@ -11,6 +11,8 @@
     <Compile Include="../../src/CyanDeck/Services/DesktopShowDesktopRecoveryPolicy.cs" Link="Production/DesktopShowDesktopRecoveryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/NativeDesktopIconRecoveryPolicy.cs" Link="Production/NativeDesktopIconRecoveryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/MonitorDisconnectLayoutPlanner.cs" Link="Production/MonitorDisconnectLayoutPlanner.cs" />
+    <Compile Include="../../src/CyanDeck/Layout/MonitorGroupRecoveryPlanner.cs" Link="Production/MonitorGroupRecoveryPlanner.cs" />
+    <Compile Include="../../src/CyanDeck/Layout/InitialGeometryResetPolicy.cs" Link="Production/InitialGeometryResetPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Appearance/LooseIconOpacityPolicy.cs" Link="Production/LooseIconOpacityPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TabSwitchActivationPolicy.cs" Link="Production/TabSwitchActivationPolicy.cs" />
   </ItemGroup>

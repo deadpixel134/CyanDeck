@@ -45,6 +45,7 @@ public partial class SettingsWindow : Window
     private readonly Action _addSystemIconGroup;
     private readonly Action _resetStandaloneRecycleBinPosition;
     private readonly Func<bool> _factoryReset;
+    private readonly Func<bool, bool, bool> _resetPlacement;
     private readonly Dictionary<Guid, GroupDraft> _drafts = new();
     private DeckFence? _currentFence;
     private bool _loading;
@@ -57,7 +58,8 @@ public partial class SettingsWindow : Window
         string? TabId = null);
 
     public SettingsWindow(DeckState state, Func<bool> apply, Action applyRulesNow, Action export, Func<bool> import, Action resetMonitorLayouts, Action automaticLayout, Action swapScreenContents, Action clearIconCache, Action validateConfiguration, Action openSettingsFolder, Action openDiagnosticLogs, Action createDiagnosticBundle, Action openSettingsAuditLog, Action runSelfTest, Func<Task> checkForUpdates, Action rollbackLastUpdate, Action restartSafeMode, Action restartNormal, bool safeMode, bool compatibilityReadOnly, Func<string, bool> isManagedSettingLocked, Func<string, bool> isManagedCapabilityAllowed, Func<string> getManagedPolicyStatus, Action reloadManagedPolicy,
-        Action addSystemIconGroup, Action resetStandaloneRecycleBinPosition, Func<bool> factoryReset)
+        Action addSystemIconGroup, Action resetStandaloneRecycleBinPosition, Func<bool> factoryReset,
+        Func<bool, bool, bool> resetPlacement)
     {
         _state = state;
         _apply = apply;
@@ -86,6 +88,7 @@ public partial class SettingsWindow : Window
         _addSystemIconGroup = addSystemIconGroup;
         _resetStandaloneRecycleBinPosition = resetStandaloneRecycleBinPosition;
         _factoryReset = factoryReset;
+        _resetPlacement = resetPlacement ?? throw new ArgumentNullException(nameof(resetPlacement));
         _reloadManagedPolicy = reloadManagedPolicy ?? throw new ArgumentNullException(nameof(reloadManagedPolicy));
         InitializeComponent();
         Loaded += (_, _) => { if (SettingsNavigation.SelectedItem is null) NavGeneral.IsSelected = true; };
@@ -101,6 +104,9 @@ public partial class SettingsWindow : Window
         RestartNormalButton.IsEnabled = safeMode;
         FactoryResetButton.IsEnabled = !compatibilityReadOnly && !_safeMode &&
             _isManagedCapabilityAllowed("ImportExport.Import") && _isManagedCapabilityAllowed("Settings.EditGeneral");
+        ResetPlacementButton.IsEnabled = !compatibilityReadOnly && !_safeMode;
+        ResetGroupGeometryCheck.IsEnabled = _isManagedCapabilityAllowed("Layout.MoveResizeGroups");
+        ResetCalendarGeometryCheck.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         SwapScreenContentsButton.IsEnabled = !safeMode && !compatibilityReadOnly;
         AutomaticUpdateCheck.IsChecked = state.Settings.EnableAutomaticUpdateChecks || state.Settings.InstallUpdatesAutomatically;
         InstallUpdatesAutomaticallyCheck.IsChecked = state.Settings.InstallUpdatesAutomatically;
@@ -305,6 +311,11 @@ public partial class SettingsWindow : Window
         ImportConfigurationButton.IsEnabled = _isManagedCapabilityAllowed("ImportExport.Import");
         FactoryResetButton.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
             _isManagedCapabilityAllowed("ImportExport.Import") && _isManagedCapabilityAllowed("Settings.EditGeneral");
+        ResetGroupGeometryCheck.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
+            _isManagedCapabilityAllowed("Layout.MoveResizeGroups");
+        ResetCalendarGeometryCheck.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
+            _isManagedCapabilityAllowed("Settings.EditGeneral");
+        ResetPlacementButton.IsEnabled = ResetGroupGeometryCheck.IsEnabled || ResetCalendarGeometryCheck.IsEnabled;
         AutomaticLayoutButton.IsEnabled = !_safeMode && !_compatibilityReadOnly && _isManagedCapabilityAllowed("Layout.MoveResizeGroups");
         if (GroupEditor is not null)
             GroupEditor.IsEnabled = _currentFence is not null && _isManagedCapabilityAllowed("Settings.EditGroups") && _isManagedCapabilityAllowed("Appearance.Edit");
@@ -754,7 +765,7 @@ public partial class SettingsWindow : Window
             ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온",
             ["SnapshotsSection"] = "레이아웃 백업 모니터 스냅샷 자동 조정",
             ["ResetSection"] = "초기화 복구 백업 가져오기 내보내기",
-            ["FactoryResetSection"] = "프로그램 초기화 공장 초기화 기본값 백업",
+            ["FactoryResetSection"] = "프로그램 초기화 그룹 캘린더 위치 크기 접힘 배치 공장 초기화 기본값 백업",
             ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
             ["CalendarSection"] = "달력 캘린더 calendar 배경색 투명도 크기 날짜",
             ["StandaloneSection"] = "개별 독립 아이콘 카멜레온 불투명도",
@@ -1082,6 +1093,20 @@ public partial class SettingsWindow : Window
         StartupHealthText.Text = "최근 비정상 시작이 감지되지 않았습니다.";
         MessageBox.Show(this, "시작 충돌 반복 기록을 초기화했습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
     }
+    private void ResetPlacement_Click(object sender, RoutedEventArgs e)
+    {
+        if (_safeMode || _compatibilityReadOnly) return;
+        var groups = ResetGroupGeometryCheck.IsEnabled && ResetGroupGeometryCheck.IsChecked == true;
+        var calendar = ResetCalendarGeometryCheck.IsEnabled && ResetCalendarGeometryCheck.IsChecked == true;
+        if (!groups && !calendar)
+        {
+            MessageBox.Show(this, "초기화할 항목을 하나 이상 선택하세요.",
+                "CyanDeck 위치 초기화", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (_resetPlacement(groups, calendar) && IsVisible) Close();
+    }
+
     private void FactoryReset_Click(object sender, RoutedEventArgs e)
     {
         if (_compatibilityReadOnly || _safeMode || !_isManagedCapabilityAllowed("ImportExport.Import") ||

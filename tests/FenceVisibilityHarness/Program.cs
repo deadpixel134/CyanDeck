@@ -222,3 +222,31 @@ if (densePlan.Placements.Count != 5 || !densePlan.OverlapUnavoidable ||
         p.X + p.Width > 281 || p.Y + p.Height > 201))
     throw new Exception("Crowded monitor must have bounded fallback and a diagnostic overlap flag.");
 Console.WriteLine("PASS: monitor unplug automatic placement, saved layout, pages and crowded fallback");
+
+// Partial visual reset: only immutable geometry planning. Retain group IDs,
+// page assignments, and user content in the caller, with deterministic layout.
+var resetGroups = new[]
+{
+    new InitialGeometryResetPolicy.ExistingGroup(Guid.NewGuid(), 0, false),
+    new InitialGeometryResetPolicy.ExistingGroup(Guid.NewGuid(), 0, false),
+    new InitialGeometryResetPolicy.ExistingGroup(Guid.NewGuid(), 0, false),
+    new InitialGeometryResetPolicy.ExistingGroup(Guid.NewGuid(), 0, true),
+    new InitialGeometryResetPolicy.ExistingGroup(Guid.NewGuid(), 2, false)
+};
+var resetArea = new MonitorGroupRecoveryPlanner.WorkArea(0, 0, 1920, 1080);
+var restored = InitialGeometryResetPolicy.Plan(resetArea, resetGroups, 14);
+if (restored.Placements.Count != resetGroups.Length ||
+    restored.Placements.Select(p => p.Id).Distinct().Count() != resetGroups.Length ||
+    restored.Placements.Any(p => p.X < 0 || p.Y < 0 ||
+        p.X + p.Width > 1920 || p.Y + p.Height > 1080) ||
+    restored.OverlapUnavoidable)
+    throw new Exception("Initial position/size reset must be bounded, complete and collision-free.");
+var smallReset = InitialGeometryResetPolicy.Plan(
+    new MonitorGroupRecoveryPlanner.WorkArea(0, 0, 950, 620), resetGroups, 10);
+if (smallReset.Placements.Count != resetGroups.Length ||
+    smallReset.Placements.Any(p => p.Width <= 0 || p.Height <= 0))
+    throw new Exception("Small monitor layout reset must keep every group usable.");
+var defaultsGeometry = InitialGeometryResetPolicy.CalendarDefaults;
+if (defaultsGeometry != (120d, 110d, 650d, 510d))
+    throw new Exception("Calendar reset must restore only original window geometry.");
+Console.WriteLine("PASS: selective geometry reset on desktop groups and calendar defaults");
