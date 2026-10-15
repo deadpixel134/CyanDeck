@@ -77,6 +77,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private int _displayTransitionDeferredSaveCount;
     // Do not let an in-flight or shutdown-time snapshot capture stale pre-reset HWNDs.
     private bool _geometryResetPendingRestart;
+    // Exit() disposes the display bridge before OnExit/Dispose runs. Preserve
+    // the transition gate so shutdown never checkpoints a temporary layout.
+    private bool _exitDuringDisplayTransition;
     private DispatcherTimer? _persistTimer;
     private DesktopReconcileScheduler? _desktopReconcileScheduler;
     private DispatcherTimer? _dailyBackupTimer;
@@ -5844,6 +5847,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _managedPolicyWatcher = null;
         _quickHideStartupCoordinator?.Dispose();
         _quickHideStartupCoordinator = null;
+        _exitDuringDisplayTransition = _displayTransition?.IsStableForUserLayoutAction == false;
         _displayTransition?.Dispose();
         _displayTransition = null;
         _looseDesktopHost?.Dispose();
@@ -5867,8 +5871,26 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _calendar = null;
         foreach (var recovery in _showDesktopRecoveries.Values) recovery.Dispose();
         _showDesktopRecoveries.Clear();
-        try { PersistNow(force: true, bypassDisplayTransition: true); } catch { }
-        if (!_abnormalTermination)
+        var displayTransitionInProgress = _exitDuringDisplayTransition ||
+            _displayTransition?.IsStableForUserLayoutAction == false;
+        var shutdownSaveSucceeded = true;
+        if (displayTransitionInProgress)
+        {
+            // Never write a temporary one-monitor geometry over the last
+            // durable layout on exit. This is a normal exit; the stable
+            // checkpoint remains intact and available at next launch.
+            DiagnosticsLog.Warn("Shutdown during display transition: keeping last stable saved layout; temporary positions not persisted.");
+        }
+        else
+        {
+            try { PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true); }
+            catch (Exception ex)
+            {
+                shutdownSaveSucceeded = false;
+                DiagnosticsLog.Error("Shutdown layout checkpoint failed; session recovery marker retained", ex);
+            }
+        }
+        if (!_abnormalTermination && shutdownSaveSucceeded)
         {
             _store.EndSession();
             StartupHealthService.MarkCleanExit();
