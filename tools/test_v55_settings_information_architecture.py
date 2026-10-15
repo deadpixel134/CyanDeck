@@ -67,6 +67,9 @@ checks = {
         not has("GroupsTab", "StandaloneSection") and
         has("GroupsTab", "GroupEditorSection", "GroupEditor", "BackgroundColorBox",
             "TitleColorBox", "IconSizeSlider"),
+    "standalone icon appearance retains Settings.EditGroups managed policy":
+        has("AppearanceTab", "StandaloneAppearanceCard") and
+        "StandaloneAppearanceCard.IsEnabled = GroupsTab.IsEnabled;" in code,
     "all page and icon motion settings consolidated":
         has("AnimationTab", "PageAnimationSection", "AnimatePagesCheck",
             "EnhancedPageEasingCheck", "PageDurationSlider", "ItemAnimationSection",
