@@ -276,7 +276,7 @@
                         <DockPanel><TextBlock x:Name="IdleOpacityText" DockPanel.Dock="Right"/><Slider x:Name="IdleOpacitySlider" Minimum="0.15" Maximum="1" TickFrequency="0.05" ValueChanged="IdleOpacitySlider_ValueChanged"/></DockPanel>
                             </StackPanel>
                         </Border>
-                        <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
+                        <Border x:Name="StandaloneAppearanceCard" Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
                         <TextBlock x:Name="StandaloneSection" Text="단독 아이콘 투명도" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="StandaloneIconChameleonCheck" Content="단독 아이콘 카멜레온 사용 (그룹과 독립)" Margin="0,4,0,6"/>
