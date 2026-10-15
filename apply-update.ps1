@@ -500,6 +500,129 @@ if ($Relaunch) {
   if (Test-Path -LiteralPath $exe -PathType Leaf) { Start-Process -FilePath $exe }
 }
 $updateProgressSucceeded = $true
+# Successful recovery of a previously failed exact package removes its cooldown.
+if ($Package -and -not $RecoverPending -and -not $RollbackDir -and
+    $ExpectedSha256 -match '^[a-fA-F0-9]{64}
+  Write-Warning ("CyanDeck update failed: " + $updateProgressFailure)
+  if ($null -ne $updateProgressState) {
+    $updateProgressState.Failed = $true
+    $updateProgressState.FailureMessage = "The update could not be completed. Your existing data was not intentionally changed. Check the update log for details.`r`n`r`n" + $updateProgressFailure
+  }
+  try {
+    $logDir = Join-Path $env:LOCALAPPDATA 'CyanDeck\updates'
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    [IO.File]::AppendAllText((Join-Path $logDir 'last-update-error.log'),
+      ("[" + [DateTime]::UtcNow.ToString('o') + "] " + $updateProgressFailure + [Environment]::NewLine))
+    # Quarantine this exact failed SHA-256 for 12 hours of automatic startup
+    # attempts. Explicit manual installation, rollback and recovery still work.
+    if ($Package -and -not $RecoverPending -and -not $RollbackDir -and
+        $ExpectedSha256 -match '^[a-fA-F0-9]{64} the user on an empty desktop. Only relaunch
+  # if recovery is complete; never open an EXE while a pending journal remains.
+  if ($Relaunch) {
+    try {
+      $exe = Join-Path $InstallDir 'CyanDeck.exe'
+      if ((Test-Path -LiteralPath $exe -PathType Leaf) -and
+          (-not $journal -or -not (Test-Path -LiteralPath $journal))) {
+        Start-Process -FilePath $exe
+      }
+    } catch { Write-Warning ("Could not relaunch CyanDeck: " + $_.Exception.Message) }
+  }
+} finally {
+  if ($null -ne $updateProgressState) {
+    $updateProgressState.Stage = if ($updateProgressSucceeded) {
+      'Update complete. CyanDeck is restarting...'
+    } else {
+      'Update failed. See the displayed error and %LOCALAPPDATA%\CyanDeck\updates\last-update-error.log.'
+    }
+    Start-Sleep -Milliseconds $(if ($updateProgressSucceeded) { 800 } else { 250 })
+    $updateProgressState.Done = $true
+    Start-Sleep -Milliseconds 250
+  }
+}
+if ($null -ne $updateProgressFailure) { exit 1 }
+) {
+  try {
+    $failureMarker = Join-Path (Join-Path $env:LOCALAPPDATA 'CyanDeck\updates') ('failed-' + $ExpectedSha256.ToLowerInvariant() + '.txt')
+    if (Test-Path -LiteralPath $failureMarker -PathType Leaf) {
+      Remove-Item -LiteralPath $failureMarker -Force
+    }
+  } catch { Write-Warning 'Could not clear automatic-update retry marker.' }
+}
+} catch {
+  $updateProgressFailure = $_.Exception.Message
+  Write-Warning ("CyanDeck update failed: " + $updateProgressFailure)
+  if ($null -ne $updateProgressState) {
+    $updateProgressState.Failed = $true
+    $updateProgressState.FailureMessage = "The update could not be completed. Your existing data was not intentionally changed. Check the update log for details.`r`n`r`n" + $updateProgressFailure
+  }
+  try {
+    $logDir = Join-Path $env:LOCALAPPDATA 'CyanDeck\updates'
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    [IO.File]::AppendAllText((Join-Path $logDir 'last-update-error.log'),
+      ("[" + [DateTime]::UtcNow.ToString('o') + "] " + $updateProgressFailure + [Environment]::NewLine))
+  } catch { Write-Warning 'Could not persist updater failure log.' }
+  # A failed update must not strand the user on an empty desktop. Only relaunch
+  # if recovery is complete; never open an EXE while a pending journal remains.
+  if ($Relaunch) {
+    try {
+      $exe = Join-Path $InstallDir 'CyanDeck.exe'
+      if ((Test-Path -LiteralPath $exe -PathType Leaf) -and
+          (-not $journal -or -not (Test-Path -LiteralPath $journal))) {
+        Start-Process -FilePath $exe
+      }
+    } catch { Write-Warning ("Could not relaunch CyanDeck: " + $_.Exception.Message) }
+  }
+} finally {
+  if ($null -ne $updateProgressState) {
+    $updateProgressState.Stage = if ($updateProgressSucceeded) {
+      'Update complete. CyanDeck is restarting...'
+    } else {
+      'Update failed. See the displayed error and %LOCALAPPDATA%\CyanDeck\updates\last-update-error.log.'
+    }
+    Start-Sleep -Milliseconds $(if ($updateProgressSucceeded) { 800 } else { 250 })
+    $updateProgressState.Done = $true
+    Start-Sleep -Milliseconds 250
+  }
+}
+if ($null -ne $updateProgressFailure) { exit 1 }
+) {
+      $failureMarker = Join-Path $logDir ('failed-' + $ExpectedSha256.ToLowerInvariant() + '.txt')
+      [IO.File]::WriteAllText($failureMarker,
+        [DateTime]::UtcNow.ToString('o'), [Text.UTF8Encoding]::new($false))
+    }
+  } catch { Write-Warning 'Could not persist updater failure log or retry marker.' }
+  # A failed update must not strand the user on an empty desktop. Only relaunch
+  # if recovery is complete; never open an EXE while a pending journal remains.
+  if ($Relaunch) {
+    try {
+      $exe = Join-Path $InstallDir 'CyanDeck.exe'
+      if ((Test-Path -LiteralPath $exe -PathType Leaf) -and
+          (-not $journal -or -not (Test-Path -LiteralPath $journal))) {
+        Start-Process -FilePath $exe
+      }
+    } catch { Write-Warning ("Could not relaunch CyanDeck: " + $_.Exception.Message) }
+  }
+} finally {
+  if ($null -ne $updateProgressState) {
+    $updateProgressState.Stage = if ($updateProgressSucceeded) {
+      'Update complete. CyanDeck is restarting...'
+    } else {
+      'Update failed. See the displayed error and %LOCALAPPDATA%\CyanDeck\updates\last-update-error.log.'
+    }
+    Start-Sleep -Milliseconds $(if ($updateProgressSucceeded) { 800 } else { 250 })
+    $updateProgressState.Done = $true
+    Start-Sleep -Milliseconds 250
+  }
+}
+if ($null -ne $updateProgressFailure) { exit 1 }
+) {
+  try {
+    $failureMarker = Join-Path (Join-Path $env:LOCALAPPDATA 'CyanDeck\updates') ('failed-' + $ExpectedSha256.ToLowerInvariant() + '.txt')
+    if (Test-Path -LiteralPath $failureMarker -PathType Leaf) {
+      Remove-Item -LiteralPath $failureMarker -Force
+    }
+  } catch { Write-Warning 'Could not clear automatic-update retry marker.' }
+}
 } catch {
   $updateProgressFailure = $_.Exception.Message
   Write-Warning ("CyanDeck update failed: " + $updateProgressFailure)
