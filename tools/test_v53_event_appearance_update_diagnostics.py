@@ -65,7 +65,7 @@ checks={
     '"calendar-event-appearance.json.bak"' in onboarding,
   'calendar domain tests cover persistence/no sync effects':
     'originalCalendar.Events.Single().Dirty == false' in eventtests and
-    'appearance.Get(holidayId)' in eventtests and
+    'reopenedStyle.Get(holidayId)' in eventtests and
     'File.ReadAllText(eventPath) == originalEventJson' in eventtests,
   'calendar appearance production source compiled in domain test':
     'CalendarEventAppearanceStore.cs' in eventproj,
