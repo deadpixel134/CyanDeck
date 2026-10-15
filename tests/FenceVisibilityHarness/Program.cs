@@ -366,3 +366,28 @@ if (SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology("dual-screen", 2, "sin
     SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology("", 2, "", 2))
     throw new Exception("Stale or incomplete monitor snapshot was accepted.");
 Console.WriteLine("PASS: 9 monitor profile and settled topology safety assertions.");
+
+
+// Fast update checks must never create a transient HWND. Slow checks show a
+// readable status, and a user-requested skip cannot add a presentation delay.
+foreach (var checkComplete in new[] { false, true })
+foreach (var elapsedMilliseconds in new long[] { 0, 749, 750, 1000, 8000 })
+{
+    var showChecking = StartupUpdatePresentationPolicy.ShouldShowChecking(
+        checkComplete, elapsedMilliseconds);
+    var expectedChecking = !checkComplete &&
+        elapsedMilliseconds >= StartupUpdatePresentationPolicy.CheckingGraceMilliseconds;
+    if (showChecking != expectedChecking)
+        throw new Exception("Startup grace-based visibility mismatch.");
+}
+foreach (var elapsedMilliseconds in new long[] { -5, 0, 200, 949, 950, 2000 })
+foreach (var userSkipped in new[] { false, true })
+{
+    var remainingMs = StartupUpdatePresentationPolicy.RemainingVisibleMilliseconds(
+        elapsedMilliseconds, userSkipped);
+    var expectedRemaining = userSkipped ? 0 :
+        (int)Math.Max(0, 950 - Math.Max(0L, elapsedMilliseconds));
+    if (remainingMs != expectedRemaining)
+        throw new Exception("Startup anti-flash minimum visibility mismatch.");
+}
+Console.WriteLine("PASS: 22 startup update status anti-flash and explicit-skip cases");
