@@ -26,6 +26,7 @@ scripts = [
   'test_v52_update_retry_shutdown.py',
   'test_v53_event_appearance_update_diagnostics.py',
   'test_v54_calendar_gesture_tooltip.py',
+  'test_v55_settings_information_architecture.py',
   'test_full_source_structure.py',
 ]
 results = []
