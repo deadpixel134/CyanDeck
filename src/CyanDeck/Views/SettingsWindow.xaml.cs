@@ -46,6 +46,7 @@ public partial class SettingsWindow : Window
     private readonly Action _resetStandaloneRecycleBinPosition;
     private readonly Func<bool> _factoryReset;
     private readonly Func<bool, bool, bool> _resetPlacement;
+    private readonly Func<bool> _resetAllWindowGeometry;
     private readonly Dictionary<Guid, GroupDraft> _drafts = new();
     private DeckFence? _currentFence;
     private bool _loading;
@@ -59,7 +60,7 @@ public partial class SettingsWindow : Window
 
     public SettingsWindow(DeckState state, Func<bool> apply, Action applyRulesNow, Action export, Func<bool> import, Action resetMonitorLayouts, Action automaticLayout, Action swapScreenContents, Action clearIconCache, Action validateConfiguration, Action openSettingsFolder, Action openDiagnosticLogs, Action createDiagnosticBundle, Action openSettingsAuditLog, Action runSelfTest, Func<Task> checkForUpdates, Action rollbackLastUpdate, Action restartSafeMode, Action restartNormal, bool safeMode, bool compatibilityReadOnly, Func<string, bool> isManagedSettingLocked, Func<string, bool> isManagedCapabilityAllowed, Func<string> getManagedPolicyStatus, Action reloadManagedPolicy,
         Action addSystemIconGroup, Action resetStandaloneRecycleBinPosition, Func<bool> factoryReset,
-        Func<bool, bool, bool> resetPlacement)
+        Func<bool, bool, bool> resetPlacement, Func<bool> resetAllWindowGeometry)
     {
         _state = state;
         _apply = apply;
@@ -89,6 +90,7 @@ public partial class SettingsWindow : Window
         _resetStandaloneRecycleBinPosition = resetStandaloneRecycleBinPosition;
         _factoryReset = factoryReset;
         _resetPlacement = resetPlacement ?? throw new ArgumentNullException(nameof(resetPlacement));
+        _resetAllWindowGeometry = resetAllWindowGeometry ?? throw new ArgumentNullException(nameof(resetAllWindowGeometry));
         _reloadManagedPolicy = reloadManagedPolicy ?? throw new ArgumentNullException(nameof(reloadManagedPolicy));
         InitializeComponent();
         Loaded += (_, _) => { if (SettingsNavigation.SelectedItem is null) NavGeneral.IsSelected = true; };
@@ -105,6 +107,9 @@ public partial class SettingsWindow : Window
         FactoryResetButton.IsEnabled = !compatibilityReadOnly && !_safeMode &&
             _isManagedCapabilityAllowed("ImportExport.Import") && _isManagedCapabilityAllowed("Settings.EditGeneral");
         ResetPlacementButton.IsEnabled = !compatibilityReadOnly && !_safeMode;
+        ResetAllWindowGeometryButton.IsEnabled = !compatibilityReadOnly && !_safeMode &&
+            _isManagedCapabilityAllowed("Layout.MoveResizeGroups") &&
+            _isManagedCapabilityAllowed("Settings.EditGeneral");
         ResetGroupGeometryCheck.IsEnabled = _isManagedCapabilityAllowed("Layout.MoveResizeGroups");
         ResetCalendarGeometryCheck.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         SwapScreenContentsButton.IsEnabled = !safeMode && !compatibilityReadOnly;
@@ -316,6 +321,7 @@ public partial class SettingsWindow : Window
         ResetCalendarGeometryCheck.IsEnabled = !_safeMode && !_compatibilityReadOnly &&
             _isManagedCapabilityAllowed("Settings.EditGeneral");
         ResetPlacementButton.IsEnabled = ResetGroupGeometryCheck.IsEnabled || ResetCalendarGeometryCheck.IsEnabled;
+        ResetAllWindowGeometryButton.IsEnabled = ResetGroupGeometryCheck.IsEnabled && ResetCalendarGeometryCheck.IsEnabled;
         AutomaticLayoutButton.IsEnabled = !_safeMode && !_compatibilityReadOnly && _isManagedCapabilityAllowed("Layout.MoveResizeGroups");
         if (GroupEditor is not null)
             GroupEditor.IsEnabled = _currentFence is not null && _isManagedCapabilityAllowed("Settings.EditGroups") && _isManagedCapabilityAllowed("Appearance.Edit");
@@ -765,7 +771,7 @@ public partial class SettingsWindow : Window
             ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온",
             ["SnapshotsSection"] = "레이아웃 백업 모니터 스냅샷 자동 조정",
             ["ResetSection"] = "초기화 복구 백업 가져오기 내보내기",
-            ["FactoryResetSection"] = "프로그램 초기화 그룹 복원 삭제된 그룹 빠진 아이콘 다시 불러오기 캘린더 위치 크기 기본 구성 초기 설정 백업",
+            ["FactoryResetSection"] = "프로그램 초기화 모든 창 위치 크기 배치 그룹 복원 삭제된 그룹 빠진 아이콘 캘린더 초기 설정 전체 프로그램 공장 초기화 백업",
             ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
             ["CalendarSection"] = "달력 캘린더 calendar 배경색 투명도 크기 날짜",
             ["StandaloneSection"] = "개별 독립 아이콘 카멜레온 불투명도",
@@ -1093,6 +1099,12 @@ public partial class SettingsWindow : Window
         StartupHealthText.Text = "최근 비정상 시작이 감지되지 않았습니다.";
         MessageBox.Show(this, "시작 충돌 반복 기록을 초기화했습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
     }
+    private void ResetAllWindowGeometry_Click(object sender, RoutedEventArgs e)
+    {
+        if (_safeMode || _compatibilityReadOnly || !ResetAllWindowGeometryButton.IsEnabled) return;
+        if (_resetAllWindowGeometry() && IsVisible) Close();
+    }
+
     private void ResetPlacement_Click(object sender, RoutedEventArgs e)
     {
         if (_safeMode || _compatibilityReadOnly) return;

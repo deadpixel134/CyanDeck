@@ -145,6 +145,6 @@ jobs:
           (cd release-assets && sha256sum -- *.zip *.exe > SHA256SUMS.txt)
           gh release create "$tag" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
             --title "CyanDeck $tag (Beta)" \
-            --notes "CyanDeck v8.0.19 Beta: Settings > Program Reset now restores default App, Work, Media and Windows System Icon groups (including groups accidentally deleted), rescans actual Desktop/Public Desktop icons removed from groups, and independently resets calendar window position/size. User files, calendar events/accounts and other settings remain untouched, with full backup and checkpoint first. Restores missing Getting Started Guide tray entry for normal desktop-enabled use." \
+            --notes "CyanDeck v8.0.20 Beta offers a one-click reset of all group window and calendar window positions and sizes without deleting groups, tabs, icons, calendar events or account data. Default-group recovery and full program settings reset remain separately available under Program Reset, each guarded by backups. Tray menu now surfaces common actions directly, with Calendar, Groups & Screens, Backup & Recovery, and Tools & Help submenus preserving all existing commands.
             release-assets/*.zip release-assets/*.exe release-assets/*.update.json release-assets/SHA256SUMS.txt
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == true)')" = true

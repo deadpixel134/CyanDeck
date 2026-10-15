@@ -46,6 +46,8 @@ checks={
 'factory reset navigation present': 'Tag="AboutTab|FactoryResetSection"' in x,
 'normal tray exposes replayable first-run guide': 'menu.Items.Add("시작 가이드 다시 보기…", null' in a[a.index('menu.Items.Add(startup);'):a.index('private void UpdateTrayText()')],
 'initial group reset uses disk reimport rather than retaining deleted items': 'CreateDefaultLayout();' in a[a.index('private bool ResetVisualGeometryToDefaults('):a.index('private bool ResetCyanDeckToDefaults()')] and 'RuleEngine.EnumerateDesktopItems()' in a[a.index('private bool ResetVisualGeometryToDefaults('):a.index('private bool ResetCyanDeckToDefaults()')],
+'all-window reset exposed independently from destructive group restore': 'ResetAllWindowGeometryButton' in x and 'ResetAllWindowGeometry_Click' in c and 'ResetAllWindowGeometryToDefaults' in a and 'resetGroupContent: false' in a,
+'tray menu categorizes commands without discarding callbacks': 'CompactTrayMenu(menu);' in a and 'var calendar = new Forms.ToolStripMenuItem("캘린더")' in a and 'var recovery = new Forms.ToolStripMenuItem("백업 및 복구")' in a,
 'factory reset handler wired to controller': ('ResetCyanDeckToDefaults);' in a or
     ('ResetCyanDeckToDefaults,' in a and 'ResetVisualGeometryToDefaults);' in a)) and
     'private readonly Func<bool> _factoryReset;' in c and

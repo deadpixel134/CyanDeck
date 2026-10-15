@@ -75,6 +75,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private long _displayRestoreGeneration;
     private int _displayTransitionStableRestoreCount;
     private int _displayTransitionDeferredSaveCount;
+    // Do not let an in-flight or shutdown-time snapshot capture stale pre-reset HWNDs.
+    private bool _geometryResetPendingRestart;
     private DispatcherTimer? _persistTimer;
     private DesktopReconcileScheduler? _desktopReconcileScheduler;
     private DispatcherTimer? _dailyBackupTimer;
@@ -3777,7 +3779,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void CaptureMonitorProfile()
     {
         if (_state.Settings.LayoutAdjustmentMode == DeckLayoutAdjustmentMode.None) return;
-        if (_restoringMonitorLayout || string.IsNullOrWhiteSpace(_activeMonitorSignature)) return;
+        if (_restoringMonitorLayout || _geometryResetPendingRestart ||
+            string.IsNullOrWhiteSpace(_activeMonitorSignature)) return;
         var current = MonitorConfigurationService.GetSignature();
         if (!string.Equals(current, _activeMonitorSignature, StringComparison.Ordinal)) return;
         var profile = _state.MonitorProfiles.FirstOrDefault(p => string.Equals(p.Signature, _activeMonitorSignature, StringComparison.Ordinal));
@@ -4180,6 +4183,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
             menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
             menu.Items.Add("종료", null, (_, _) => _dispatcher.Invoke(Exit));
+            CompactTrayMenu(menu);
             UpdateTrayText();
             return;
         }
@@ -4196,6 +4200,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add("일반 모드로 다시 시작", null, (_, _) => _dispatcher.Invoke(() => Restart(false)));
             menu.Items.Add("종료", null, (_, _) => _dispatcher.Invoke(Exit));
+            CompactTrayMenu(menu);
             return;
         }
         var newGroupMenuItem = menu.Items.Add("새 그룹", null, (_, _) => _dispatcher.Invoke(CreateNewFence));
@@ -4361,7 +4366,75 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         menu.Items.Add("바탕화면 연결 / 레이아웃 복구", null, (_, _) => _dispatcher.Invoke(RepairDesktopAttachment));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("종료", null, (_, _) => _dispatcher.Invoke(Exit));
+        CompactTrayMenu(menu);
         UpdateTrayText();
+    }
+
+    /// <summary>
+    /// Keep existing command handlers and capabilities intact while exposing a
+    /// small predictable top-level context menu. All existing entries are moved
+    /// into categories, not cloned, so shortcuts/permissions remain unchanged.
+    /// </summary>
+    private void CompactTrayMenu(Forms.ContextMenuStrip menu)
+    {
+        var original = menu.Items.Cast<Forms.ToolStripItem>()
+            .Where(item => item is not Forms.ToolStripSeparator).ToArray();
+        foreach (var item in original) menu.Items.Remove(item);
+        foreach (Forms.ToolStripItem separator in menu.Items.Cast<Forms.ToolStripItem>().ToArray())
+            menu.Items.Remove(separator);
+        var calendar = new Forms.ToolStripMenuItem("캘린더");
+        var groups = new Forms.ToolStripMenuItem("그룹 및 화면");
+        var recovery = new Forms.ToolStripMenuItem("백업 및 복구");
+        var tools = new Forms.ToolStripMenuItem("도구 및 도움말");
+        var ending = new List<Forms.ToolStripItem>();
+        var first = new List<Forms.ToolStripItem>();
+        var quick = new List<Forms.ToolStripItem>();
+
+        foreach (var item in original)
+        {
+            var label = item.Text;
+            if (label == "종료") { ending.Add(item); continue; }
+            if (label == "설정…" || label == "새 그룹" ||
+                label.StartsWith("바탕화면 페이지 (", StringComparison.Ordinal) ||
+                label is "빠른 숨김" or "빠른 숨김 종료")
+            { first.Add(item); continue; }
+            if (label.StartsWith("캘린더", StringComparison.Ordinal) ||
+                label is "바탕화면 캘린더 사용" or "Google Calendar 동기화")
+            { calendar.DropDownItems.Add(item); continue; }
+            if (label is "Windows Explorer 기본 아이콘 긴급 복구" or
+                "미완료 업데이트 백업 복구…" or "설정 검사 / 복구" or
+                "바탕화면 연결 / 레이아웃 복구" or
+                "이전 세션 복구 데이터 사용 가능…" or
+                "마지막 앱 업데이트 되돌리기…" or
+                "표시 상태 복구" or "백업 / 복원")
+            { recovery.DropDownItems.Add(item); continue; }
+            if (label is "Windows 바탕화면 아이콘 표시" or
+                "Windows 바탕화면 아이콘 숨기기")
+            { quick.Add(item); continue; }
+            if (label is "시작 가이드 다시 보기…" or
+                "시작 가이드 다시 보기… (일반 모드에서 사용)" or
+                "설정 폴더 열기" or "진단 로그 열기" or
+                "진단 묶음 만들기…" or "업데이트 확인…" or
+                "Windows 시작 시 실행" or "안전 모드 활성화 — 바탕화면 통합 비활성" or
+                "일반 모드로 다시 시작")
+            { tools.DropDownItems.Add(item); continue; }
+            if (label.StartsWith("CyanDeck ·", StringComparison.Ordinal))
+            { tools.DropDownItems.Insert(0, item); continue; }
+            // All remaining page layout, templates, system items, desktop
+            // classification and view commands remain reachable here.
+            groups.DropDownItems.Add(item);
+        }
+        foreach (var item in first) menu.Items.Add(item);
+        foreach (var item in quick) menu.Items.Add(item);
+        if (calendar.DropDownItems.Count > 0) menu.Items.Add(calendar);
+        if (groups.DropDownItems.Count > 0) menu.Items.Add(groups);
+        if (recovery.DropDownItems.Count > 0) menu.Items.Add(recovery);
+        if (tools.DropDownItems.Count > 0) menu.Items.Add(tools);
+        if (ending.Count > 0)
+        {
+            menu.Items.Add(new Forms.ToolStripSeparator());
+            foreach (var item in ending) menu.Items.Add(item);
+        }
     }
 
     private void UpdateTrayText()
@@ -4486,7 +4559,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
         var settings = new SettingsWindow(_state, ApplySettingsChanges, ApplyRulesNow, ExportConfiguration, ImportConfiguration, ResetSavedMonitorLayouts, PerformAutomaticLayout, OpenMonitorContentSwapDialog, ClearIconCache, ValidateAndRepairConfiguration, OpenSettingsFolder, OpenDiagnosticLogs, CreateDiagnosticBundle, OpenSettingsAuditLog, RunSelfTest, CheckForUpdatesInteractiveAsync, RollbackLastUpdate, () => Restart(true), () => Restart(false), _safeMode, _compatibilityReadOnly, IsManagedSettingLocked, IsManagedCapabilityAllowed, GetManagedPolicyStatusText, ReloadManagedPolicyInteractive,
             AddSystemIconGroup, ResetStandaloneRecycleBinPosition, ResetCyanDeckToDefaults,
-            ResetVisualGeometryToDefaults);
+            ResetVisualGeometryToDefaults, ResetAllWindowGeometryToDefaults);
         DiagnosticsLog.Info("Settings dialog opening after tray/context-menu dispatch");
         settings.ShowDialog();
         DiagnosticsLog.Info("Settings dialog closed");
@@ -4787,7 +4860,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     /// A durable full-state export and recovery checkpoint are mandatory.
     /// HWNDs are not moved until the relaunched process reads the new layout.
     /// </summary>
-    private bool ResetVisualGeometryToDefaults(bool groups, bool calendar)
+    private bool ResetAllWindowGeometryToDefaults() =>
+        ResetVisualGeometryToDefaults(groups: true, calendar: true, resetGroupContent: false);
+
+    private bool ResetVisualGeometryToDefaults(bool groups, bool calendar, bool resetGroupContent = true)
     {
         if ((!groups && !calendar) || _safeMode || _compatibilityReadOnly ||
             _disposed || (_displayTransition?.IsStableForUserLayoutAction == false) ||
@@ -4797,14 +4873,15 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (calendar && !EnsureManagedCapability("Settings.EditGeneral", "캘린더 위치 초기화"))
             return false;
 
-        var what = groups && calendar ? "그룹·아이콘 초기 구성 및 캘린더 위치·크기"
+        var what = !resetGroupContent ? "모든 그룹 및 캘린더 창 위치·크기"
+            : groups && calendar ? "그룹·아이콘 초기 구성 및 캘린더 위치·크기"
             : groups ? "그룹·아이콘 초기 구성" : "캘린더 위치·크기";
         if (System.Windows.MessageBox.Show(
             $"{what}를 초기 상태로 복원하시겠습니까?\n\n" +
-            (groups
-                ? "앱·작업·미디어·Windows 기본 아이콘 그룹을 다시 만들고 현재 바탕화면 항목을 재검색합니다.\n" +
+            (groups && resetGroupContent
+                ? "앱·작업·미디어·Windows 기본 아이콘 그룹을 다시 만들고 바탕화면 항목을 재검색합니다.\n" +
                   "사용자 지정 그룹·탭·분류 규칙·폴더 포털 배치는 기본 구성으로 바뀝니다.\n"
-                : "") +
+                : groups ? "모든 페이지의 그룹 창 위치·크기만 초기화하고 그룹 내용은 그대로 보존합니다.\n" : "") +
             "Windows의 실제 파일·폴더는 이동·삭제하지 않습니다. 캘린더 일정·계정 및 나머지 프로그램 설정은 유지합니다.\n" +
             "기존 상태를 전체 백업한 뒤 적용하고 CyanDeck을 재시작합니다.\n" +
             "설정 창에서 아직 적용하지 않은 편집 내용은 저장되지 않습니다.",
@@ -4816,6 +4893,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         List<DeckItem>? previousLooseIcons = null;
         List<string>? previousUngroupedPaths = null;
         List<DeckMonitorLayoutProfile>? monitorProfiles = null;
+        List<Action>? restoreGroupGeometry = null;
         var oldCalendarLeft = _state.Settings.CalendarLeft;
         var oldCalendarTop = _state.Settings.CalendarTop;
         var oldCalendarWidth = _state.Settings.CalendarWidth;
@@ -4841,7 +4919,42 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             previousLooseIcons = _state.LooseDesktopItems;
             previousUngroupedPaths = _state.UngroupedDesktopPaths;
             monitorProfiles = _state.MonitorProfiles.ToList();
-            if (groups)
+            if (groups && !resetGroupContent)
+            {
+                restoreGroupGeometry = _state.Fences.Select(f =>
+                {
+                    var x = f.X; var y = f.Y; var w = f.Width; var h = f.Height;
+                    var expanded = f.ExpandedHeight; var rolled = f.RolledUp;
+                    var dock = f.RollupDockEdge;
+                    return (Action)(() =>
+                    {
+                        f.X = x; f.Y = y; f.Width = w; f.Height = h;
+                        f.ExpandedHeight = expanded; f.RolledUp = rolled;
+                        f.RollupDockEdge = dock;
+                    });
+                }).ToList();
+                var work = SystemParameters.WorkArea;
+                var plan = InitialGeometryResetPolicy.Plan(
+                    new MonitorGroupRecoveryPlanner.WorkArea(work.Left, work.Top, work.Width, work.Height),
+                    _state.Fences.Select(f => new InitialGeometryResetPolicy.ExistingGroup(
+                        f.Id, f.PageIndex, f.ShowOnAllPages)).ToArray(),
+                    _state.Settings.GroupSnapGap);
+                var byId = _state.Fences.ToDictionary(f => f.Id);
+                foreach (var placement in plan.Placements)
+                {
+                    var f = byId[placement.Id];
+                    f.X = placement.X; f.Y = placement.Y;
+                    f.Width = placement.Width; f.Height = placement.Height;
+                    f.ExpandedHeight = placement.Height;
+                    f.RolledUp = false;
+                    f.RollupDockEdge = DeckRollupDockEdge.None;
+                }
+                _state.MonitorProfiles.Clear();
+                DiagnosticsLog.Info($"All-window geometry restore planned: " +
+                    $"groups={plan.Placements.Count}; pages={_state.Fences.Select(f => f.PageIndex).Distinct().Count()}; " +
+                    $"overlap-unavoidable={plan.OverlapUnavoidable}");
+            }
+            if (groups && resetGroupContent)
             {
                 // Re-create the ORIGINAL built-in groups, their tabs/rules,
                 // dimensions and supported Windows virtual icons. Do not reset
@@ -4883,8 +4996,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 _state.Settings.CalendarWidth = defaults.Width;
                 _state.Settings.CalendarHeight = defaults.Height;
             }
+            // Old HWNDs still reference pre-reset models until restart.
+            _geometryResetPendingRestart = true;
             PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true);
             DiagnosticsLog.Info($"Initial group/calendar reset durably saved: groups={groups}; " +
+                $"group-content-rebuilt={resetGroupContent && groups}; " +
                 $"calendar={calendar}; backup={backup}; checkpoint={checkpoint}");
             System.Windows.MessageBox.Show(
                 $"선택한 위치·크기를 초기화했습니다.\n\n" +
@@ -4899,6 +5015,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             DiagnosticsLog.Error("Initial group/calendar reset failed", ex);
             // Restore the live models so a later auto-save cannot silently
             // commit a partially reset desktop.
+            _geometryResetPendingRestart = false;
+            restoreGroupGeometry?.ForEach(restore => restore());
             if (previousGroups is not null) _state.Fences = previousGroups;
             if (previousLooseIcons is not null) _state.LooseDesktopItems = previousLooseIcons;
             if (previousUngroupedPaths is not null) _state.UngroupedDesktopPaths = previousUngroupedPaths;
