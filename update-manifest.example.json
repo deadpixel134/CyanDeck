@@ -1,8 +1,8 @@
 {
-  "version": "8.0.22",
+  "version": "8.0.23",
   "schema": 35,
   "runtime": "win-x64",
-  "packageUrl": "CyanDeck-8.0.22-win-x64.zip",
+  "packageUrl": "CyanDeck-8.0.23-win-x64.zip",
   "sha256": "REPLACE_WITH_PACKAGE_SHA256",
   "releaseNotesUrl": "",
   "notes": "Optional release notes shown before download.",
