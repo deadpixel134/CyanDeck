@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="../../src/CyanDeck/Services/FenceVisibilityPolicy.cs" Link="Production/FenceVisibilityPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/StartupUpdatePolicy.cs" Link="Production/StartupUpdatePolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/StartupUpdatePresentationPolicy.cs" Link="Production/StartupUpdatePresentationPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/DesktopShowDesktopRecoveryPolicy.cs" Link="Production/DesktopShowDesktopRecoveryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/NativeDesktopIconRecoveryPolicy.cs" Link="Production/NativeDesktopIconRecoveryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/MonitorDisconnectLayoutPlanner.cs" Link="Production/MonitorDisconnectLayoutPlanner.cs" />
