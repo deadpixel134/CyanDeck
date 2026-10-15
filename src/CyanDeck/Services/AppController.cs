@@ -5864,6 +5864,41 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         System.Windows.Application.Current.Shutdown();
     }
 
+    /// <summary>
+    /// Fast OS-session exit. WPF OnExit runs while Windows is shutting down;
+    /// do not invoke ordinary Dispose(), which can force a large File.Replace,
+    /// spawn PowerShell after file-lock retries, restore Explorer shell icons,
+    /// or synchronously close dozens of child HWNDs. Windows is destroying the
+    /// process/window handles and Explorer itself at this point.
+    ///
+    /// Never report a clean recovery state if the last autosave was pending or
+    /// a monitor/layout transition was in progress. The previous durable
+    /// layout and startup recovery baseline remain on disk for next launch.
+    /// </summary>
+    public void DisposeForWindowsSessionEnd()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _persistTimer?.Stop();
+        _dailyBackupTimer?.Stop();
+        _displayRestoreTimer?.Stop();
+        _nativeIconDisplayRepairTimer?.Stop();
+        bool changingDisplay = _exitDuringDisplayTransition ||
+            _displayTransition?.IsStableForUserLayoutAction == false;
+        if (WindowsSessionExitPolicy.CanClearRecoveryMarker(
+            _abnormalTermination, _persistDirty, _persistStorageRetryCount,
+            changingDisplay, _monitorContentSwapInProgress || _geometryResetPendingRestart))
+        {
+            // Only two small local bookkeeping updates; absolutely no forced
+            // layout serialization or shell/window disposal under PC shutdown.
+            _store.EndSession();
+            StartupHealthService.MarkCleanExit();
+        }
+        // If there were uncommitted changes, leave session.active and its
+        // durable baseline untouched. A later startup can offer recovery
+        // rather than silently overwrite layout.json with transient data.
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
