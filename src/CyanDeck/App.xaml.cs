@@ -157,6 +157,8 @@ public partial class App : Application
         bool safeMode, bool ignoreCrashLoop, bool externalCommand, string? managedPolicyPath)
     {
         StartupUpdateWindow? splash = null;
+        long splashShownAt = 0;
+        bool userRequestedSkip = false;
         try
         {
             var store = new StateStore();
@@ -172,26 +174,51 @@ public partial class App : Application
                 return (false, false);
 
             using var skip = new CancellationTokenSource();
-            splash = new StartupUpdateWindow();
-            _startupUpdateWindow = splash;
-            splash.SkipRequested += () => skip.Cancel();
-            splash.SetStage("새 버전을 확인하고 있습니다.", true);
-            splash.Show();
-            // Give WPF a frame to paint before the asynchronous network request.
-            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            void ShowStartupStatus(string message, bool allowSkip)
+            {
+                if (splash is null)
+                {
+                    splash = new StartupUpdateWindow();
+                    _startupUpdateWindow = splash;
+                    splash.SkipRequested += () =>
+                    {
+                        userRequestedSkip = true;
+                        skip.Cancel();
+                    };
+                    splash.SetStage(message, allowSkip);
+                    splash.Show();
+                    splashShownAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                }
+                else splash.SetStage(message, allowSkip);
+            }
+
             using var checkTimeout = CancellationTokenSource.CreateLinkedTokenSource(skip.Token);
             checkTimeout.CancelAfter(TimeSpan.FromSeconds(8));
             var source = UpdateService.ResolveManifestSource(settings.UpdateManifestSource,
                 settings.EnableBetaUpdateChannel);
-            var check = await UpdateService.CheckAsync(source, true,
+            // Fast up-to-date starts should not create a transient top-level
+            // progress window at all. Only display status if network checking
+            // exceeds the grace period; all desktop/Calendar HWNDs still wait.
+            var checkTask = UpdateService.CheckAsync(source, true,
                 settings.UpdatePublicKeyPath, checkTimeout.Token);
+            var graceTask = Task.Delay(StartupUpdatePresentationPolicy.CheckingGraceMilliseconds);
+            if (await Task.WhenAny(checkTask, graceTask) != checkTask &&
+                StartupUpdatePresentationPolicy.ShouldShowChecking(checkTask.IsCompleted,
+                    StartupUpdatePresentationPolicy.CheckingGraceMilliseconds))
+            {
+                ShowStartupStatus("새 버전을 확인하고 있습니다.\\n이 화면이 끝나면 바탕화면이 열립니다.", true);
+                await Dispatcher.InvokeAsync(() => { },
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+            var check = await checkTask;
             if (!check.UpdateAvailable)
             {
                 DiagnosticsLog.Info("Startup update preflight: installed version is current");
+                splash?.SetStage("현재 버전으로 CyanDeck을 시작합니다.", false);
                 return (false, true);
             }
 
-            splash.SetStage($"CyanDeck {check.LatestVersion.ToString(3)} 업데이트를 다운로드하고 검증 중입니다.\\n설치 전까지 바탕화면 그룹은 표시하지 않습니다.", true);
+            ShowStartupStatus($"CyanDeck {check.LatestVersion.ToString(3)} 업데이트를 다운로드하고 검증 중입니다.\\n설치 전까지 바탕화면 그룹은 표시하지 않습니다.", true);
             var package = await UpdateService.StagePackageAsync(check, skip.Token);
             skip.Token.ThrowIfCancellationRequested();
             store.SaveRecoveryCheckpoint(loaded, $"before-startup-auto-update-{check.LatestVersion}");
@@ -232,15 +259,28 @@ public partial class App : Application
         catch (OperationCanceledException)
         {
             DiagnosticsLog.Info("Startup update preflight skipped (timeout or user choice); opening installed application");
+            splash?.SetStage("업데이트 확인을 건너뛰고 현재 버전으로 시작합니다.", false);
             return (false, true);
         }
         catch (Exception ex)
         {
             DiagnosticsLog.Error("Startup update preflight failed; opening installed application", ex);
+            splash?.SetStage("업데이트를 확인할 수 없어 현재 버전으로 실행합니다.", false);
             return (false, true);
         }
         finally
         {
+            // If a slow check finishes just after the status appeared, closing
+            // in the same frame looks like a crash. Keep a minimum useful
+            // reading interval. A user pressing Skip never incurs this wait.
+            if (splash is not null && splashShownAt != 0)
+            {
+                var elapsed = (long)System.Diagnostics.Stopwatch
+                    .GetElapsedTime(splashShownAt).TotalMilliseconds;
+                var remaining = StartupUpdatePresentationPolicy.RemainingVisibleMilliseconds(
+                    elapsed, userRequestedSkip);
+                if (remaining > 0) await Task.Delay(remaining);
+            }
             _startupUpdateWindow = null;
             try { splash?.Close(); } catch { }
         }
