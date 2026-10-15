@@ -15,5 +15,6 @@
     <Compile Include="../../src/CyanDeck/Layout/InitialGeometryResetPolicy.cs" Link="Production/InitialGeometryResetPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Appearance/LooseIconOpacityPolicy.cs" Link="Production/LooseIconOpacityPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TabSwitchActivationPolicy.cs" Link="Production/TabSwitchActivationPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/TrayMenuRoutingPolicy.cs" Link="Production/TrayMenuRoutingPolicy.cs" />
   </ItemGroup>
 </Project>
