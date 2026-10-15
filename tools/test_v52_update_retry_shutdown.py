@@ -25,7 +25,7 @@ checks={
  'deferred startup opens installed version without restarting installer':
     'manual update remains available' in preflight and 'return (false, true);' in preflight,
  'failure marker scoped to exact 64-digit SHA256':
-    "'failed-' + packageSha256.ToLowerInvariant() + \".txt\"" in policy and
+    '"failed-" + packageSha256.ToLowerInvariant() + ".txt"' in policy and
     'packageSha256.Length != 64' in policy and 'packageSha256.All(Uri.IsHexDigit)' in policy,
  '12 hour backoff with stale and future marker expiry':
     'TimeSpan.FromHours(12)' in policy and
