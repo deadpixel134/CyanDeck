@@ -22,6 +22,7 @@ scripts = [
   'test_v48_tray_ux.py',
   'test_v49_surface_recovery.py',
   'test_v50_monitor_explorer_safety.py',
+  'test_v51_startup_ux.py',
   'test_full_source_structure.py',
 ]
 results = []
