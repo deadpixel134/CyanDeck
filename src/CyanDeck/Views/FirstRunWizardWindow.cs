@@ -27,6 +27,8 @@ public sealed class FirstRunWizardWindow : Window
     private readonly TextBlock _progress = new() { Foreground = Brushes.LightGray };
     private readonly Button _back = new() { Content = "이전", MinWidth = 75, Margin = new Thickness(0, 0, 8, 0) };
     private readonly Button _next = new() { Content = "다음", MinWidth = 132 };
+    private readonly Button _cancelButton = new() { Content = "취소", MinWidth = 100,
+        Margin = new Thickness(0, 0, 14, 0) };
     private readonly CalendarPreferencesStore _prefs = new();
     private readonly CalendarEventStore _events = new();
     private GoogleCalendarSync? _google;
@@ -55,7 +57,8 @@ public sealed class FirstRunWizardWindow : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right };
         DockPanel.SetDock(buttons, Dock.Right); footer.Children.Add(buttons);
-        buttons.Children.Add(_back); buttons.Children.Add(_next);
+        buttons.Children.Add(_cancelButton); buttons.Children.Add(_back); buttons.Children.Add(_next);
+        _cancelButton.Click += (_, _) => Close(); // Cancels Google sign-in; never starts desktop runtime.
         _progress.VerticalAlignment = VerticalAlignment.Center; footer.Children.Add(_progress);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         root.Children.Add(scroll);
@@ -103,13 +106,18 @@ public sealed class FirstRunWizardWindow : Window
         _progress.Text = $"단계 {_step + 1} / 4";
         _back.IsEnabled = !_busy && _step > 0;
         _next.IsEnabled = !_busy;
-        _next.Content = _step == 3 ? "저장 후 시작" : "다음";
+        _cancelButton.Content = _firstRun ? "설정하지 않고 종료" : "변경 취소";
+        _next.Content = _step == 3
+            ? (_firstRun ? "저장 후 시작" : "변경 적용")
+            : "다음";
         if (_step == 0)
         {
             _page.Children.Add(Hint("CyanDeck의 기능을 선택하세요. 나중에 환경설정에서 변경할 수 있습니다."));
             Check("바탕화면 그룹 및 아이콘 관리", _settings.EnableCyanDeck, v => _settings.EnableCyanDeck = v);
             Check("데스크톱 캘린더", _settings.EnableCalendar, v => _settings.EnableCalendar = v);
-            _page.Children.Add(Hint("설정을 완료하기 전까지 기존 Windows 바탕화면과 파일은 변경하지 않습니다."));
+            _page.Children.Add(Hint(_firstRun
+                ? "완료하기 전에는 바탕화면 그룹이나 아이콘을 변경하지 않습니다. 중간에 종료해도 다음 실행에서 다시 설정할 수 있습니다."
+                : "이 화면에서 취소하면 변경한 기능 선택을 적용하지 않습니다."));
         }
         else if (_step == 1)
         {
@@ -175,6 +183,9 @@ public sealed class FirstRunWizardWindow : Window
             Check("베타 업데이트도 받기 (선택)", _settings.EnableBetaUpdateChannel,
                 v => _settings.EnableBetaUpdateChannel = v);
             _page.Children.Add(Hint("기본 사용법: 그룹 드래그 이동 · 캘린더 더블클릭 편집 · 일정 1초 길게 눌러 이동 · 트레이 아이콘에서 설정/복구."));
+            _page.Children.Add(Hint(_firstRun
+                ? "설정을 저장한 다음 그룹과 캘린더가 나타납니다. 첫 실행 후에는 트레이 → 도구 및 도움말 → 시작 가이드 다시 보기에서 다시 열 수 있습니다."
+                : "변경 적용 후에도 현재 캘린더 일정과 Google 서버 데이터는 삭제되지 않습니다."));
         }
     }
 
