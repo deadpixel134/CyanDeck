@@ -29,7 +29,7 @@ checks = {
         all(name in names for name in (
             "ResetAllWindowGeometryButton", "ResetPlacementButton", "FactoryResetButton")),
     "three reset buttons use separate click handlers":
-        all(name in xaml and ("private void " + name) in ui for name in (
+        all(name.removesuffix("(") in xaml and ("private void " + name) in ui for name in (
             "ResetAllWindowGeometry_Click(", "ResetPlacement_Click(", "FactoryReset_Click(")),
     "all-window reset never rebuilds group contents":
         "ResetVisualGeometryToDefaults(groups: true, calendar: true, resetGroupContent: false)" in guard,
