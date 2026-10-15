@@ -24,7 +24,8 @@ public static class FirstRunOnboardingPolicy
             if (File.Exists(Path.Combine(root, PendingMarker))) return true;
             foreach (var name in new[] { "calendar-events.json", "calendar-events.json.bak",
                 "calendar-preferences.json", "calendar-preferences.json.bak",
-                "calendar-google-token.dat", "calendar-google-owner.dat" })
+                "calendar-google-token.dat", "calendar-google-owner.dat",
+                "calendar-event-appearance.json", "calendar-event-appearance.json.bak" })
                 if (File.Exists(Path.Combine(root, name))) return false;
             var recovery = Path.Combine(root, "recovery");
             if (Directory.Exists(recovery) && Directory.EnumerateFileSystemEntries(recovery).Any())
