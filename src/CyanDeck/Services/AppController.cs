@@ -4560,7 +4560,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var settings = new SettingsWindow(_state, ApplySettingsChanges, ApplyRulesNow, ExportConfiguration, ImportConfiguration, ResetSavedMonitorLayouts, PerformAutomaticLayout, OpenMonitorContentSwapDialog, ClearIconCache, ValidateAndRepairConfiguration, OpenSettingsFolder, OpenDiagnosticLogs, CreateDiagnosticBundle, OpenSettingsAuditLog, RunSelfTest, CheckForUpdatesInteractiveAsync, RollbackLastUpdate, () => Restart(true), () => Restart(false), _safeMode, _compatibilityReadOnly, IsManagedSettingLocked, IsManagedCapabilityAllowed, GetManagedPolicyStatusText, ReloadManagedPolicyInteractive,
             AddSystemIconGroup, ResetStandaloneRecycleBinPosition, ResetCyanDeckToDefaults,
             (resetGroups, resetCalendar) => ResetVisualGeometryToDefaults(resetGroups, resetCalendar),
-            ResetAllWindowGeometryToDefaults);
+            ResetAllWindowGeometryToDefaults, ResetAllLocalUserData);
         DiagnosticsLog.Info("Settings dialog opening after tray/context-menu dispatch");
         settings.ShowDialog();
         DiagnosticsLog.Info("Settings dialog closed");
@@ -5113,6 +5113,62 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             System.Windows.MessageBox.Show(
                 $"초기화에 실패했습니다. 이전 설정 백업은 보존됩니다.\n{ex.Message}",
                 "CyanDeck 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Explicitly requested destructive LOCAL profile reset. Unlike the normal
+    /// settings factory reset, clears local calendar events and Google tokens.
+    /// It never calls Google APIs or deletes original Windows Desktop files.
+    /// </summary>
+    private bool ResetAllLocalUserData()
+    {
+        if (_safeMode || _compatibilityReadOnly || _disposed ||
+            _monitorContentSwapInProgress ||
+            (_displayTransition?.IsStableForUserLayoutAction == false) ||
+            !EnsureManagedCapability("ImportExport.Import", "전체 로컬 데이터 초기화") ||
+            !EnsureManagedCapability("Settings.EditGeneral", "전체 로컬 데이터 초기화"))
+            return false;
+        if (UpdateService.HasPendingRecovery())
+        {
+            System.Windows.MessageBox.Show("미완료 업데이트 복구가 있습니다. 먼저 복구를 완료하세요.",
+                "CyanDeck 완전 초기화", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+        if (System.Windows.MessageBox.Show(
+            "이 컴퓨터에 저장된 CyanDeck 사용자 데이터를 모두 삭제하시겠습니까?\n\n" +
+            "그룹/설정, 로컬 일정, Google 로그인 토큰/선택, 백업·스냅샷·로그를 삭제합니다.\n" +
+            "Google 서버 일정, Windows 바탕화면 원본 파일과 설치된 프로그램은 삭제하지 않습니다.\n\n" +
+            "자동 백업 없이 영구 삭제합니다. 필요한 자료는 먼저 다른 폴더에 내보내세요.",
+            "CyanDeck — 모든 로컬 데이터 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+            != MessageBoxResult.Yes) return false;
+        var owner = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+        if (owner is null) return false;
+        var confirmation = TextPrompt.Show(owner, "모든 사용자 데이터 삭제 확인",
+            "계속하려면 '모든 데이터 삭제'를 정확히 입력하세요.", "");
+        if (!string.Equals(confirmation, "모든 데이터 삭제", StringComparison.Ordinal)) return false;
+
+        string? ticket = null;
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(exe))
+                throw new InvalidOperationException("재시작 실행 파일 경로를 확인하지 못했습니다.");
+            ticket = CompleteLocalResetService.CreateRequest(DataRootPaths.ActiveRoaming);
+            var args = $"--wait-for-pid {Environment.ProcessId} --complete-local-reset {ticket}";
+            using var child = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true });
+            if (child is null) throw new IOException("초기화 전용 프로세스를 실행하지 못했습니다.");
+            Exit();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ticket is not null)
+                CompleteLocalResetService.CancelRequest(DataRootPaths.ActiveRoaming, ticket);
+            DiagnosticsLog.Error("Complete local reset could not be started", ex);
+            System.Windows.MessageBox.Show("완전 초기화를 시작하지 못했습니다. 기존 데이터는 유지됩니다.\n" + ex.Message,
+                "CyanDeck 완전 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
     }
