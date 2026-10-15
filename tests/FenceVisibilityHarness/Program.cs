@@ -304,3 +304,30 @@ foreach (var (id, label, expected) in trayCases)
     if (TrayMenuRoutingPolicy.Route(id, label) != expected)
         throw new Exception($"Tray policy mismatch: {id ?? "(legacy)"} / {label} -> {expected}");
 Console.WriteLine($"PASS: {trayCases.Length} tray routes including safe-mode, calendar-only, fallback and settings de-duplication");
+
+
+// Unified tray recovery must be safe under monitor transitions, have no
+// actions in Safe Mode, and work in calendar-only configurations. This is a
+// domain test, not a simulated Explorer HWND.
+var surfaceCases = new (bool Safe, bool Deck, bool Ready, bool Calendar, bool Stable,
+    bool Groups, bool Inspect, bool Blocked)[]
+{
+    (false, true, true, true, true, true, true, false),
+    (false, false, false, true, true, false, true, false), // calendar-only
+    (false, true, true, false, true, true, false, false), // deck-only
+    (false, false, false, false, true, false, false, false), // no modules
+    (true, true, true, true, true, false, false, false), // safe mode
+    (false, true, false, true, true, false, true, false), // deck not ready
+    (false, true, true, true, false, false, false, true), // display transition
+    (false, false, false, true, false, false, false, true), // calendar transition
+};
+foreach (var x in surfaceCases)
+{
+    var plan = DisplaySurfaceRecoveryPlan.Create(x.Safe,x.Deck,x.Ready,x.Calendar,x.Stable);
+    if ((plan.RepairGroups,plan.InspectCalendar,plan.BlockedByDisplayTransition)
+        != (x.Groups,x.Inspect,x.Blocked))
+        throw new Exception("Unified surface recovery policy mismatch.");
+    if (plan.HasWork != (x.Groups || x.Inspect))
+        throw new Exception("Surface recovery HasWork mismatch.");
+}
+Console.WriteLine($"PASS: {surfaceCases.Length} visibility recovery scenarios (combined, calendar-only, deck-only, safe-mode, transition)");
