@@ -82,6 +82,35 @@ try
         throw new Exception("Existing OAuth state was treated as a new installation.");
     Console.WriteLine("PASS: first-run setup retry, OAuth preservation and state-overwrite guards");
 
+    // Exact signed-package digest cooldown uses only the disposable local
+    // test directory. It never touches actual %LOCALAPPDATA% or user profiles.
+    var mockLocal = Path.Combine(parent, "local");
+    var sha = new string('a', 64);
+    var differentSha = new string('b', 64);
+    var failureMarker = FailedUpdateRetryPolicy.GetMarkerPath(mockLocal, sha.ToUpperInvariant());
+    if (!failureMarker.EndsWith("failed-" + sha + ".txt", StringComparison.Ordinal))
+        throw new Exception("Failed package marker is not normalized by SHA-256.");
+    if (FailedUpdateRetryPolicy.IsAutomaticRetryDeferred(mockLocal, sha, DateTime.UtcNow))
+        throw new Exception("Missing failure marker blocked startup.");
+    Directory.CreateDirectory(Path.GetDirectoryName(failureMarker)!);
+    File.WriteAllText(failureMarker, "simulated installer error only");
+    var nowUtc = DateTime.UtcNow;
+    File.SetLastWriteTimeUtc(failureMarker, nowUtc.AddHours(-1));
+    if (!FailedUpdateRetryPolicy.IsAutomaticRetryDeferred(mockLocal, sha, nowUtc))
+        throw new Exception("Recent failed digest was not deferred.");
+    if (FailedUpdateRetryPolicy.IsAutomaticRetryDeferred(mockLocal, differentSha, nowUtc))
+        throw new Exception("One failed digest blocked a corrected release.");
+    File.SetLastWriteTimeUtc(failureMarker, nowUtc.AddHours(-13));
+    if (FailedUpdateRetryPolicy.IsAutomaticRetryDeferred(mockLocal, sha, nowUtc))
+        throw new Exception("Expired failure marker prevented the 12-hour retry.");
+    File.SetLastWriteTimeUtc(failureMarker, nowUtc.AddHours(2));
+    if (FailedUpdateRetryPolicy.IsAutomaticRetryDeferred(mockLocal, sha, nowUtc))
+        throw new Exception("Future-dated corrupt failure marker blocked startup.");
+    if (FailedUpdateRetryPolicy.IsAutomaticRetryDeferred(mockLocal, "broken", nowUtc))
+        throw new Exception("Malformed package digest unexpectedly blocked startup.");
+    File.Delete(failureMarker);
+    Console.WriteLine("PASS: exact digest failure cooldown, expiry, corrected release and manual retry isolation");
+
     Console.WriteLine("PASS: full local data reset token, expired request, external file and disposable data");
 }
 finally
