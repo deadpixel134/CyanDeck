@@ -217,6 +217,18 @@ public partial class App : Application
                 splash?.SetStage("현재 버전으로 CyanDeck을 시작합니다.", false);
                 return (false, true);
             }
+            // The independent installer may fail after the previous process
+            // has handed off control. Repeatedly attempting the SAME signed
+            // SHA-256 on every launch would create an endless update/relaunch
+            // loop. Skip only automatic startup installation for 12 hours.
+            // Manual update checks/installations remain available in Settings.
+            if (FailedUpdateRetryPolicy.IsAutomaticRetryDeferred(
+                DataRootPaths.ActiveLocal, check.Manifest.Sha256, DateTime.UtcNow))
+            {
+                DiagnosticsLog.Warn($"Startup update v{check.LatestVersion.ToString(3)} deferred because its package failed previously; manual update remains available");
+                splash?.SetStage("이전 자동 업데이트에 실패하여 현재 버전으로 실행합니다.\\n환경설정에서 업데이트를 직접 다시 시도할 수 있습니다.", false);
+                return (false, true);
+            }
 
             ShowStartupStatus($"CyanDeck {check.LatestVersion.ToString(3)} 업데이트를 다운로드하고 검증 중입니다.\\n설치 전까지 바탕화면 그룹은 표시하지 않습니다.", true);
             var package = await UpdateService.StagePackageAsync(check, skip.Token);
