@@ -59,6 +59,29 @@ try
         throw new Exception("Non-CyanDeck directory was accepted.");
     }
     catch (InvalidDataException) { }
+    // The interrupted onboarding marker permits a retry, but existing main
+    // layouts and recovery data must never be overwritten by the wizard.
+    var onboardingRoot = Path.Combine(parent, "first-run-test");
+    if (!FirstRunOnboardingPolicy.ShouldOffer(onboardingRoot))
+        throw new Exception("Brand-new onboarding was not offered.");
+    Directory.CreateDirectory(onboardingRoot);
+    File.WriteAllText(Path.Combine(onboardingRoot, FirstRunOnboardingPolicy.PendingMarker), "pending");
+    File.WriteAllText(Path.Combine(onboardingRoot, "calendar-google-token.dat"), "mock");
+    if (!FirstRunOnboardingPolicy.ShouldOffer(onboardingRoot))
+        throw new Exception("Interrupted initial OAuth setup cannot resume.");
+    if (FirstRunOnboardingPolicy.ShouldOffer(onboardingRoot, safeMode: true) ||
+        FirstRunOnboardingPolicy.ShouldOffer(onboardingRoot, externalCommand: true) ||
+        FirstRunOnboardingPolicy.ShouldOffer(onboardingRoot, updateRecoveryPending: true))
+        throw new Exception("Protected startup unexpectedly offered the first-run wizard.");
+    File.WriteAllText(Path.Combine(onboardingRoot, "layout.json"), "{ }");
+    if (FirstRunOnboardingPolicy.ShouldOffer(onboardingRoot))
+        throw new Exception("Durably saved user layout was offered for overwriting.");
+    File.Delete(Path.Combine(onboardingRoot, "layout.json"));
+    File.Delete(Path.Combine(onboardingRoot, FirstRunOnboardingPolicy.PendingMarker));
+    if (FirstRunOnboardingPolicy.ShouldOffer(onboardingRoot))
+        throw new Exception("Existing OAuth state was treated as a new installation.");
+    Console.WriteLine("PASS: first-run setup retry, OAuth preservation and state-overwrite guards");
+
     Console.WriteLine("PASS: full local data reset token, expired request, external file and disposable data");
 }
 finally
