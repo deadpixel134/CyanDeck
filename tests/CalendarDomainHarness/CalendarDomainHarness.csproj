@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/CyanDeck/Calendar/CalendarEventStore.cs" Link="CalendarEventStore.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarEventAppearanceStore.cs" Link="CalendarEventAppearanceStore.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/CalendarEventMovePolicy.cs" Link="CalendarEventMovePolicy.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/WeekBarLayout.cs" Link="WeekBarLayout.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/CalendarWeekSizingPolicy.cs" Link="CalendarWeekSizingPolicy.cs" />
