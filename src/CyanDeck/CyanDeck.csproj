@@ -14,7 +14,7 @@
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64;ARM64</Platforms>
     <LangVersion>12.0</LangVersion>
-    <Version>8.0.30</Version>
+    <Version>8.0.31</Version>
   </PropertyGroup>
   <!-- An EXE-only distribution embeds the independent update/rollback installer. -->
   <ItemGroup>
