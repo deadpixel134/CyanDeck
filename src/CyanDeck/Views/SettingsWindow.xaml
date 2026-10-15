@@ -467,7 +467,12 @@
                             <Button Content="업데이트 확인 및 설치…" Margin="0,0,8,8" Click="CheckForUpdates_Click"/>
                             <Button Content="마지막 앱 업데이트 되돌리기…" Margin="0,0,8,8" Click="RollbackUpdate_Click"/>
                         </WrapPanel>
-                        <TextBlock x:Name="LastUpdateCheckText" Foreground="#AEB8C6" Margin="0,0,0,16"/>
+                        <TextBlock x:Name="LastUpdateCheckText" Foreground="#AEB8C6" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="UpdateFailureSummaryText" TextWrapping="Wrap" Foreground="#E6BE7A" Margin="0,0,0,6"/>
+                        <WrapPanel Margin="0,0,0,13">
+                            <Button x:Name="OpenUpdateFailureLogButton" Content="마지막 업데이트 오류 로그 보기" Margin="0,0,8,5" Click="OpenUpdateFailureLog_Click"/>
+                            <Button Content="업데이트 진단 새로고침" Margin="0,0,8,5" Click="RefreshUpdateDiagnostics_Click"/>
+                        </WrapPanel>
 
                         <TextBlock x:Name="StartupSection" Text="시작 상태" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="CrashLoopProtectionCheck" Content="비정상 시작이 반복되면 자동으로 안전 모드 진입"/>
