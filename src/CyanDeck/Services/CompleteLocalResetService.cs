@@ -17,6 +17,7 @@ public static class CompleteLocalResetService
 
     private sealed class ResetRequest
     {
+        public ResetRequest() { }
         public string Ticket { get; set; } = "";
         public DateTimeOffset IssuedUtc { get; set; }
     }
