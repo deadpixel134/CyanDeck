@@ -17,7 +17,7 @@ public sealed class StartupUpdateWindow : Window
     {
         Title = "CyanDeck 업데이트";
         Width = 460;
-        Height = 213;
+        Height = 242;
         MinWidth = 460;
         MaxWidth = 460;
         ResizeMode = ResizeMode.NoResize;
@@ -55,6 +55,14 @@ public sealed class StartupUpdateWindow : Window
             Foreground = new SolidColorBrush(Color.FromRgb(53, 192, 215)),
             Background = new SolidColorBrush(Color.FromRgb(57, 64, 76)),
             Margin = new Thickness(0, 0, 0, 12)
+        });
+        layout.Children.Add(new TextBlock
+        {
+            Text = "확인 및 설치 준비가 끝나면 그룹과 캘린더가 표시됩니다.",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.FromRgb(151, 164, 183)),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 13)
         });
         _skip = new Button
         {
