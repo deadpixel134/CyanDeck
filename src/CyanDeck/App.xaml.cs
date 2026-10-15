@@ -1,9 +1,11 @@
+using System.IO;
 using System.IO.Pipes;
 using System.Text;
 using System.Threading;
 using System.Windows;
 using CyanDeck.Services;
 using CyanDeck.Views;
+using CyanDeck.Models;
 using Forms = System.Windows.Forms;
 
 namespace CyanDeck;
@@ -64,9 +66,47 @@ public partial class App : Application
         DiagnosticsLog.Info("CyanDeck starting");
         // Accept second-instance commands even while the startup updater is checking/downloading.
         StartActivationServer();
-        var preflight = await RunStartupUpdatePreflightAsync(
-            safeMode, ignoreCrashLoop, peekToggle || recoverGroups, managedPolicyPath);
+        // Brand-new installs configure both modules before hiding Explorer
+        // icons, creating groups, registering hooks or running updates.
+        var firstRun = FirstRunOnboardingPolicy.ShouldOffer(DataRootPaths.ActiveRoaming,
+            safeMode, peekToggle || recoverGroups || managedPolicyPath is not null,
+            UpdateService.HasPendingRecovery());
+        var preflight = firstRun ? (ExitForUpdate: false, Attempted: false)
+            : await RunStartupUpdatePreflightAsync(
+                safeMode, ignoreCrashLoop, peekToggle || recoverGroups, managedPolicyPath);
         if (preflight.ExitForUpdate) return;
+        if (firstRun)
+        {
+            try
+            {
+                Directory.CreateDirectory(DataRootPaths.ActiveRoaming);
+                File.WriteAllText(Path.Combine(DataRootPaths.ActiveRoaming,
+                    FirstRunOnboardingPolicy.PendingMarker), "First-run setup incomplete");
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Error("First-run marker creation failed; Explorer left intact", ex);
+                MessageBox.Show("첫 실행 설정 파일을 만들 수 없어 안전하게 종료합니다.",
+                    "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Shutdown(); return;
+            }
+            var firstStore = new StateStore();
+            var wizard = new FirstRunWizardWindow(new DeckSettings(), configured =>
+            {
+                if (!FirstRunOnboardingPolicy.ShouldOffer(DataRootPaths.ActiveRoaming))
+                    throw new IOException("기존 설정 또는 복구 데이터가 감지되어 덮어쓰지 않습니다.");
+                firstStore.Save(new DeckState { Settings = configured });
+                try { File.Delete(Path.Combine(DataRootPaths.ActiveRoaming, FirstRunOnboardingPolicy.PendingMarker)); }
+                catch (IOException) { /* Durable layout.json is the completion sentinel. */ }
+                DiagnosticsLog.Info("First-run configuration committed before desktop startup");
+                return true;
+            });
+            if (wizard.ShowDialog() != true)
+            {
+                DiagnosticsLog.Info("First-run setup closed without any desktop changes");
+                Shutdown(); return;
+            }
+        }
         _controller = new AppController(Dispatcher, safeMode, ignoreCrashLoop, managedPolicyPath,
             suppressStartupUpdateCheck: preflight.Attempted);
         _controller.Start();

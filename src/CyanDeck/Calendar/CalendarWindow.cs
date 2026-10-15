@@ -888,7 +888,8 @@ public sealed class CalendarWindow : Window
         {
             Content = "로컬에만 저장 (Google 캘린더에 업로드하지 않음)",
             Foreground = TextLight,
-            IsChecked = existing?.LocalOnly == true || (existing is null && noWritableGoogleCalendar),
+            IsChecked = existing?.LocalOnly == true ||
+                (existing is null && (noWritableGoogleCalendar || _preferences.Data.DefaultNewEventsLocalOnly)),
             IsEnabled = existing?.RemoteId is null,
             Margin = new Thickness(0, 8, 0, 3),
             ToolTip = "CyanDeck의 로컬 일정 파일에만 저장합니다. Google 계정이 없어도 사용 가능합니다."

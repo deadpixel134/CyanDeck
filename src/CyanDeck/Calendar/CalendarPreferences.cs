@@ -25,6 +25,8 @@ public sealed class CalendarPreferences
     // Null is the first-run sentinel; empty is a deliberate choice to show none.
     public List<string>? SelectedCalendarIds { get; set; }
     public string? TargetCalendarId { get; set; }
+    // New-event-only default; old users retain their Google target behavior.
+    public bool DefaultNewEventsLocalOnly { get; set; }
     public Dictionary<string, string> ColorOverrides { get; set; } = new(StringComparer.Ordinal);
     public List<GoogleCalendarSource> Catalog { get; set; } = [];
     // Saved with the catalog in one checkpoint. Old preferences will refresh once.

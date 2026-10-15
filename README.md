@@ -241,3 +241,7 @@ v8.0.4에서 EXE만 배포한 사용자는 기존 앱에 공개키가 없어 자
 ## v8.0.15 Beta — 캘린더 일정 길게 누르기
 
 일정을 누르고 날짜 이동 모드로 진입하는 시간을 기존 2초에서 1초로 단축했습니다. 더블클릭 편집, 길게 누르기 전 마우스 이동 시 취소, Esc 취소, 날짜 드롭 후 저장/동기화 처리는 그대로 유지합니다. 저장 데이터·사용자 아이콘·레이아웃에는 변경이 없습니다.
+
+## v8.0.16 Beta: first-run setup wizard
+
+Fresh installations get a four-step wizard (select modules; desktop icon visibility and automatic group classification; optional Google OAuth with calendar-list checkboxes and writable default destination or local-only; Windows startup and default-enabled signed automatic stable updates with optional beta channel). The desktop shell is not changed until settings are durably written. Closing setup leaves Explorer untouched and permits setup to resume on the next launch, including incomplete OAuth. Existing, backed-up, staged or damaged layouts bypass the wizard. Users can reopen the guide from the tray menu. A new-event-only local-default flag does not affect old calendar entries. User files are never moved or deleted by onboarding.

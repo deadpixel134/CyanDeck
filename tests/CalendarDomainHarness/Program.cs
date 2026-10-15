@@ -1,3 +1,37 @@
+// First-run setup must be offered only when it cannot overwrite user state.
+var setupRoot = Path.Combine(Path.GetTempPath(), "cyandeck-first-run-" + Guid.NewGuid().ToString("N"));
+Assert.That(FirstRunOnboardingPolicy.ShouldOffer(setupRoot), "new install gets guided setup");
+Directory.CreateDirectory(setupRoot);
+try
+{
+    foreach (var name in new[] { "layout.json", "layout.json.bak", "layout.json.tmp",
+        "startup-baseline.json", "calendar-events.json", "calendar-preferences.json" })
+    {
+        var file = Path.Combine(setupRoot, name);
+        File.WriteAllText(file, "existing");
+        Assert.That(!FirstRunOnboardingPolicy.ShouldOffer(setupRoot),
+            "existing state blocks first-run initialization: " + name);
+        File.Delete(file);
+    }
+    File.WriteAllText(Path.Combine(setupRoot, FirstRunOnboardingPolicy.PendingMarker), "pending");
+    File.WriteAllText(Path.Combine(setupRoot, "calendar-preferences.json"), "pending oauth");
+    Assert.That(FirstRunOnboardingPolicy.ShouldOffer(setupRoot),
+        "interrupted first-run Google login must resume setup");
+    File.WriteAllText(Path.Combine(setupRoot, "layout.json.tmp"), "recoverable");
+    Assert.That(!FirstRunOnboardingPolicy.ShouldOffer(setupRoot),
+        "staged layout is never overwritten by pending onboarding");
+    File.Delete(Path.Combine(setupRoot, "layout.json.tmp"));
+    File.Delete(Path.Combine(setupRoot, FirstRunOnboardingPolicy.PendingMarker));
+    Assert.That(!FirstRunOnboardingPolicy.ShouldOffer(setupRoot),
+        "calendar prefs without marker are existing user state");
+    File.Delete(Path.Combine(setupRoot, "calendar-preferences.json"));
+    Assert.That(!FirstRunOnboardingPolicy.ShouldOffer(setupRoot, safeMode: true) &&
+        !FirstRunOnboardingPolicy.ShouldOffer(setupRoot, externalCommand: true) &&
+        !FirstRunOnboardingPolicy.ShouldOffer(setupRoot, updateRecoveryPending: true),
+        "safe-mode, external invocation, updater recovery block setup");
+}
+finally { Directory.Delete(setupRoot, recursive: true); }
+
 using CyanDeck.Calendar;
 using CyanDeck.Services;
 using System.Text.Json;

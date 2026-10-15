@@ -24,6 +24,7 @@
     <Compile Include="../../src/CyanDeck/Calendar/VerifiedCredentialCheckpoint.cs" Link="VerifiedCredentialCheckpoint.cs" />
     <Compile Include="../../src/CyanDeck/Services/FeatureSwitchCheckpoint.cs" Link="FeatureSwitchCheckpoint.cs" />
     <Compile Include="../../src/CyanDeck/Services/DataRootPaths.cs" Link="DataRootPaths.cs" />
+    <Compile Include="../../src/CyanDeck/Services/FirstRunOnboardingPolicy.cs" Link="FirstRunOnboardingPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/CyanDeckSingleInstanceGate.cs" Link="CyanDeckSingleInstanceGate.cs" />
     <Compile Include="../../src/CyanDeck/Services/UpdatePackageLayoutPolicy.cs" Link="UpdatePackageLayoutPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/GitHubReleaseSource.cs" Link="GitHubReleaseSource.cs" />

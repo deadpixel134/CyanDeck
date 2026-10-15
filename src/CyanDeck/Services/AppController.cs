@@ -4175,6 +4175,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!_safeMode && !_state.Settings.EnableCyanDeck)
         {
             menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
+        menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
+            QueueTrayDialog(OpenGettingStartedGuide));
             menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
             menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
             menu.Items.Add("종료", null, (_, _) => _dispatcher.Invoke(Exit));
@@ -4449,6 +4451,25 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _trayController?.ShowBalloonTip(5000, "CyanDeck 캘린더",
                 "연결 실패 또는 재시도 제한입니다. 연속 클릭하지 말고 캘린더 상태 진단에서 원인을 확인하세요.",
                 Forms.ToolTipIcon.Warning);
+    }
+
+    private void OpenGettingStartedGuide()
+    {
+        if (_safeMode || _compatibilityReadOnly ||
+            !EnsureManagedCapability("Settings.EditGeneral", "시작 가이드 설정 변경", showNotice: false))
+        {
+            OpenSettingsWindow();
+            return;
+        }
+        var previous = _state.Settings.Clone();
+        var guide = new FirstRunWizardWindow(previous, staged =>
+        {
+            _state.Settings.CopyFrom(staged);
+            if (ApplySettingsChanges()) return true;
+            _state.Settings.CopyFrom(previous);
+            return false;
+        });
+        guide.ShowDialog();
     }
 
     private void OpenSettingsWindow()
