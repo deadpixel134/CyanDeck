@@ -260,3 +260,47 @@ var defaultsGeometry = InitialGeometryResetPolicy.CalendarDefaults;
 if (defaultsGeometry != (120d, 110d, 650d, 510d))
     throw new Exception("Calendar reset must restore only original window geometry.");
 Console.WriteLine("PASS: selective geometry reset on desktop groups and calendar defaults");
+
+ 
+// Tray command routing must be independent of Korean display labels whenever a
+// stable Tag ID exists. Every unknown command stays available in Groups.
+var trayCases = new (string? Id, string Label, TrayMenuSection Target)[]
+{
+    ("brand.identity", "CyanDeck · v8.0.24", TrayMenuSection.Tools),
+    ("calendar.status", "임의 상태", TrayMenuSection.Calendar),
+    ("calendar.enable", "다른 캘린더 표시 문구", TrayMenuSection.Calendar),
+    ("group.new", "새 창 생성", TrayMenuSection.Primary),
+    ("desktop.pages", "페이지 이동", TrayMenuSection.Primary),
+    ("desktop.peek", "간편 보기", TrayMenuSection.Primary),
+    ("desktop.quick-hide", "화면 숨김", TrayMenuSection.Primary),
+    ("desktop.native-icons", "원본 아이콘", TrayMenuSection.IconTools),
+    ("desktop.display", "전체 화면", TrayMenuSection.Groups),
+    ("group.snapshots", "스냅샷 관리", TrayMenuSection.Groups),
+    ("recovery.backup", "복구 저장소", TrayMenuSection.Recovery),
+    ("settings.startup", "부팅 시 실행", TrayMenuSection.SettingsOnly),
+    (null, "설정…", TrayMenuSection.Primary),
+    (null, "새 그룹", TrayMenuSection.Primary),
+    (null, "바탕화면 페이지 (페이지 4)", TrayMenuSection.Primary),
+    (null, "빠른 숨김 종료", TrayMenuSection.Primary),
+    (null, "캘린더 상태: 동기화 대기", TrayMenuSection.Calendar),
+    (null, "Google Calendar 동기화", TrayMenuSection.Calendar),
+    (null, "이전 세션 복구 데이터 사용 가능…", TrayMenuSection.Recovery),
+    (null, "마지막 앱 업데이트 되돌리기…", TrayMenuSection.Recovery),
+    (null, "Windows 바탕화면 아이콘 숨기기", TrayMenuSection.IconTools),
+    (null, "휴지통 위치 초기화", TrayMenuSection.IconTools),
+    (null, "시작 가이드 다시 보기… (일반 모드에서 사용)", TrayMenuSection.Tools),
+    (null, "업데이트 확인…", TrayMenuSection.Tools),
+    (null, "일반 모드로 다시 시작", TrayMenuSection.Tools),
+    (null, "설정 폴더 열기", TrayMenuSection.SettingsOnly),
+    (null, "진단 로그 열기", TrayMenuSection.SettingsOnly),
+    (null, "진단 묶음 만들기…", TrayMenuSection.SettingsOnly),
+    (null, "Windows 시작 시 실행", TrayMenuSection.SettingsOnly),
+    (null, "자동 분류 규칙 지금 적용", TrayMenuSection.SettingsOnly),
+    (null, "종료", TrayMenuSection.Exit),
+    (null, "화면 내용 교환…", TrayMenuSection.Groups),
+    (null, "앞으로 새로 추가하는 그룹 메뉴", TrayMenuSection.Groups)
+};
+foreach (var (id, label, expected) in trayCases)
+    if (TrayMenuRoutingPolicy.Route(id, label) != expected)
+        throw new Exception($"Tray policy mismatch: {id ?? "(legacy)"} / {label} -> {expected}");
+Console.WriteLine($"PASS: {trayCases.Length} tray routes including safe-mode, calendar-only, fallback and settings de-duplication");
