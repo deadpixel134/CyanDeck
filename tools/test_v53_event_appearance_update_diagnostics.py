@@ -46,8 +46,10 @@ checks={
   'holiday IDs deterministic across feed refresh':
     'Id = DeterministicGuid(' in holiday,
   'read-only event store and Google source protected':
-    'calendar-events.json' not in styles and
-    '_store.UpsertBatch' not in menu and 'remote' not in styles.lower().split('/// <summary>',1)[-1].split('public sealed record',1)[0],
+    'Path.Combine(DataRootPaths.ActiveRoaming, "calendar-event-appearance.json")' in styles and
+    '_store.UpsertBatch' not in menu and
+    'GoogleCalendarSync' not in menu and
+    'Dirty = true' not in menu,
   'atomic color file saving with backup and rollback':
     'File.Replace(temp, _path, _path + ".bak", ignoreMetadataErrors: true)' in styles and
     'stream.Flush(flushToDisk: true)' in styles and
@@ -63,7 +65,8 @@ checks={
     '"calendar-event-appearance.json.bak"' in onboarding,
   'calendar domain tests cover persistence/no sync effects':
     'originalCalendar.Events.Single().Dirty == false' in eventtests and
-    'deterministic holiday' not in eventtests or True,
+    'appearance.Get(holidayId)' in eventtests and
+    'File.ReadAllText(eventPath) == originalEventJson' in eventtests,
   'calendar appearance production source compiled in domain test':
     'CalendarEventAppearanceStore.cs' in eventproj,
   'updates page parses with failure summary and log button':
