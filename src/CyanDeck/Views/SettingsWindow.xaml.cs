@@ -765,7 +765,7 @@ public partial class SettingsWindow : Window
             ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온",
             ["SnapshotsSection"] = "레이아웃 백업 모니터 스냅샷 자동 조정",
             ["ResetSection"] = "초기화 복구 백업 가져오기 내보내기",
-            ["FactoryResetSection"] = "프로그램 초기화 그룹 캘린더 위치 크기 접힘 배치 공장 초기화 기본값 백업",
+            ["FactoryResetSection"] = "프로그램 초기화 그룹 복원 삭제된 그룹 빠진 아이콘 다시 불러오기 캘린더 위치 크기 기본 구성 초기 설정 백업",
             ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
             ["CalendarSection"] = "달력 캘린더 calendar 배경색 투명도 크기 날짜",
             ["StandaloneSection"] = "개별 독립 아이콘 카멜레온 불투명도",

@@ -4175,8 +4175,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!_safeMode && !_state.Settings.EnableCyanDeck)
         {
             menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
-        menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
-            QueueTrayDialog(OpenGettingStartedGuide));
+            menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
+                QueueTrayDialog(OpenGettingStartedGuide));
             menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
             menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
             menu.Items.Add("종료", null, (_, _) => _dispatcher.Invoke(Exit));
@@ -4187,6 +4187,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             menu.Items.Add(new Forms.ToolStripMenuItem("안전 모드 활성화 — 바탕화면 통합 비활성") { Enabled = false });
             menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
+            menu.Items.Add(new Forms.ToolStripMenuItem("시작 가이드 다시 보기… (일반 모드에서 사용)") { Enabled = false });
             menu.Items.Add("설정 검사 / 복구", null, (_, _) => _dispatcher.Invoke(ValidateAndRepairConfiguration));
             menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
             menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
@@ -4346,6 +4347,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         });
         menu.Items.Add(startup);
         menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
+        menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
+            QueueTrayDialog(OpenGettingStartedGuide));
         menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
         menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
         menu.Items.Add("진단 묶음 만들기…", null, (_, _) => _dispatcher.Invoke(CreateDiagnosticBundle));
@@ -4778,10 +4781,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     }
 
     /// <summary>
-    /// Reset visible geometry ONLY. Never replace group content or calendar data.
-    /// A durable full-state export and a recovery checkpoint are mandatory.
-    /// Models are changed before a forced durable save; HWNDs are not moved
-    /// until the relaunched process reads the new layout.
+    /// Restore deleted/misconfigured built-in groups and managed Desktop item
+    /// references, optionally resetting calendar-window geometry. Actual files,
+    /// calendar events/accounts and all other settings remain unchanged.
+    /// A durable full-state export and recovery checkpoint are mandatory.
+    /// HWNDs are not moved until the relaunched process reads the new layout.
     /// </summary>
     private bool ResetVisualGeometryToDefaults(bool groups, bool calendar)
     {
@@ -4793,18 +4797,24 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (calendar && !EnsureManagedCapability("Settings.EditGeneral", "캘린더 위치 초기화"))
             return false;
 
-        var what = groups && calendar ? "그룹 위치·크기·접힘 상태와 캘린더 위치·크기"
-            : groups ? "그룹 위치·크기·접힘 상태" : "캘린더 위치·크기";
+        var what = groups && calendar ? "그룹·아이콘 초기 구성 및 캘린더 위치·크기"
+            : groups ? "그룹·아이콘 초기 구성" : "캘린더 위치·크기";
         if (System.Windows.MessageBox.Show(
-            $"{what}를 기본값으로 되돌리시겠습니까?\n\n" +
-            "그룹 이름·탭·아이콘·정리 규칙과 캘린더 일정·Google 계정·개인 설정은 변경하지 않습니다.\n" +
-            "기존 배치를 백업하며 완료 후 CyanDeck을 재시작합니다.\n" +
+            $"{what}를 초기 상태로 복원하시겠습니까?\n\n" +
+            (groups
+                ? "앱·작업·미디어·Windows 기본 아이콘 그룹을 다시 만들고 현재 바탕화면 항목을 재검색합니다.\n" +
+                  "사용자 지정 그룹·탭·분류 규칙·폴더 포털 배치는 기본 구성으로 바뀝니다.\n"
+                : "") +
+            "Windows의 실제 파일·폴더는 이동·삭제하지 않습니다. 캘린더 일정·계정 및 나머지 프로그램 설정은 유지합니다.\n" +
+            "기존 상태를 전체 백업한 뒤 적용하고 CyanDeck을 재시작합니다.\n" +
             "설정 창에서 아직 적용하지 않은 편집 내용은 저장되지 않습니다.",
             "CyanDeck — 위치 및 크기 초기화", MessageBoxButton.YesNo,
             MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
 
         string? backup = null;
-        List<DeckFencePlacement>? previous = null;
+        List<DeckFence>? previousGroups = null;
+        List<DeckItem>? previousLooseIcons = null;
+        List<string>? previousUngroupedPaths = null;
         List<DeckMonitorLayoutProfile>? monitorProfiles = null;
         var oldCalendarLeft = _state.Settings.CalendarLeft;
         var oldCalendarTop = _state.Settings.CalendarTop;
@@ -4827,38 +4837,43 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint))
                 throw new IOException("레이아웃 복구 체크포인트를 만들지 못했습니다.");
 
-            previous = CapturePlacements();
+            previousGroups = _state.Fences;
+            previousLooseIcons = _state.LooseDesktopItems;
+            previousUngroupedPaths = _state.UngroupedDesktopPaths;
             monitorProfiles = _state.MonitorProfiles.ToList();
             if (groups)
             {
-                var work = SystemParameters.WorkArea; // Primary display, DIPs.
-                var primary = new MonitorGroupRecoveryPlanner.WorkArea(
-                    work.Left, work.Top, work.Width, work.Height);
-                var models = _state.Fences.Select(f =>
-                    new InitialGeometryResetPolicy.ExistingGroup(
-                        f.Id, f.PageIndex, f.ShowOnAllPages)).ToArray();
-                var plan = InitialGeometryResetPolicy.Plan(
-                    primary, models, _state.Settings.GroupSnapGap);
-                var fences = _state.Fences.ToDictionary(f => f.Id);
-                foreach (var placement in plan.Placements)
+                // Re-create the ORIGINAL built-in groups, their tabs/rules,
+                // dimensions and supported Windows virtual icons. Do not reset
+                // application settings or touch files on disk.
+                CreateDefaultLayout();
+
+                // Every actual Desktop/Public Desktop item must become visible
+                // again even when the user previously removed it from a group
+                // or pinned it outside one. Only direct-child desktop items
+                // are reclassified; other loose references remain untouched.
+                var roots = DesktopDirectoryService.GetRoots();
+                _state.LooseDesktopItems = previousLooseIcons
+                    .Where(item => !DesktopDirectoryService.IsDirectChildOfAnyRoot(item.Path, roots))
+                    .ToList();
+                var recovered = 0;
+                foreach (var path in RuleEngine.EnumerateDesktopItems()
+                    .Select(DesktopDirectoryService.Normalize)
+                    .Distinct(StringComparer.OrdinalIgnoreCase))
                 {
-                    var fence = fences[placement.Id];
-                    fence.X = placement.X;
-                    fence.Y = placement.Y;
-                    fence.Width = placement.Width;
-                    fence.Height = placement.Height;
-                    fence.ExpandedHeight = placement.Height;
-                    fence.RolledUp = false;
-                    fence.RollupDockEdge = DeckRollupDockEdge.None;
-                    // Preserve IDs, titles, tab contents, rules, desktop pages,
-                    // group visibility, group locks and all per-icon coordinates.
+                    var tab = RuleEngine.PickTab(_state, path, includeRules: true);
+                    if (tab is null) continue;
+                    tab.Items.Add(new DeckItem { Path = path });
+                    recovered++;
                 }
+                SyncLegacyUngroupedPaths();
                 _state.CurrentPage = 0;
-                // Old per-monitor profiles override reset positions on startup.
-                // Remove them only from live state; export/checkpoint keeps them.
+                // Old per-monitor profiles would otherwise reapply deleted
+                // groups/positions on reconnection.
                 _state.MonitorProfiles.Clear();
-                DiagnosticsLog.Info($"Group geometry reset planned: count={plan.Placements.Count}; " +
-                    $"overlap-unavoidable={plan.OverlapUnavoidable}");
+                DiagnosticsLog.Info($"Default group and desktop icon references restored: " +
+                    $"groups={_state.Fences.Count}; desktop-items={recovered}; " +
+                    $"other loose icons preserved={_state.LooseDesktopItems.Count}");
             }
             if (calendar)
             {
@@ -4869,7 +4884,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 _state.Settings.CalendarHeight = defaults.Height;
             }
             PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true);
-            DiagnosticsLog.Info($"Visual geometry reset durably saved: groups={groups}; " +
+            DiagnosticsLog.Info($"Initial group/calendar reset durably saved: groups={groups}; " +
                 $"calendar={calendar}; backup={backup}; checkpoint={checkpoint}");
             System.Windows.MessageBox.Show(
                 $"선택한 위치·크기를 초기화했습니다.\n\n" +
@@ -4881,15 +4896,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
         catch (Exception ex)
         {
-            DiagnosticsLog.Error("Visual geometry reset failed", ex);
+            DiagnosticsLog.Error("Initial group/calendar reset failed", ex);
             // Restore the live models so a later auto-save cannot silently
             // commit a partially reset desktop.
-            if (previous is not null)
-            {
-                try { ApplyPlacements(previous); }
-                catch (Exception restoreError)
-                { DiagnosticsLog.Error("Group geometry rollback failed", restoreError); }
-            }
+            if (previousGroups is not null) _state.Fences = previousGroups;
+            if (previousLooseIcons is not null) _state.LooseDesktopItems = previousLooseIcons;
+            if (previousUngroupedPaths is not null) _state.UngroupedDesktopPaths = previousUngroupedPaths;
             if (monitorProfiles is not null)
                 _state.MonitorProfiles = monitorProfiles;
             _state.CurrentPage = oldPage;
