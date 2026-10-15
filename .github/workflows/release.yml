@@ -23,6 +23,12 @@ jobs:
           request="$(tr -d '[:space:]' < .github/stable-release-request.txt)"
           echo "publish=false" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Workflow file edits during Beta development are NOT Stable requests.
+          # Do not fail CI or accidentally publish when the gate is unchanged.
+          if [ "$request" != "$version" ]; then
+            echo "No explicit Stable release requested for v$version. Skipping."
+            exit 0
+          fi
           python3 - "$version" "$request" <<'PY'
           import sys
           version, request = sys.argv[1:]
