@@ -40,7 +40,7 @@ public sealed class CalendarWindow : Window
     private readonly SolidColorBrush _todayBackground = new();
     private Border? _editorOverlay;
     private SizeChangedEventHandler? _editorSizeHandler;
-    private readonly DispatcherTimer _longPressTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _longPressTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private CalendarEvent? _moveCandidate;
     private Border? _sourceBar;
     private Point _pressPoint;
@@ -528,7 +528,7 @@ public sealed class CalendarWindow : Window
         if (_moveCandidate is not { } ev || _sourceBar is not { } bar) return;
         if (Mouse.LeftButton != MouseButtonState.Pressed || !bar.IsMouseOver
             || !CanRelocateEvent(ev, out _)) { CancelEventMove(); return; }
-        // Only capture after the explicit 2-second gesture, never for a click.
+        // Only capture after the explicit 1-second hold, never for a click.
         if (!Mouse.Capture(_body, CaptureMode.SubTree)) { CancelEventMove(); return; }
         _isMoving = true;
         _savedBarBackground = bar.Background;
@@ -571,7 +571,7 @@ public sealed class CalendarWindow : Window
         {
             if (Math.Abs(point.X - _pressPoint.X) > SystemParameters.MinimumHorizontalDragDistance
                 || Math.Abs(point.Y - _pressPoint.Y) > SystemParameters.MinimumVerticalDragDistance)
-                CancelEventMove(); // Moving before two seconds never changes dates.
+                CancelEventMove(); // Moving before the one-second hold never changes dates.
             return;
         }
         UpdateMovePosition(point);

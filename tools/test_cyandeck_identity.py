@@ -48,6 +48,9 @@ calendar_window = (source/'Calendar'/'CalendarWindow.cs').read_text(encoding='ut
 assert 'VerticalScrollBarVisibility = ScrollBarVisibility.Hidden' in calendar_window
 assert 'HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled' in calendar_window
 assert 'PanningMode = PanningMode.VerticalOnly' in calendar_window
+assert '_longPressTimer = new() { Interval = TimeSpan.FromSeconds(1) }' in calendar_window
+assert 'Only capture after the explicit 1-second hold' in calendar_window
+assert 'TimeSpan.FromSeconds(2)' not in calendar_window.split('_longPressTimer = new()',1)[1].split(';',1)[0]
 assert '_weekScroll.ScrollToTop();' in calendar_window
 assert 'new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }' in calendar_window
 print('PASS: standalone CyanDeck namespace, executable, storage, OAuth and original icon')
