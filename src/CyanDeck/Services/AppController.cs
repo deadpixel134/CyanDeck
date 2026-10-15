@@ -4559,7 +4559,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
         var settings = new SettingsWindow(_state, ApplySettingsChanges, ApplyRulesNow, ExportConfiguration, ImportConfiguration, ResetSavedMonitorLayouts, PerformAutomaticLayout, OpenMonitorContentSwapDialog, ClearIconCache, ValidateAndRepairConfiguration, OpenSettingsFolder, OpenDiagnosticLogs, CreateDiagnosticBundle, OpenSettingsAuditLog, RunSelfTest, CheckForUpdatesInteractiveAsync, RollbackLastUpdate, () => Restart(true), () => Restart(false), _safeMode, _compatibilityReadOnly, IsManagedSettingLocked, IsManagedCapabilityAllowed, GetManagedPolicyStatusText, ReloadManagedPolicyInteractive,
             AddSystemIconGroup, ResetStandaloneRecycleBinPosition, ResetCyanDeckToDefaults,
-            ResetVisualGeometryToDefaults, ResetAllWindowGeometryToDefaults);
+            (resetGroups, resetCalendar) => ResetVisualGeometryToDefaults(resetGroups, resetCalendar),
+            ResetAllWindowGeometryToDefaults);
         DiagnosticsLog.Info("Settings dialog opening after tray/context-menu dispatch");
         settings.ShowDialog();
         DiagnosticsLog.Info("Settings dialog closed");
