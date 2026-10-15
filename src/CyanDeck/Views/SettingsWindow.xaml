@@ -510,6 +510,9 @@
                         <TextBlock Text="그룹 초기 구성 복원은 사용자 지정 그룹·탭·폴더 포털과 분류 규칙을 기본 구성으로 교체합니다(실제 파일 삭제 없음). 아래 전체 초기화는 프로그램 설정까지 초기화합니다. 두 작업 모두 복구 백업을 남깁니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <TextBlock Text="그룹·레이아웃과 CyanDeck 설정을 초기 상태로 복원합니다. 초기화 전에 원본 설정을 별도 백업합니다. 실제 파일·폴더, 로컬 캘린더 일정, Google 로그인 토큰, 캘린더 계정 데이터는 삭제하지 않습니다. 완료 후 프로그램이 다시 시작됩니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <Button x:Name="FactoryResetButton" Content="전체 프로그램 설정 및 그룹 초기화…" HorizontalAlignment="Left" Margin="0,0,0,18" Click="FactoryReset_Click"/>
+                        <Separator Margin="0,0,0,12" Background="#344254"/>
+                        <TextBlock Text="완전 초기화는 이 PC의 CyanDeck 설정·그룹·로컬 일정·Google 로그인 토큰·연결 정보·백업·스냅샷·로그를 삭제합니다. 복구용 백업을 자동 생성하지 않습니다. Google 서버 일정, 바탕화면 원본 파일, 설치된 프로그램은 삭제하지 않습니다. 앱을 종료해 자료를 삭제한 후 첫 실행 설정을 다시 시작합니다." Foreground="#E5B8A7" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <Button x:Name="CompleteLocalResetButton" Content="모든 CyanDeck 사용자 데이터 완전 초기화…" HorizontalAlignment="Left" Margin="0,0,0,18" Click="CompleteLocalReset_Click"/>
 
                         <TextBlock x:Name="RestartSection" Text="다시 시작 모드" Style="{StaticResource SectionTitle}"/>
                         <WrapPanel>
