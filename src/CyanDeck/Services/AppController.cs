@@ -4123,10 +4123,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         menu.Items.Clear();
         // Always-visible build identity: old running instances will not show this line.
-        menu.Items.Add(new Forms.ToolStripMenuItem("CyanDeck · Calendar v45") { Enabled = false });
+        menu.Items.Add(new Forms.ToolStripMenuItem(
+            $"CyanDeck · v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?"}")
+        { Enabled = false, Tag = "brand.identity" });
         menu.Items.Add(new Forms.ToolStripMenuItem("캘린더 상태: " +
             (_safeMode ? "안전 모드" : !_state.Settings.EnableCalendar ? "설정 꺼짐"
-                : _calendar?.GetTrayDisplayStatus() ?? "시작 대기/상태 확인 필요")) { Enabled = false });
+                : _calendar?.GetTrayDisplayStatus() ?? "시작 대기/상태 확인 필요"))
+        { Enabled = false, Tag = "calendar.status" });
         menu.Items.Add("캘린더 표시 복구", null, (_, _) =>
             _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RepairCalendarSurface)));
         menu.Items.Add("캘린더 상태 진단…", null, (_, _) => QueueTrayDialog(ShowCalendarDiagnostics));
@@ -4146,7 +4149,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var deckSwitch = new Forms.ToolStripMenuItem("CyanDeck 그룹·아이콘 관리 사용")
             {
                 Checked = _state.Settings.EnableCyanDeck,
-                Enabled = !_compatibilityReadOnly
+                Enabled = !_compatibilityReadOnly,
+                Tag = "group.enable"
             };
             deckSwitch.Click += (_, _) =>
             {
@@ -4158,7 +4162,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var calendarSwitch = new Forms.ToolStripMenuItem("바탕화면 캘린더 사용")
             {
                 Checked = _state.Settings.EnableCalendar,
-                Enabled = !_compatibilityReadOnly
+                Enabled = !_compatibilityReadOnly,
+                Tag = "calendar.enable"
             };
             calendarSwitch.Click += (_, _) =>
             {
@@ -4204,6 +4209,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             return;
         }
         var newGroupMenuItem = menu.Items.Add("새 그룹", null, (_, _) => _dispatcher.Invoke(CreateNewFence));
+        newGroupMenuItem.Tag = "group.new";
         newGroupMenuItem.Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups");
         menu.Items.Add("휴지통 위치 초기화", null,
             (_, _) => _dispatcher.Invoke(ResetStandaloneRecycleBinPosition));
@@ -4247,6 +4253,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             item.Click += (_, _) => _dispatcher.Invoke(() => GoToPage(localPage));
             pages.DropDownItems.Add(item);
         }
+        pages.Tag = "desktop.pages";
         menu.Items.Add(pages);
 
         var arrange = new Forms.ToolStripMenuItem("현재 페이지 정렬")
@@ -4271,7 +4278,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             swapItem.Enabled = IsManagedCapabilityAllowed("Layout.SwapScreenContents");
         }
 
-        var snapshots = new Forms.ToolStripMenuItem("레이아웃 스냅샷");
+        var snapshots = new Forms.ToolStripMenuItem("레이아웃 스냅샷") { Tag = "group.snapshots" };
         snapshots.DropDownItems.Add("현재 레이아웃 저장", null, (_, _) => _dispatcher.Invoke(SaveLayoutSnapshot));
         snapshots.DropDownItems.Add("스냅샷 미리보기 / 관리…", null, (_, _) => _dispatcher.Invoke(OpenSnapshotGallery));
         snapshots.DropDownItems.Add("자동 레이아웃 실행…", null, (_, _) => _dispatcher.Invoke(PerformAutomaticLayout));
@@ -4293,17 +4300,27 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             }));
         }
         menu.Items.Add(snapshots);
-        menu.Items.Add(_peek ? "Peek 종료" : "Peek", null, (_, _) => _dispatcher.Invoke(TogglePeek));
+        var peekCommand = menu.Items.Add(_peek ? "Peek 종료" : "Peek", null,
+            (_, _) => _dispatcher.Invoke(TogglePeek));
+        peekCommand.Tag = "desktop.peek";
         if (_state.Settings.EnableDesktopDisplay)
-            menu.Items.Add(_desktopDisplay.IsActive ? "Desktop Display 종료" : "Desktop Display", null, (_, _) => _dispatcher.Invoke(() => { _desktopDisplay.Toggle(); UpdateWindowVisibility(); RefreshDesktopTouchPageHost(); RefreshDesktopFolderPortalDropHost(); RefreshLooseDesktopIconHost(); UpdateTrayText(); RebuildTrayMenu(); }));
+        {
+            var display = menu.Items.Add(_desktopDisplay.IsActive ? "Desktop Display 종료" : "Desktop Display", null,
+                (_, _) => _dispatcher.Invoke(() => { _desktopDisplay.Toggle(); UpdateWindowVisibility(); RefreshDesktopTouchPageHost(); RefreshDesktopFolderPortalDropHost(); RefreshLooseDesktopIconHost(); UpdateTrayText(); RebuildTrayMenu(); }));
+            display.Tag = "desktop.display";
+        }
         if (_state.Settings.EnableQuickHide)
         {
             var quickLabel = _quickHidden ? "빠른 숨김 종료" : "빠른 숨김";
             var quickItem = menu.Items.Add(quickLabel, null, (_, _) => _dispatcher.Invoke(() => ToggleQuickHide(QuickHideInvocationSource.Tray)));
             quickItem.Enabled = _state.Settings.EnableQuickHide || _quickHidden;
+            quickItem.Tag = "desktop.quick-hide";
         }
-        menu.Items.Add(_state.Settings.HideNativeDesktopIcons ? "Windows 바탕화면 아이콘 표시" : "Windows 바탕화면 아이콘 숨기기", null, (_, _) => _dispatcher.Invoke(ToggleNativeIcons));
-        var backup = new Forms.ToolStripMenuItem("백업 / 복원");
+        var nativeIcons = menu.Items.Add(
+            _state.Settings.HideNativeDesktopIcons ? "Windows 바탕화면 아이콘 표시" : "Windows 바탕화면 아이콘 숨기기",
+            null, (_, _) => _dispatcher.Invoke(ToggleNativeIcons));
+        nativeIcons.Tag = "desktop.native-icons";
+        var backup = new Forms.ToolStripMenuItem("백업 / 복원") { Tag = "recovery.backup" };
         backup.DropDownItems.Add("레이아웃 및 설정 내보내기…", null, (_, _) => _dispatcher.Invoke(ExportConfiguration));
         var importMenuItem = backup.DropDownItems.Add("레이아웃 및 설정 가져오기…", null, (_, _) => _dispatcher.Invoke(() => ImportConfiguration()));
         importMenuItem.Enabled = IsManagedCapabilityAllowed("ImportExport.Import");
@@ -4340,6 +4357,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             Checked = _state.Settings.StartWithWindows,
             CheckOnClick = true,
+            Tag = "settings.startup",
             Enabled = IsManagedCapabilityAllowed("Settings.EditGeneral")
         };
         startup.CheckedChanged += (_, _) => _dispatcher.Invoke(() =>
@@ -4371,62 +4389,62 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     }
 
     /// <summary>
-    /// Keep existing command handlers and capabilities intact while exposing a
-    /// small predictable top-level context menu. All existing entries are moved
-    /// into categories, not cloned, so shortcuts/permissions remain unchanged.
+    /// Keep the ORIGINAL WinForms menu items and Click/CheckedChanged handlers.
+    /// Stable command IDs win over display labels. Secondary diagnostics and
+    /// startup controls remain in Settings instead of duplicating tray actions.
+    /// All normal, safe-mode and calendar-only menus use the same route.
     /// </summary>
     private void CompactTrayMenu(Forms.ContextMenuStrip menu)
     {
         var original = menu.Items.Cast<Forms.ToolStripItem>()
             .Where(item => item is not Forms.ToolStripSeparator).ToArray();
-        foreach (var item in original) menu.Items.Remove(item);
-        foreach (Forms.ToolStripItem separator in menu.Items.Cast<Forms.ToolStripItem>().ToArray())
-            menu.Items.Remove(separator);
+        menu.Items.Clear();
+
         var calendar = new Forms.ToolStripMenuItem("캘린더");
         var groups = new Forms.ToolStripMenuItem("그룹 및 화면");
+        var iconTools = new Forms.ToolStripMenuItem("아이콘 및 분류");
         var recovery = new Forms.ToolStripMenuItem("백업 및 복구");
         var tools = new Forms.ToolStripMenuItem("도구 및 도움말");
+        var primary = new List<Forms.ToolStripItem>();
         var ending = new List<Forms.ToolStripItem>();
-        var first = new List<Forms.ToolStripItem>();
-        var quick = new List<Forms.ToolStripItem>();
 
         foreach (var item in original)
         {
-            var label = item.Text;
-            if (label == "종료") { ending.Add(item); continue; }
-            if (label == "설정…" || label == "새 그룹" ||
-                label.StartsWith("바탕화면 페이지 (", StringComparison.Ordinal) ||
-                label is "빠른 숨김" or "빠른 숨김 종료")
-            { first.Add(item); continue; }
-            if (label.StartsWith("캘린더", StringComparison.Ordinal) ||
-                label is "바탕화면 캘린더 사용" or "Google Calendar 동기화")
-            { calendar.DropDownItems.Add(item); continue; }
-            if (label is "Windows Explorer 기본 아이콘 긴급 복구" or
-                "미완료 업데이트 백업 복구…" or "설정 검사 / 복구" or
-                "바탕화면 연결 / 레이아웃 복구" or
-                "이전 세션 복구 데이터 사용 가능…" or
-                "마지막 앱 업데이트 되돌리기…" or
-                "표시 상태 복구" or "백업 / 복원")
-            { recovery.DropDownItems.Add(item); continue; }
-            if (label is "Windows 바탕화면 아이콘 표시" or
-                "Windows 바탕화면 아이콘 숨기기")
-            { quick.Add(item); continue; }
-            if (label is "시작 가이드 다시 보기…" or
-                "시작 가이드 다시 보기… (일반 모드에서 사용)" or
-                "설정 폴더 열기" or "진단 로그 열기" or
-                "진단 묶음 만들기…" or "업데이트 확인…" or
-                "Windows 시작 시 실행" or "안전 모드 활성화 — 바탕화면 통합 비활성" or
-                "일반 모드로 다시 시작")
-            { tools.DropDownItems.Add(item); continue; }
-            if (label.StartsWith("CyanDeck ·", StringComparison.Ordinal))
-            { tools.DropDownItems.Insert(0, item); continue; }
-            // All remaining page layout, templates, system items, desktop
-            // classification and view commands remain reachable here.
-            groups.DropDownItems.Add(item);
+            var route = TrayMenuRoutingPolicy.Route(item.Tag as string, item.Text);
+            switch (route)
+            {
+                case TrayMenuSection.Primary:
+                    primary.Add(item);
+                    break;
+                case TrayMenuSection.Calendar:
+                    calendar.DropDownItems.Add(item);
+                    break;
+                case TrayMenuSection.Groups:
+                    groups.DropDownItems.Add(item);
+                    break;
+                case TrayMenuSection.IconTools:
+                    iconTools.DropDownItems.Add(item);
+                    break;
+                case TrayMenuSection.Recovery:
+                    recovery.DropDownItems.Add(item);
+                    break;
+                case TrayMenuSection.Tools:
+                    tools.DropDownItems.Add(item);
+                    break;
+                case TrayMenuSection.SettingsOnly:
+                    // Same operation exists in Settings; do not add another
+                    // entry point or remove the Settings command.
+                    item.Dispose();
+                    break;
+                case TrayMenuSection.Exit:
+                    ending.Add(item);
+                    break;
+            }
         }
-        foreach (var item in first) menu.Items.Add(item);
-        foreach (var item in quick) menu.Items.Add(item);
+        foreach (var item in primary) menu.Items.Add(item);
         if (calendar.DropDownItems.Count > 0) menu.Items.Add(calendar);
+        if (iconTools.DropDownItems.Count > 0)
+            groups.DropDownItems.Add(iconTools);
         if (groups.DropDownItems.Count > 0) menu.Items.Add(groups);
         if (recovery.DropDownItems.Count > 0) menu.Items.Add(recovery);
         if (tools.DropDownItems.Count > 0) menu.Items.Add(tools);
