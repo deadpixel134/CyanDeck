@@ -323,11 +323,11 @@ var surfaceCases = new (bool Safe, bool Deck, bool Ready, bool Calendar, bool St
 };
 foreach (var x in surfaceCases)
 {
-    var plan = DisplaySurfaceRecoveryPlan.Create(x.Safe,x.Deck,x.Ready,x.Calendar,x.Stable);
-    if ((plan.RepairGroups,plan.InspectCalendar,plan.BlockedByDisplayTransition)
+    var recoveryPlan = DisplaySurfaceRecoveryPlan.Create(x.Safe,x.Deck,x.Ready,x.Calendar,x.Stable);
+    if ((recoveryPlan.RepairGroups,recoveryPlan.InspectCalendar,recoveryPlan.BlockedByDisplayTransition)
         != (x.Groups,x.Inspect,x.Blocked))
         throw new Exception("Unified surface recovery policy mismatch.");
-    if (plan.HasWork != (x.Groups || x.Inspect))
+    if (recoveryPlan.HasWork != (x.Groups || x.Inspect))
         throw new Exception("Surface recovery HasWork mismatch.");
 }
 Console.WriteLine($"PASS: {surfaceCases.Length} visibility recovery scenarios (combined, calendar-only, deck-only, safe-mode, transition)");
