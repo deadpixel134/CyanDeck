@@ -86,6 +86,7 @@
                             <TreeViewItem Header="그룹 제목줄·스크롤바" Tag="AppearanceTab|GroupChromeSection"/>
                             <TreeViewItem Header="카멜레온·투명도" Tag="AppearanceTab|ChameleonSection"/>
                             <TreeViewItem Header="단독 아이콘 외관" Tag="AppearanceTab|StandaloneSection"/>
+                            <TreeViewItem Header="그룹 개별 편집" Tag="GroupsTab|GroupEditorSection"/>
                         </TreeViewItem>
                         <TreeViewItem Header="애니메이션" Tag="AnimationTab|PageAnimationSection">
                             <TreeViewItem Header="페이지 전환 효과" Tag="AnimationTab|PageAnimationSection"/>
@@ -107,9 +108,6 @@
                         <TreeViewItem Header="Windows 기본 아이콘" Tag="SystemIconsTab|RecycleSection">
                             <TreeViewItem Header="휴지통 표시" Tag="SystemIconsTab|RecycleSection"/>
                             <TreeViewItem Header="기본 그룹·위치" Tag="SystemIconsTab|SystemGroupSection"/>
-                        </TreeViewItem>
-                        <TreeViewItem Header="그룹 개별 편집" Tag="GroupsTab|GroupEditorSection">
-                            <TreeViewItem Header="그룹 모양·아이콘 배치" Tag="GroupsTab|GroupEditorSection"/>
                         </TreeViewItem>
                         <TreeViewItem Header="정보 및 문제 해결" Tag="AboutTab|AboutSection">
                             <TreeViewItem Header="버전 정보" Tag="AboutTab|AboutSection"/>
@@ -475,10 +473,20 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="GroupsTab" Header="그룹 및 아이콘">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="20" MaxWidth="590" HorizontalAlignment="Left">
-                        <TextBlock x:Name="GroupEditorSection" Text="그룹" Style="{StaticResource SectionTitle}"/>
+            <!-- This is an Appearance subpage, not a competing sidebar root.
+                 Keep the complete per-group editor isolated so the common
+                 Appearance page remains compact and group draft/permission
+                 boundaries retain their original owning TabItem. -->
+            <TabItem x:Name="GroupsTab" Header="그룹 개별 편집">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="28,24,26,38" MaxWidth="650" HorizontalAlignment="Left">
+                        <TextBlock Text="그룹 개별 편집" FontSize="22" FontWeight="SemiBold" Foreground="#F4F7FD" Margin="0,0,0,8"/>
+                        <TextBlock Text="그룹을 선택한 뒤 해당 그룹의 배경색, 글꼴, 아이콘 배치와 제목줄을 조정합니다. 공통 모양은 모양 및 외관의 다른 항목에서 설정할 수 있습니다."
+                                   Foreground="#AAB9C9" TextWrapping="Wrap" Margin="0,0,0,24"/>
+                        <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10"
+                                Padding="18" Margin="0,0,0,22">
+                            <StackPanel>
+                                <TextBlock x:Name="GroupEditorSection" Text="선택한 그룹 설정" Style="{StaticResource SectionTitle}"/>
                         <ComboBox x:Name="FencePicker" Width="360" HorizontalAlignment="Left" SelectionChanged="FencePicker_SelectionChanged"/>
                         <TextBlock Text="현재 그룹 프리셋" Margin="0,4,0,4"/>
                         <CheckBox x:Name="LinkedIconSpacingCheck" Content="그룹 안팎의 아이콘 간격을 동일하게 사용" Margin="0,6,0,2" Checked="LinkedIconSpacingCheck_Changed" Unchecked="LinkedIconSpacingCheck_Changed"/>
@@ -544,6 +552,8 @@
                                            Text="자유 배치는 컬렉션 탭의 아이콘 좌표를 저장합니다. 폴더 포털은 폴더 변경 시 일관성을 위해 자동 격자를 계속 사용합니다."/>
                             </StackPanel>
                         </Grid>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
