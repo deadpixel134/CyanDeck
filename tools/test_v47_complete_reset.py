@@ -33,7 +33,7 @@ checks = {
  'no Google API or desktop delete commands': all(x not in svc for x in ['SendApiAsync(', 'SHFileOperation(', 'RecycleBin(', 'HttpClient']),
  'cleanup fails closed': 'Shutdown();' in app.split('var completeResetTicket =',1)[1].split('// Do not create desktop group',1)[0],
  'reset explicitly skips automatic user backup creation': '_store.Export(' not in destructive and '_store.SaveRecoveryCheckpoint(' not in destructive,
- 'main project upgraded to v8.0.23': '<Version>8.0.23</Version>' in read('src/CyanDeck/CyanDeck.csproj'),
+ 'main project stays at or above complete-reset introduction version': tuple(map(int, __import__('re').search(r'<Version>(\d+\.\d+\.\d+)</Version>', read('src/CyanDeck/CyanDeck.csproj')).group(1).split('.'))) >= (8, 0, 23),
 }
 for name, success in checks.items(): print(('PASS' if success else 'FAIL') + ': ' + name)
 print(f'RESULT {sum(checks.values())}/{len(checks)}')
