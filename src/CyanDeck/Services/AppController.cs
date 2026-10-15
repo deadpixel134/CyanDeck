@@ -88,6 +88,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private bool _automaticUpdateInProgress;
     private bool _restoringMonitorLayout;
     private string _activeMonitorSignature = "";
+    // A failed profile restore must never overwrite its last-known-good
+    // geometry with the temporary one-monitor positions during auto-save.
+    private string? _monitorProfileRestoreBlockedSignature;
     // Track the most recent stable topology, independently of persisted profiles.
     // The layout planner runs only when the monitor COUNT actually decreases.
     private int _lastStableMonitorCount;
@@ -2639,7 +2642,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             }
 
             var transientMenuOpen = _trayMenuVisible || FenceWindow.IsAnyContextMenuOpen;
-            if (!suppressVisualRecovery && !_peek && !transientMenuOpen)
+            // A monitor hotplug can temporarily replace WorkerW/DefView HWNDs.
+            // Do not treat this as a permanent Explorer restart or restack groups
+            // until display topology has actually settled.
+            var displayTransitionInProgress = _displayTransition?.IsStableForUserLayoutAction == false;
+            if (!suppressVisualRecovery && !displayTransitionInProgress && !_peek && !transientMenuOpen)
             {
                 var shellChanged = false;
                 var previousShellWasValid = true;
@@ -2785,6 +2792,18 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void RestoreStableDisplayLayout(DisplayTopologySnapshot snapshot, DisplayTransitionRestoreReason reason)
     {
+        // Screen topology can change between the stabilizer's last sample and
+        // this callback. Resettle rather than applying/saving an obsolete
+        // monitor profile or moving windows to a disappearing screen.
+        var currentMonitors = MonitorConfigurationService.CaptureMonitors();
+        if (!SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology(
+            snapshot.Fingerprint, snapshot.MonitorCount,
+            MonitorConfigurationService.GetSignature(currentMonitors), currentMonitors.Count))
+        {
+            DiagnosticsLog.Warn("Display restore deferred: settled snapshot and observed monitors differ.");
+            _displayTransition?.HandleWindowMessage(WpfDisplayTransitionBridge.WmDisplayChange);
+            return;
+        }
         _displayTransitionStableRestoreCount++;
         if (!_peek)
         {
@@ -2798,7 +2817,6 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var signature = snapshot.Fingerprint;
         var previousSignature = _activeMonitorSignature;
         var previousProfile = _state.MonitorProfiles.FirstOrDefault(p => string.Equals(p.Signature, previousSignature, StringComparison.Ordinal));
-        var currentMonitors = MonitorConfigurationService.CaptureMonitors();
         var signatureChanged = !string.Equals(signature, previousSignature, StringComparison.Ordinal);
         var monitorsReduced = MonitorDisconnectLayoutPlanner.IsMonitorReduction(
             _lastStableMonitorCount, currentMonitors.Count);
@@ -2806,6 +2824,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (signatureChanged)
         {
             _activeMonitorSignature = signature;
+            _monitorProfileRestoreBlockedSignature = null;
             _restoringMonitorLayout = true;
             try
             {
@@ -2824,14 +2843,17 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 {
                     case DeckLayoutAdjustmentMode.PerMonitor:
                     {
-                        if (targetProfile is not null) ApplyPlacements(targetProfile.Fences);
+                        if (targetProfile is not null)
+                            TryApplySavedMonitorPlacements(targetProfile.Fences, "matching monitor profile");
                         else foreach (var window in _windows.ToArray()) window.EnsureVisibleOnMonitor();
                         break;
                     }
                     case DeckLayoutAdjustmentMode.Scale:
                     {
                         if (previousProfile is not null && previousProfile.Fences.Count > 0 && previousProfile.Monitors.Count > 0)
-                            ApplyPlacements(ScalePlacements(previousProfile.Fences, previousProfile.Monitors, currentMonitors));
+                            TryApplySavedMonitorPlacements(
+                                ScalePlacements(previousProfile.Fences, previousProfile.Monitors, currentMonitors),
+                                "scaled monitor profile");
                         else foreach (var window in _windows.ToArray()) window.EnsureVisibleOnMonitor();
                         break;
                     }
@@ -3674,6 +3696,42 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
     }
 
+    private bool TryApplySavedMonitorPlacements(
+        IEnumerable<DeckFencePlacement> placements, string context)
+    {
+        // Treat applying a saved two-monitor layout as a transaction. The
+        // source profile and its previous geometry must survive any failure.
+        var selected = placements.Where(p => _state.Fences.Any(f => f.Id == p.FenceId)).ToArray();
+        var geometries = selected.Select(p => new SavedMonitorLayoutSafetyPolicy.Geometry(
+            p.FenceId, p.X, p.Y, p.Width, p.Height, p.ExpandedHeight)).ToArray();
+        if (!SavedMonitorLayoutSafetyPolicy.IsUsable(geometries))
+        {
+            _monitorProfileRestoreBlockedSignature = _activeMonitorSignature;
+            DiagnosticsLog.Warn($"Monitor restore refused invalid stored placements: {context}");
+            return false;
+        }
+        var previous = CapturePlacements();
+        try
+        {
+            var checkpoint = _store.SaveRecoveryCheckpoint(_state,
+                "before-monitor-profile-restore-" + Guid.NewGuid().ToString("N"));
+            if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint) ||
+                new FileInfo(checkpoint).Length == 0)
+                throw new IOException("모니터 배치 복구 체크포인트를 안전하게 저장하지 못했습니다.");
+            ApplyPlacements(selected);
+            DiagnosticsLog.Info($"Restored {selected.Length} saved monitor placements ({context}); checkpoint={Path.GetFileName(checkpoint)}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _monitorProfileRestoreBlockedSignature = _activeMonitorSignature;
+            DiagnosticsLog.Error("Monitor layout restore failed; original profile retained", ex);
+            try { ApplyPlacements(previous); }
+            catch (Exception rollbackEx) { DiagnosticsLog.Error("Monitor layout rollback failed", rollbackEx); }
+            return false;
+        }
+    }
+
     private void ApplyInitialLayoutAdjustment()
     {
         // Cold launch after unplug: use the last saved multi-monitor profile
@@ -3780,7 +3838,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_state.Settings.LayoutAdjustmentMode == DeckLayoutAdjustmentMode.None) return;
         if (_restoringMonitorLayout || _geometryResetPendingRestart ||
-            string.IsNullOrWhiteSpace(_activeMonitorSignature)) return;
+            string.IsNullOrWhiteSpace(_activeMonitorSignature) ||
+            string.Equals(_monitorProfileRestoreBlockedSignature, _activeMonitorSignature, StringComparison.Ordinal))
+            return;
         var current = MonitorConfigurationService.GetSignature();
         if (!string.Equals(current, _activeMonitorSignature, StringComparison.Ordinal)) return;
         var profile = _state.MonitorProfiles.FirstOrDefault(p => string.Equals(p.Signature, _activeMonitorSignature, StringComparison.Ordinal));
