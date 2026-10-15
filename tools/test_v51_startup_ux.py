@@ -54,7 +54,7 @@ checks={
     '_cancelButton.Click += (_, _) => Close()' in wizard,
  'onboarding re-open distinguished from first-run':
     '(_firstRun ? "저장 후 시작" : "변경 적용")' in wizard and
-    '(_firstRun ? "설정하지 않고 종료" : "변경 취소")' in wizard,
+    '_cancelButton.Content = _firstRun ? "설정하지 않고 종료" : "변경 취소"' in wizard,
  'first run never alters Explorer until configuration saved':
     'firstStore.Save(new DeckState { Settings = configured });' in app and
     app.index('firstStore.Save(new DeckState { Settings = configured });') < app.index('_controller.Start();'),
