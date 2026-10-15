@@ -245,3 +245,7 @@ v8.0.4에서 EXE만 배포한 사용자는 기존 앱에 공개키가 없어 자
 ## v8.0.16 Beta: first-run setup wizard
 
 Fresh installations get a four-step wizard (select modules; desktop icon visibility and automatic group classification; optional Google OAuth with calendar-list checkboxes and writable default destination or local-only; Windows startup and default-enabled signed automatic stable updates with optional beta channel). The desktop shell is not changed until settings are durably written. Closing setup leaves Explorer untouched and permits setup to resume on the next launch, including incomplete OAuth. Existing, backed-up, staged or damaged layouts bypass the wizard. Users can reopen the guide from the tray menu. A new-event-only local-default flag does not affect old calendar entries. User files are never moved or deleted by onboarding.
+
+### v8.0.16 배포/UX 보완
+
+Google 연결을 건너뛴 신규 사용자는 새 일정을 기본적으로 로컬에 저장합니다. 기존 사용자가 트레이에서 가이드를 다시 열어 연결을 건너뛰더라도 이전 Google 캘린더 선택과 저장 대상 설정을 덮어쓰지 않습니다. 베타 게시 워크플로 릴리스 노트 따옴표/줄 연속 구문 오류를 수정했습니다.

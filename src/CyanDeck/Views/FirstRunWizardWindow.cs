@@ -18,6 +18,7 @@ public sealed class FirstRunWizardWindow : Window
 {
     private readonly DeckSettings _settings;
     private readonly Func<DeckSettings, bool> _save;
+    private readonly bool _firstRun;
     private readonly StackPanel _page = new() { Margin = new Thickness(22) };
     private readonly TextBlock _heading = new() { FontSize = 21,
         FontWeight = FontWeights.SemiBold, Margin = new Thickness(22, 20, 22, 0) };
@@ -37,10 +38,11 @@ public sealed class FirstRunWizardWindow : Window
     private string? _saveTo;
     private bool _saveLocal;
 
-    public FirstRunWizardWindow(DeckSettings settings, Func<DeckSettings, bool> save)
+    public FirstRunWizardWindow(DeckSettings settings, Func<DeckSettings, bool> save, bool firstRun = true)
     {
         _settings = settings.Clone();
         _save = save;
+        _firstRun = firstRun;
         _saveLocal = _prefs.Data.DefaultNewEventsLocalOnly;
         Title = "CyanDeck 시작 가이드";
         Width = 640; Height = 535; MinWidth = 500; MinHeight = 430;
@@ -227,6 +229,13 @@ public sealed class FirstRunWizardWindow : Window
                     next.TargetCalendarId = target;
                     next.DefaultNewEventsLocalOnly = target is null;
                 });
+            }
+            if (_firstRun && _settings.EnableCalendar && !(_googleWanted && _connected))
+            {
+                // No Google account was selected. Ensure brand-new local events
+                // do not default to the placeholder "primary" Google calendar.
+                // Replaying the guide must not overwrite existing user preferences.
+                _prefs.CommitUpdate(next => next.DefaultNewEventsLocalOnly = true);
             }
             if (!_save(_settings.Clone()))
             { _message.Text = "설정 저장에 실패해 실행 구성을 변경하지 않았습니다."; return; }

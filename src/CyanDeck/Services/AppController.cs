@@ -4468,7 +4468,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (ApplySettingsChanges()) return true;
             _state.Settings.CopyFrom(previous);
             return false;
-        });
+        }, firstRun: false);
         guide.ShowDialog();
     }
 
