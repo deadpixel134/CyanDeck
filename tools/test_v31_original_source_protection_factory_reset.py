@@ -44,7 +44,10 @@ checks={
 'factory reset button present': 'x:Name="FactoryResetButton"' in x,
 'factory reset button handler present': 'Click="FactoryReset_Click"' in x and 'private void FactoryReset_Click(' in c,
 'factory reset navigation present': 'Tag="AboutTab|FactoryResetSection"' in x,
-'factory reset handler wired to controller': 'ResetCyanDeckToDefaults);' in a and 'private readonly Func<bool> _factoryReset;' in c,
+'factory reset handler wired to controller': ('ResetCyanDeckToDefaults);' in a or
+    ('ResetCyanDeckToDefaults,' in a and 'ResetVisualGeometryToDefaults);' in a)) and
+    'private readonly Func<bool> _factoryReset;' in c and
+    'private readonly Func<bool, bool, bool> _resetPlacement;' in c,
 'reset requires user confirmation': 'MessageBoxButton.YesNo' in reset and "'초기화'" in reset,
 'reset refuses safe mode/read-only': 'if (_compatibilityReadOnly || _safeMode) return false;' in reset,
 'reset enforces managed policy': 'EnsureManagedCapability("Settings.EditGeneral"' in reset,

@@ -4796,9 +4796,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var what = groups && calendar ? "그룹 위치·크기·접힘 상태와 캘린더 위치·크기"
             : groups ? "그룹 위치·크기·접힘 상태" : "캘린더 위치·크기";
         if (System.Windows.MessageBox.Show(
-            $"{what}를 기본값으로 되돌리시겠습니까?\\n\\n" +
-            "그룹 이름·탭·아이콘·정리 규칙과 캘린더 일정·Google 계정·개인 설정은 변경하지 않습니다.\\n" +
-            "기존 배치를 백업하며 완료 후 CyanDeck을 재시작합니다.\\n" +
+            $"{what}를 기본값으로 되돌리시겠습니까?\n\n" +
+            "그룹 이름·탭·아이콘·정리 규칙과 캘린더 일정·Google 계정·개인 설정은 변경하지 않습니다.\n" +
+            "기존 배치를 백업하며 완료 후 CyanDeck을 재시작합니다.\n" +
             "설정 창에서 아직 적용하지 않은 편집 내용은 저장되지 않습니다.",
             "CyanDeck — 위치 및 크기 초기화", MessageBoxButton.YesNo,
             MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
@@ -4872,8 +4872,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             DiagnosticsLog.Info($"Visual geometry reset durably saved: groups={groups}; " +
                 $"calendar={calendar}; backup={backup}; checkpoint={checkpoint}");
             System.Windows.MessageBox.Show(
-                $"선택한 위치·크기를 초기화했습니다.\\n\\n" +
-                $"복구 백업: {backup}\\n프로그램을 다시 시작합니다.",
+                $"선택한 위치·크기를 초기화했습니다.\n\n" +
+                $"복구 백업: {backup}\n프로그램을 다시 시작합니다.",
                 "CyanDeck 위치 초기화 완료", MessageBoxButton.OK,
                 MessageBoxImage.Information);
             Restart(false);
@@ -4901,8 +4901,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             try { PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true); }
             catch (Exception rollbackEx) { DiagnosticsLog.Error("Geometry rollback save failed; exported backup still available", rollbackEx); }
             System.Windows.MessageBox.Show(
-                $"위치 초기화에 실패했습니다. 기존 배치로 복원했습니다.\\n" +
-                $"백업: {backup ?? "생성 실패"}\\n\\n{ex.Message}",
+                $"위치 초기화에 실패했습니다. 기존 배치로 복원했습니다.\n" +
+                $"백업: {backup ?? "생성 실패"}\n\n{ex.Message}",
                 "CyanDeck 위치 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }

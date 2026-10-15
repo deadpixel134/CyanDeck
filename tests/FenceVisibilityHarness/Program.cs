@@ -246,6 +246,16 @@ var smallReset = InitialGeometryResetPolicy.Plan(
 if (smallReset.Placements.Count != resetGroups.Length ||
     smallReset.Placements.Any(p => p.Width <= 0 || p.Height <= 0))
     throw new Exception("Small monitor layout reset must keep every group usable.");
+// Exact four-group first-install positions, including the compact system
+// group below the third group, are restored if the primary screen can fit.
+var defaultGroupSet = Enumerable.Range(0, 4).Select(_ =>
+    new InitialGeometryResetPolicy.ExistingGroup(Guid.NewGuid(), 0, false)).ToArray();
+var initialFour = InitialGeometryResetPolicy.Plan(resetArea, defaultGroupSet, 18).Placements;
+if (initialFour[0].X != 36 || initialFour[0].Y != 46 ||
+    initialFour[1].X != 419 || initialFour[2].X != 802 ||
+    initialFour[3].X != 802 || initialFour[3].Y != 419 ||
+    initialFour[3].Height != 260)
+    throw new Exception("Default four group placements must match CreateDefaultLayout.");
 var defaultsGeometry = InitialGeometryResetPolicy.CalendarDefaults;
 if (defaultsGeometry != (120d, 110d, 650d, 510d))
     throw new Exception("Calendar reset must restore only original window geometry.");
