@@ -44,6 +44,8 @@ checks={
 'factory reset button present': 'x:Name="FactoryResetButton"' in x,
 'factory reset button handler present': 'Click="FactoryReset_Click"' in x and 'private void FactoryReset_Click(' in c,
 'factory reset navigation present': 'Tag="AboutTab|FactoryResetSection"' in x,
+'normal tray exposes replayable first-run guide': 'menu.Items.Add("시작 가이드 다시 보기…", null' in a[a.index('menu.Items.Add(startup);'):a.index('private void UpdateTrayText()')],
+'initial group reset uses disk reimport rather than retaining deleted items': 'CreateDefaultLayout();' in a[a.index('private bool ResetVisualGeometryToDefaults('):a.index('private bool ResetCyanDeckToDefaults()')] and 'RuleEngine.EnumerateDesktopItems()' in a[a.index('private bool ResetVisualGeometryToDefaults('):a.index('private bool ResetCyanDeckToDefaults()')],
 'factory reset handler wired to controller': ('ResetCyanDeckToDefaults);' in a or
     ('ResetCyanDeckToDefaults,' in a and 'ResetVisualGeometryToDefaults);' in a)) and
     'private readonly Func<bool> _factoryReset;' in c and
