@@ -19,6 +19,9 @@ public partial class App : Application
     private CancellationTokenSource? _activationCts;
     private Task? _activationTask;
     private StartupUpdateWindow? _startupUpdateWindow;
+    // Set on WPF's native Windows logoff/shutdown path. No I/O or shell
+    // interaction is permitted in the session-end query callback.
+    private bool _windowsSessionEnding;
     private readonly List<string> _pendingActivationCommands = new();
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -391,10 +394,26 @@ public partial class App : Application
         }
     }
 
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        // WM_QUERYENDSESSION must be acknowledged quickly. WPF raises Exit
+        // after the session end is accepted; heavy cleanup belongs neither in
+        // this query nor in the OS shutdown path. Never cancel PC shutdown.
+        _windowsSessionEnding = true;
+        e.Cancel = false;
+        base.OnSessionEnding(e);
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         try { _activationCts?.Cancel(); } catch { }
-        try { _controller?.Dispose(); }
+        try
+        {
+            if (_windowsSessionEnding)
+                _controller?.DisposeForWindowsSessionEnd();
+            else
+                _controller?.Dispose();
+        }
         finally
         {
             _activationCts?.Dispose();
