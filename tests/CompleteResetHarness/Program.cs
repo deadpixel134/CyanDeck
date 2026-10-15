@@ -130,6 +130,23 @@ try
         throw new Exception("Expired automatic update retry hold still appears active.");
     Console.WriteLine("PASS: bounded update failure diagnostic categories and retry state");
 
+    // PC shutdown/logoff must neither block on heavy checkpoint retries nor
+    // declare unsaved or transient monitor layouts clean. Pure policy tests do
+    // not manipulate Windows sessions or any actual user files.
+    static bool Clean(bool abnormal, bool dirty, int retries, bool displayChange, bool layoutChange)
+        => WindowsSessionExitPolicy.CanClearRecoveryMarker(
+            abnormal, dirty, retries, displayChange, layoutChange);
+    if (!Clean(false, false, 0, false, false))
+        throw new Exception("Previously autosaved stable session was not recognized as clean.");
+    if (Clean(true, false, 0, false, false) ||
+        Clean(false, true, 0, false, false) ||
+        Clean(false, false, 1, false, false) ||
+        Clean(false, false, 0, true, false) ||
+        Clean(false, false, 0, false, true))
+        throw new Exception("Unsaved, abnormal, locked or transitioning layout cleared its recovery marker.");
+    Console.WriteLine("PASS: Windows fast session exit preserves recovery on dirty/saving/transitioning layouts");
+
+
     Console.WriteLine("PASS: full local data reset token, expired request, external file and disposable data");
 }
 finally
