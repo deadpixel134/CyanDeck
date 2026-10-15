@@ -18,7 +18,7 @@ updatetests=get('tests/CompleteResetHarness/Program.cs')
 updateproj=get('tests/CompleteResetHarness/CompleteResetHarness.csproj')
 onboarding=get('src/CyanDeck/Services/FirstRunOnboardingPolicy.cs')
 menu=win.split('private ContextMenu CreateEventAppearanceMenu(',1)[1].split('private bool CanRelocateEvent(',1)[0]
-draw=win.split('private void RenderMonth(',1)[1].split('private ContextMenu CreateEventAppearanceMenu(',1)[0]
+draw=win.split('public void RenderMonth(',1)[1].split('private ContextMenu CreateEventAppearanceMenu(',1)[0]
 checks={
   'calendar right-click menu offered for all event bars':
     'var menu = CreateEventAppearanceMenu(bar.Event);' in draw and
