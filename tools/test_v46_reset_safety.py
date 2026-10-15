@@ -70,7 +70,7 @@ checks = {
         "defaults.Settings.GoogleCalendarClientId = _state.Settings.GoogleCalendarClientId;" in factory,
     "both reset operations leave user files/tokens/events untouched":
         all(not any(x in method for x in (
-            "File.Delete(", "Directory.Delete(", "calendar-events.json", "calendar-google-token.dat"))
+            "File.Delete(", "Directory.Delete(", "File.Move(", "Directory.Move(", "File.WriteAllText("))
             for method in (geometry, factory)),
     "existing geometry layout helper and original calendar dimensions retained":
         "MonitorGroupRecoveryPlanner.Plan(" in policy and
