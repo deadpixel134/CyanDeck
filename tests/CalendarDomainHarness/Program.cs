@@ -1115,6 +1115,64 @@ Assert.That(GitHubReleaseSource.PackageSource(GitHubReleaseSource.BetaChannel, "
     "beta package source retains its channel identity");
 
 
+// Per-event appearance is a separate, durable local-only visual preference.
+// This works for Google, local and deterministic holiday event IDs and never
+// marks remote events Dirty or modifies calendar-events.json.
+var appearanceScratch = Path.Combine(Path.GetTempPath(),
+    "cyandeck-event-appearance-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(appearanceScratch);
+try
+{
+    var stylePath = Path.Combine(appearanceScratch, "calendar-event-appearance.json");
+    var eventPath = Path.Combine(appearanceScratch, "calendar-events.json");
+    var originalCalendar = new CalendarEventStore(eventPath);
+    var linked = new CalendarEvent { Title = "Remote untouched", CalendarId = "primary",
+        RemoteId = "remote-17", RemoteETag = "v1", Dirty = false, RemoteReadOnly = true };
+    originalCalendar.CommitSnapshot([linked]);
+    var originalEventJson = File.ReadAllText(eventPath);
+    var appearance = new CalendarEventAppearanceStore(stylePath);
+    Assert.That(appearance.Get(linked.Id) == new CalendarEventAppearance(),
+        "events default to per-calendar background and white text");
+    appearance.Set(linked.Id, "#a1b2c3", "#101318");
+    Assert.That(appearance.Get(linked.Id) is { BackgroundColor: "#A1B2C3", TextColor: "#101318" },
+        "event background and font colors persist independently");
+    var holidayId = Guid.NewGuid();
+    appearance.Set(holidayId, null, "#FFFFFF");
+    var reopenedStyle = new CalendarEventAppearanceStore(stylePath);
+    Assert.That(reopenedStyle.Get(linked.Id).BackgroundColor == "#A1B2C3" &&
+        reopenedStyle.Get(holidayId).TextColor == "#FFFFFF",
+        "Google and holiday event styles survive restart with stable IDs");
+    Assert.That(File.ReadAllText(eventPath) == originalEventJson &&
+        originalCalendar.Events.Single().Dirty == false,
+        "visual-only event changes never change Google sync or event store");
+    Assert.That(!CalendarEventAppearanceStore.IsValid("#GGG000") &&
+        !CalendarEventAppearanceStore.IsValid("#FFF") &&
+        CalendarEventAppearanceStore.IsValid("#2f3A6b"),
+        "invalid colors are rejected");
+    var invalidColor = false;
+    try { reopenedStyle.Set(holidayId, "#G00000", null); }
+    catch (ArgumentException) { invalidColor = true; }
+    Assert.That(invalidColor && reopenedStyle.Get(holidayId).TextColor == "#FFFFFF",
+        "invalid color leaves existing durable style untouched");
+    reopenedStyle.Set(linked.Id, null, "#F83A22");
+    Assert.That(new CalendarEventAppearanceStore(stylePath).Get(linked.Id) is
+        { BackgroundColor: null, TextColor: "#F83A22" },
+        "independent background reset retains text color");
+    reopenedStyle.Set(linked.Id, null, null);
+    Assert.That(new CalendarEventAppearanceStore(stylePath).Get(linked.Id) ==
+        new CalendarEventAppearance(), "both appearance colors restore defaults");
+    // Removing the primary must never overwrite or auto-import the backup.
+    File.Delete(stylePath);
+    var protectedStyle = new CalendarEventAppearanceStore(stylePath);
+    Assert.That(protectedStyle.IsReadOnly && protectedStyle.IsRecoveredFromBackup,
+        "missing style primary loads backup read-only and preserves recovery");
+    Assert.StorageFailure(() => protectedStyle.Set(holidayId, "#FFFFFF", null),
+        "appearance backup safety blocks writes until explicit recovery");
+    Assert.That(!File.Exists(stylePath),
+        "recovered style must not silently create replacement primary");
+}
+finally { Directory.Delete(appearanceScratch, recursive: true); }
+
 Console.WriteLine("All calendar domain tests passed.");
 
 static class Assert
