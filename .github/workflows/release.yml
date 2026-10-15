@@ -83,7 +83,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Recycle regressions failed.' }
           python tools/test_cyandeck_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'CyanDeck identity regressions failed.' }
-          foreach ($name in @('CalendarDomainHarness','FenceVisibilityHarness','WatcherLifetimeHarness')) {
+          foreach ($name in @('CalendarDomainHarness','FenceVisibilityHarness','WatcherLifetimeHarness','CompleteResetHarness')) {
             dotnet run --project "tests/$name/$name.csproj" -c Release
             if ($LASTEXITCODE -ne 0) { throw "Domain tests failed: $name" }
           }
