@@ -500,7 +500,7 @@
                         <TextBlock Text="모든 그룹 창(데스크톱의 모든 페이지)과 캘린더 창의 위치·크기를 한 번에 기본 배치로 복원합니다. 그룹·아이콘·일정과 기타 설정은 그대로 두며, 기존 배치를 백업합니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,9"/>
                         <Button x:Name="ResetAllWindowGeometryButton" Content="모든 그룹·캘린더 창 위치 및 크기 초기화…" HorizontalAlignment="Left" Margin="0,0,0,18" Click="ResetAllWindowGeometry_Click"/>
                         <Separator Margin="0,0,0,12" Background="#344254"/>
-                        <TextBlock Text="삭제된 기본 그룹이나 빠진 아이콘까지 되돌리려면 아래 초기 구성 복원을 사용하세요. 이 작업은 그룹 구성을 새로 만듭니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/> Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBlock Text="삭제된 기본 그룹이나 빠진 아이콘까지 되돌리려면 아래 초기 구성 복원을 사용하세요. 이 작업은 그룹 구성을 새로 만듭니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <StackPanel Margin="0,0,0,10">
                             <CheckBox x:Name="ResetGroupGeometryCheck" Content="그룹 및 아이콘 초기 구성 복원 (삭제된 그룹·빠진 아이콘 다시 불러오기)" IsChecked="True" Margin="0,0,0,8"/>
                             <CheckBox x:Name="ResetCalendarGeometryCheck" Content="캘린더 창 위치·크기 초기화" IsChecked="True" Margin="0,0,0,8"/>

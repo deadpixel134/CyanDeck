@@ -17,6 +17,7 @@ scripts = [
   'test_v33_collection_desktop_delete_choice.py',
   'test_v32_desktop_recycle_boundary.py',
   'test_v31_original_source_protection_factory_reset.py',
+  'test_v46_reset_safety.py',
   'test_full_source_structure.py',
 ]
 results = []

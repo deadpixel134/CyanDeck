@@ -4912,8 +4912,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _store.Export(_state, backup);
             if (!File.Exists(backup) || new FileInfo(backup).Length == 0)
                 throw new IOException("원본 레이아웃 백업을 생성하지 못했습니다.");
+            _store.Import(backup);
             var checkpoint = _store.SaveRecoveryCheckpoint(_state, "before-geometry-reset");
-            if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint))
+            if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint) ||
+                new FileInfo(checkpoint).Length == 0)
                 throw new IOException("레이아웃 복구 체크포인트를 만들지 못했습니다.");
 
             previousGroups = _state.Fences;
@@ -5060,6 +5062,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!string.Equals(explicitConsent?.Trim(), "초기화", StringComparison.Ordinal)) return false;
 
         string? backup = null;
+        var resetStarted = false;
         try
         {
             var dir = Path.Combine(_store.SettingsFolder, "reset-backups");
@@ -5067,11 +5070,19 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             backup = Path.Combine(dir, $"CyanDeck-before-reset-{DateTime.Now:yyyyMMdd-HHmmss-fff}.json");
             // Fail closed: if export/checkpoint cannot be made, do not reset anything.
             _store.Export(_state, backup);
-            _store.SaveRecoveryCheckpoint(_state, "before-factory-reset");
+            if (!File.Exists(backup) || new FileInfo(backup).Length == 0)
+                throw new IOException("원본 설정 백업을 생성하지 못했습니다.");
+            // A readable, restorable backup is required before any live state is replaced.
+            _store.Import(backup);
+            var checkpoint = _store.SaveRecoveryCheckpoint(_state, "before-factory-reset");
+            if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint) ||
+                new FileInfo(checkpoint).Length == 0)
+                throw new IOException("설정 복구 체크포인트를 생성하지 못했습니다.");
             var defaults = new DeckState();
             // The OAuth client ID may be user-supplied. Keep it so that the Calendar
             // module still connects to its existing authorized account after restart.
             defaults.Settings.GoogleCalendarClientId = _state.Settings.GoogleCalendarClientId;
+            resetStarted = true;
             ReplaceState(defaults);
             // A reset is not successful until the new layout is durably committed.
             PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true);
@@ -5087,10 +5098,17 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             DiagnosticsLog.Error("Factory reset failed", ex);
             // On failure, attempt to recover the prior settings from the durable backup.
-            if (backup is not null && File.Exists(backup))
+            if (resetStarted && backup is not null && File.Exists(backup))
             {
-                try { ReplaceState(_store.Import(backup)); }
-                catch (Exception recoveryEx) { DiagnosticsLog.Error("Factory reset rollback failed", recoveryEx); }
+                try
+                {
+                    ReplaceState(_store.Import(backup));
+                    PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true);
+                }
+                catch (Exception recoveryEx)
+                {
+                    DiagnosticsLog.Error("Factory reset rollback failed; exported backup retained", recoveryEx);
+                }
             }
             System.Windows.MessageBox.Show(
                 $"초기화에 실패했습니다. 이전 설정 백업은 보존됩니다.\n{ex.Message}",
