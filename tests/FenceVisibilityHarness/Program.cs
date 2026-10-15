@@ -331,3 +331,38 @@ foreach (var x in surfaceCases)
         throw new Exception("Surface recovery HasWork mismatch.");
 }
 Console.WriteLine($"PASS: {surfaceCases.Length} visibility recovery scenarios (combined, calendar-only, deck-only, safe-mode, transition)");
+
+
+// v8.0.26: saved profile restoration must never accept corrupt geometry,
+// duplicate IDs or a stale monitor snapshot observed after topology settling.
+var monitorIdA = Guid.NewGuid();
+var monitorIdB = Guid.NewGuid();
+var validSavedGeometry = new[]
+{
+    new SavedMonitorLayoutSafetyPolicy.Geometry(monitorIdA, -1920, 20, 480, 310, 310),
+    new SavedMonitorLayoutSafetyPolicy.Geometry(monitorIdB, 120, 80, 520, 420, 420)
+};
+if (!SavedMonitorLayoutSafetyPolicy.IsUsable(validSavedGeometry))
+    throw new Exception("Valid two-monitor profile wrongly rejected.");
+if (SavedMonitorLayoutSafetyPolicy.IsUsable(Array.Empty<SavedMonitorLayoutSafetyPolicy.Geometry>()))
+    throw new Exception("Empty saved profile was accepted.");
+if (SavedMonitorLayoutSafetyPolicy.IsUsable(new[]
+    {validSavedGeometry[0], validSavedGeometry[0]}))
+    throw new Exception("Duplicate group ID in saved profile was accepted.");
+if (SavedMonitorLayoutSafetyPolicy.IsUsable(new[]
+    {new SavedMonitorLayoutSafetyPolicy.Geometry(monitorIdA, double.NaN, 0, 450, 300, 300)}))
+    throw new Exception("Non-finite saved position was accepted.");
+if (SavedMonitorLayoutSafetyPolicy.IsUsable(new[]
+    {new SavedMonitorLayoutSafetyPolicy.Geometry(monitorIdA, 10, 0, -1, 300, 300)}))
+    throw new Exception("Negative saved width was accepted.");
+if (SavedMonitorLayoutSafetyPolicy.IsUsable(new[]
+    {new SavedMonitorLayoutSafetyPolicy.Geometry(monitorIdA, 10, 0, 450, 300, double.PositiveInfinity)}))
+    throw new Exception("Invalid expanded height was accepted.");
+if (!SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology("dual-screen", 2, "dual-screen", 2))
+    throw new Exception("Settled topology was wrongly rejected.");
+if (SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology("dual-screen", 2, "single-screen", 1) ||
+    SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology("dual-screen", 2, "single-screen", 2) ||
+    SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology("dual-screen", 2, "dual-screen", 1) ||
+    SavedMonitorLayoutSafetyPolicy.MatchesSettledTopology("", 2, "", 2))
+    throw new Exception("Stale or incomplete monitor snapshot was accepted.");
+Console.WriteLine("PASS: 9 monitor profile and settled topology safety assertions.");
