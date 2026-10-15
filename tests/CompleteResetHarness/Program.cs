@@ -111,6 +111,25 @@ try
     File.Delete(failureMarker);
     Console.WriteLine("PASS: exact digest failure cooldown, expiry, corrected release and manual retry isolation");
 
+    var diagnostic = UpdateFailureDiagnostics.Inspect(mockLocal, nowUtc);
+    if (diagnostic.HasLog || diagnostic.RecentFailedPackages != 0)
+        throw new Exception("No failure history should mean no diagnostics.");
+    File.WriteAllText(failureMarker, "failed");
+    File.SetLastWriteTimeUtc(failureMarker, nowUtc.AddHours(-2));
+    var logPath = UpdateFailureDiagnostics.LogPath(mockLocal);
+    File.WriteAllText(logPath,
+        "[2026-10-15T08:00:00Z] Update failed: sharing violation: C:\\\\private\\\\file\\\\token.dat");
+    diagnostic = UpdateFailureDiagnostics.Inspect(mockLocal, nowUtc);
+    if (!diagnostic.HasLog || diagnostic.RecentFailedPackages != 1 ||
+        !diagnostic.Text.Contains("파일 사용 중") || diagnostic.Text.Contains("private") ||
+        diagnostic.Text.Contains("token.dat"))
+        throw new Exception("Update failure summary must classify safely without leaking file paths.");
+    File.SetLastWriteTimeUtc(failureMarker, nowUtc.AddHours(-14));
+    diagnostic = UpdateFailureDiagnostics.Inspect(mockLocal, nowUtc);
+    if (diagnostic.RecentFailedPackages != 0)
+        throw new Exception("Expired automatic update retry hold still appears active.");
+    Console.WriteLine("PASS: bounded update failure diagnostic categories and retry state");
+
     Console.WriteLine("PASS: full local data reset token, expired request, external file and disposable data");
 }
 finally
