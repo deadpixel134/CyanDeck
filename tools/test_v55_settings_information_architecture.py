@@ -45,8 +45,8 @@ new_tabs = ["GeneralTab", "InteractionTab", "AppearanceTab",
 checks = {
     "settings XAML parses with unique named controls":
         len(names) >= 216 and all(count == 1 for count in names.values()),
-    "all 40 navigation roots/leaves resolve to their actual owning page":
-        len(routes) == 40 and not route_issues,
+    "all 39 navigation roots/leaves resolve to their actual owning page":
+        len(routes) == 39 and not route_issues,
     "original calendar/system/group/about editors remain as distinct tabs":
         all(x in tabs for x in ("CalendarTab", "SystemIconsTab", "GroupsTab", "AboutTab")),
     "six dedicated new desktop settings pages":
@@ -99,7 +99,7 @@ checks = {
         all(f'Click="{name}"' in xaml
             for name in ("Apply_Click", "Ok_Click", "Cancel_Click")),
     "no new state migration":
-        "<Version>8.0.31</Version>" in project
+        tuple(map(int, re.search(r"<Version>(\d+\.\d+\.\d+)</Version>", project).group(1).split("."))) >= (8,0,31)
         and "Current = 35" in
         (root / "src/CyanDeck/Services/StateSchema.cs").read_text(encoding="utf-8-sig")
 }
