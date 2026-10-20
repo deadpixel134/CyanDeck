@@ -45,6 +45,9 @@ public sealed class CalendarWindow : Window
         "수정 가능한 일정 막대를 왼쪽 버튼으로 1초 누른 채 드래그 → 날짜 이동\n" +
         "마우스 휠·터치 스크롤 → 다른 주 보기";
     private DateTime _visibleMonth = DateTime.Today;
+    // Last actually rendered mode, not the settings ComboBox's draft value.
+    // A month-browsing anchor must not carry into today's rolling-week view.
+    private string? _lastRenderedViewMode;
     private readonly SolidColorBrush _frameBackground = new();
     private readonly SolidColorBrush _dayBackground = new();
     private readonly SolidColorBrush _todayBackground = new();
@@ -347,6 +350,9 @@ public sealed class CalendarWindow : Window
     public void RenderMonth()
     {
         if (_editing) return;
+        _visibleMonth = CalendarViewportPolicy.AnchorAfterViewModeChange(
+            _visibleMonth, _lastRenderedViewMode, _settings.CalendarViewMode, DateTime.Today);
+        _lastRenderedViewMode = _settings.CalendarViewMode;
         CancelEventMove(); // Do not destroy a live editor on timer-driven synchronization.
         _showingPreferences = false;
         if (_editorSizeHandler is not null)
