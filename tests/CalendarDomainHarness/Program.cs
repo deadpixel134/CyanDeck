@@ -293,6 +293,42 @@ Assert.That(CalendarViewportPolicy.Navigate(new DateTime(2026, 10, 9), "Rolling"
 Assert.That(CalendarViewportPolicy.Navigate(new DateTime(2026, 10, 9), "Month", 6, -1)
     == new DateTime(2026, 9, 9), "monthly navigation changes month");
 
+// Regression: after paging through months, switching back to the today-centered
+// rolling mode must produce the same six-week viewport as pressing "오늘".
+var currentDay = new DateTime(2026, 10, 20, 14, 41, 0);
+var browsedMonth = new DateTime(2026, 12, 9);
+var rollingAnchor = CalendarViewportPolicy.AnchorAfterViewModeChange(
+    browsedMonth, "Month", "Rolling", currentDay);
+Assert.That(rollingAnchor == currentDay.Date,
+    "switching from browsed month to rolling mode resets to local today");
+var rollingFromModeChange = CalendarViewportPolicy.Calculate(rollingAnchor, "Rolling", 6);
+var rollingFromTodayButton = CalendarViewportPolicy.Calculate(currentDay.Date, "Rolling", 6);
+Assert.That(rollingFromModeChange == rollingFromTodayButton,
+    "rolling-mode switch matches Today button viewport, not previously browsed month");
+Assert.That(rollingFromModeChange.FirstSunday.AddDays(14) <= currentDay.Date
+    && currentDay.Date < rollingFromModeChange.FirstSunday.AddDays(21),
+    "six-week rolling mode places today in the third visible week");
+Assert.That(CalendarViewportPolicy.AnchorAfterViewModeChange(
+    browsedMonth, "Month", "Month", currentDay) == browsedMonth,
+    "changing unrelated settings while browsing month preserves selected month");
+Assert.That(CalendarViewportPolicy.AnchorAfterViewModeChange(
+    browsedMonth, "Rolling", "Rolling", currentDay) == browsedMonth,
+    "reapplying rolling settings does not discard manually paged viewport");
+Assert.That(CalendarViewportPolicy.AnchorAfterViewModeChange(
+    browsedMonth, "Rolling", "Month", currentDay) == browsedMonth,
+    "switching to month view preserves the current date anchor");
+Assert.That(CalendarViewportPolicy.AnchorAfterViewModeChange(
+    browsedMonth, null, "Rolling", currentDay) == browsedMonth,
+    "initial render never unexpectedly resets a saved or caller-provided anchor");
+foreach (var rowCount in new[] { 3, 5, 6, 8 })
+{
+    var viewport = CalendarViewportPolicy.Calculate(rollingAnchor, "Rolling", rowCount);
+    var todayWeekIndex = (int)((currentDay.Date - viewport.FirstSunday).TotalDays / 7);
+    Assert.That(todayWeekIndex == (rowCount - 1) / 2,
+        $"today belongs to centered week for {rowCount}-row rolling viewport");
+}
+
+
 
 Assert.That(CalendarWeekSizingPolicy.MinHeightPerWeek(650, 24, 6) >
     CalendarWeekSizingPolicy.MinHeightPerWeek(350, 24, 6),
