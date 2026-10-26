@@ -113,7 +113,10 @@ internal sealed class WallpaperBlurBitmapCache
                                    or UnauthorizedAccessException
                                    or NotSupportedException
                                    or UriFormatException
-                                   or InvalidOperationException)
+                                   or InvalidOperationException
+                                   or System.IO.FileFormatException
+                                   or ArgumentException
+                                   or System.Runtime.InteropServices.COMException)
         {
             return false;
         }
