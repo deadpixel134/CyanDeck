@@ -156,7 +156,11 @@ public static class GitHubReleaseSource
         using var content = new MemoryStream();
         await stream.CopyToAsync(content, token).ConfigureAwait(false);
         if (content.Length > MaxManifestBytes) throw new InvalidDataException("GitHub manifest exceeded the size limit.");
-        return System.Text.Encoding.UTF8.GetString(content.ToArray());
+        // Decode through a BOM-aware reader: Encoding.GetString keeps a UTF-8
+        // BOM as U+FEFF, and System.Text.Json rejects it in a string payload.
+        content.Position = 0;
+        using var reader = new StreamReader(content, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(token).ConfigureAwait(false);
     }
 
     public static async Task DownloadPackageAsync(string source, string destination, CancellationToken token)

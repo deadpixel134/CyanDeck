@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -420,12 +421,12 @@ public sealed class GoogleCalendarSync : IDisposable
     private static Dictionary<string, string> StartBody(CalendarEvent ev)
         => ev.StartAt is { } start
             ? new() { ["dateTime"] = start.ToString("O") }
-            : new() { ["date"] = ev.Date.Date.ToString("yyyy-MM-dd") };
+            : new() { ["date"] = ev.Date.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
 
     private static Dictionary<string, string> EndBody(CalendarEvent ev)
         => ev.EndAt is { } end
             ? new() { ["dateTime"] = end.ToString("O") }
-            : new() { ["date"] = ev.EffectiveEndDate.AddDays(1).ToString("yyyy-MM-dd") };
+            : new() { ["date"] = ev.EffectiveEndDate.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
 
     // Explicit null removes the opposite field when converting between timed
     // and all-day Google events. Otherwise PATCH could retain both date/dateTime.
@@ -439,8 +440,8 @@ public sealed class GoogleCalendarSync : IDisposable
             };
         return new Dictionary<string, string?>
         {
-            ["date"] = start ? ev.Date.Date.ToString("yyyy-MM-dd")
-                             : ev.EffectiveEndDate.AddDays(1).ToString("yyyy-MM-dd"),
+            ["date"] = start ? ev.Date.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                             : ev.EffectiveEndDate.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ["dateTime"] = null
         };
     }
@@ -717,8 +718,8 @@ public sealed class GoogleCalendarSync : IDisposable
                         {
                             if (!start.TryGetProperty("dateTime", out var begin)
                                 || !end.TryGetProperty("dateTime", out var finish)
-                                || !DateTimeOffset.TryParse(begin.GetString(), out var beginAt)
-                                || !DateTimeOffset.TryParse(finish.GetString(), out var finishAt)) continue;
+                                || !DateTimeOffset.TryParse(begin.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var beginAt)
+                                || !DateTimeOffset.TryParse(finish.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var finishAt)) continue;
                             startAt = beginAt; endAt = finishAt;
                             date = beginAt.ToLocalTime().Date;
                             endDate = finishAt.ToLocalTime().AddTicks(-1).Date;

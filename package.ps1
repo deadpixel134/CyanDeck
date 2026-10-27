@@ -147,7 +147,9 @@ if ($null -ne $rsa) {
   $rsa.Dispose()
 }
 
-$manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+# Always write UTF-8 without a BOM: Windows PowerShell's -Encoding UTF8 adds
+# one, and the in-app updater parses the manifest with System.Text.Json.
+[IO.File]::WriteAllText($manifestPath, (($manifest | ConvertTo-Json) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
 Write-Host "Packaged: $zip"
 Write-Host "Update manifest: $manifestPath"
 Write-Host "SHA-256: $hash"

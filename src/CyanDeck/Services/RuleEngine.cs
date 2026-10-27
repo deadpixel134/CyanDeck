@@ -239,7 +239,11 @@ public static class RuleEngine
 
     private static bool IsWithinDays(string path, string pattern, bool creation)
     {
-        if (!double.TryParse(pattern, out var days) || days < 0) return false;
+        // Rule patterns are persisted text; read them culture-independently first so a
+        // layout.json written under one locale keeps matching under another.
+        if (!double.TryParse(pattern, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var days)
+            && !double.TryParse(pattern, out days)) return false;
+        if (days < 0) return false;
         try
         {
             var timestamp = creation ? File.GetCreationTimeUtc(path) : File.GetLastWriteTimeUtc(path);

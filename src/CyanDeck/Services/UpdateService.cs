@@ -71,6 +71,9 @@ public static class UpdateService
             throw new InvalidOperationException("No update manifest source is configured. Add an HTTPS URL or a local manifest path in About & troubleshooting.");
 
         var payload = await ReadTextAsync(source, cancellationToken).ConfigureAwait(false);
+        // A manifest saved by Windows PowerShell's -Encoding UTF8 starts with a
+        // BOM; JsonSerializer.Deserialize(string) treats U+FEFF as invalid JSON.
+        payload = payload.TrimStart('\uFEFF');
         var manifest = JsonSerializer.Deserialize<CyanDeckUpdateManifest>(payload, Json)
             ?? throw new InvalidDataException("The update manifest could not be parsed.");
         if (!TryParseVersion(manifest.Version, out var latest))

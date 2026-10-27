@@ -836,10 +836,24 @@ public partial class SettingsWindow : Window
     {
         if (_currentFence is null) return;
         IconSizeSlider.Value = iconSize;
-        SpacingXSlider.Value = spacingX;
-        SpacingYSlider.Value = spacingY;
         TitleFontSizeSlider.Value = titleSize;
-        SaveCurrentGroupDraft();
+        if (LinkedIconSpacingCheck.IsChecked == true)
+        {
+            // Linked spacing shows the loose-desktop values and ignores the sliders, so store the
+            // preset in the dormant per-group values instead of leaving misleading slider positions.
+            SaveCurrentGroupDraft();
+            if (_drafts.TryGetValue(_currentFence.Id, out var linkedDraft))
+            {
+                _drafts[_currentFence.Id] = linkedDraft with { IconSpacingX = spacingX, IconSpacingY = spacingY };
+                ApplySpacingEditorValues(_drafts[_currentFence.Id]);
+            }
+        }
+        else
+        {
+            SpacingXSlider.Value = spacingX;
+            SpacingYSlider.Value = spacingY;
+            SaveCurrentGroupDraft();
+        }
         UpdateLabels();
     }
 

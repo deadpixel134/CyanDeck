@@ -74,6 +74,10 @@ internal sealed class WallpaperBitmapSampler
                                    or NotSupportedException
                                    or UriFormatException
                                    or InvalidOperationException
+                                   // WIC reports a corrupt or truncated image as
+                                   // FileFormatException (a FormatException, not an IOException).
+                                   or System.IO.FileFormatException
+                                   or ArgumentException
                                    or System.Runtime.InteropServices.COMException)
         {
             return false;

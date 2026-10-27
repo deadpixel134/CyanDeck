@@ -136,6 +136,12 @@ internal sealed class SnapshotScreenPreviewStore
         {
             return null;
         }
+        catch (FileFormatException)
+        {
+            // A valid PNG signature followed by corrupt data makes the WIC decoder
+            // throw FileFormatException (a FormatException) from EndInit.
+            return null;
+        }
     }
 
     internal void Delete(string snapshotId)

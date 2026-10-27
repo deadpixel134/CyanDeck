@@ -24,6 +24,7 @@ internal sealed class DesktopPageGestureHook : IDisposable
     private readonly DesktopCreationGestureGate _creationGate = new();
     private IntPtr _hook;
     private int _hookFaulted;
+    private bool _inHookCallback;
     private bool _tracking;
     private bool _triggered;
     private int _expectedDirection;
@@ -66,6 +67,7 @@ internal sealed class DesktopPageGestureHook : IDisposable
     {
         if (System.Threading.Volatile.Read(ref _hookFaulted) != 0)
             return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
+        _inHookCallback = true;
         try
         {
         if (nCode < 0) return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -166,6 +168,10 @@ internal sealed class DesktopPageGestureHook : IDisposable
                 catch { /* Fail open without blocking any mouse input. */ }
             }
             return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
+        }
+        finally
+        {
+            _inHookCallback = false;
         }
     }
 
@@ -327,7 +333,11 @@ internal sealed class DesktopPageGestureHook : IDisposable
 
     private void Dispatch(Action action)
     {
-        if (_dispatcher.CheckAccess()) action();
+        // WH_MOUSE_LL delivers callbacks on the hooking (UI) thread while Windows
+        // waits for the return value. Page transitions, menus and persistence must
+        // not run inline there: exceeding LowLevelHooksTimeout makes Windows drop
+        // the hook silently, which disables desktop gestures until restart.
+        if (_dispatcher.CheckAccess() && !_inHookCallback) action();
         else _dispatcher.BeginInvoke(DispatcherPriority.Input, action);
     }
 
