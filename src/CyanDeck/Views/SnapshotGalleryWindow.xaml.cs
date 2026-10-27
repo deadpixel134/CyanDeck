@@ -23,6 +23,13 @@ public partial class SnapshotGalleryWindow : Window
         _changed = changed;
         _screenPreviewLoader = screenPreviewLoader;
         InitializeComponent();
+        // The gallery has no Cancel button; Esc closes it like the other CyanDeck dialogs.
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != System.Windows.Input.Key.Escape) return;
+            e.Handled = true;
+            Close();
+        };
         Rebuild();
     }
 

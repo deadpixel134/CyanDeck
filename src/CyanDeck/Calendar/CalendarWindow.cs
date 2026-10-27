@@ -1354,6 +1354,14 @@ public sealed class CalendarWindow : Window
             var delete = MakeButton("일정 삭제");
             delete.Click += (_, _) =>
             {
+                // Deletion cannot be undone, and a Google-linked event is removed from Google on the next sync.
+                var title = string.IsNullOrWhiteSpace(existing.Title) ? "(제목 없음)" : existing.Title.Trim();
+                var googleNote = existing.RemoteId is not null
+                    ? "\n\nGoogle 캘린더와 연결된 일정이라 다음 동기화 때 Google 캘린더에서도 삭제됩니다."
+                    : "";
+                if (MessageBox.Show(this, $"'{title}' 일정을 삭제하시겠습니까?{googleNote}\n\n삭제한 일정은 되돌릴 수 없습니다.",
+                        "일정 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                    return;
                 try { _store.Delete(existing); ProblemReportService.Reset("calendar-save"); _editing = false; SetStatus("일정 삭제 완료"); RenderMonth(); }
                 catch (Exception ex)
                 {
@@ -1368,10 +1376,29 @@ public sealed class CalendarWindow : Window
             };
             actions.Children.Add(delete);
         }
-        input.PreviewKeyDown += (_, e) =>
+        // Esc works anywhere in the editor (an open date or calendar drop-down closes first, since it
+        // handles Esc itself) and asks before discarding edits. Ctrl+Enter saves from any field.
+        string EditorSignature() => string.Join("\u001F", input.Text, useDate.IsChecked, startPicker.SelectedDate,
+            endPicker.SelectedDate, useTime.IsChecked, startTime.SelectedTime, endTime.SelectedTime,
+            targets.SelectedValue, localOnly.IsChecked);
+        var initialSignature = EditorSignature();
+        void CancelFromKeyboard()
         {
-            if (e.Key == Key.Escape) { e.Handled = true; Cancel(); }
-            else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { e.Handled = true; Save(); }
+            if (EditorSignature() != initialSignature &&
+                MessageBox.Show(this, "편집 중인 내용을 저장하지 않고 닫을까요?", "일정 편집",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+                return;
+            Cancel();
+        }
+        overlay.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { e.Handled = true; Save(); }
+        };
+        overlay.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape) return;
+            e.Handled = true;
+            CancelFromKeyboard();
         };
         // Schedule focus after the overlay enters the visual tree and is laid out.
         // A double-click is the user's own gesture; never call SetForegroundWindow.

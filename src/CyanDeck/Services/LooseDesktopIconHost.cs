@@ -808,7 +808,9 @@ internal sealed class LooseDesktopIconHost : IDisposable
 
     private static void ShowProperties(string path)
     {
-        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "properties" }); } catch { }
+        if (ShellPropertiesLauncher.TryShow(path, out var error)) return;
+        System.Windows.MessageBox.Show($"속성 창을 열 수 없습니다.\n\n{path}\n{error}", "CyanDeck",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void RemoveEntry(Guid id)

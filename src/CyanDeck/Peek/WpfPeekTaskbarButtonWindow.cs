@@ -81,7 +81,8 @@ public sealed class WpfPeekTaskbarButtonWindow : Window
                     },
                     new TextBlock
                     {
-                        Text = "Click the taskbar button to show or hide your groups.",
+                        // Shown in the taskbar hover preview of the Peek button.
+                        Text = "작업 표시줄의 이 버튼을 누르면 그룹을 창 위로 보이거나 다시 숨깁니다.",
                         Margin = new Thickness(0, 6, 0, 0),
                         TextWrapping = TextWrapping.Wrap,
                     },
