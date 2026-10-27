@@ -173,6 +173,23 @@ public sealed class IconService
     }
 
 
+    /// <summary>
+    /// True when the Recycle Bin holds at least one item, false when empty, null when the
+    /// state could not be read. Used by <see cref="RecycleBinStateMonitor"/> on a worker thread.
+    /// </summary>
+    internal static bool? QueryRecycleBinHasItems()
+    {
+        try
+        {
+            var recycleInfo = new SHQUERYRBINFO { cbSize = Marshal.SizeOf<SHQUERYRBINFO>() };
+            return SHQueryRecycleBin(null, ref recycleInfo) == 0 ? recycleInfo.i64NumItems > 0 : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static BitmapSource? TryLoadRecycleBinStockIcon()
     {
         object? imageListObject = null;

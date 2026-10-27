@@ -53,6 +53,13 @@ internal sealed class LooseDesktopIconHost : IDisposable
     private bool _disposed;
     private DateTime _recyclePlacementRetryAfterUtc = DateTime.MinValue;
     private static readonly TimeSpan RecyclePlacementCooldown = TimeSpan.FromSeconds(30);
+    private IReadOnlyList<DeckItem> _autoPlacementPeers = Array.Empty<DeckItem>();
+
+    /// <summary>
+    /// Optional physical-pixel rectangles (group windows) that automatic placement of a
+    /// new loose icon must avoid. Set by the owner; null means "no obstacles known".
+    /// </summary>
+    internal Func<IReadOnlyList<Rectangle>>? AutoPlacementObstacles { get; set; }
 
     internal LooseDesktopIconHost(
         DesktopHost desktopHost,
@@ -114,6 +121,7 @@ internal sealed class LooseDesktopIconHost : IDisposable
             return;
         }
 
+        _autoPlacementPeers = valid.Values.ToArray();
         var index = 0;
         foreach (var item in valid.Values.OrderBy(i => i.AddedUtc).ThenBy(i => i.DisplayName, StringComparer.CurrentCultureIgnoreCase))
         {
@@ -316,27 +324,84 @@ internal sealed class LooseDesktopIconHost : IDisposable
         if (item.PositionX is double x && item.PositionY is double y && double.IsFinite(x) && double.IsFinite(y)) return;
         var screen = Forms.Screen.PrimaryScreen ?? Forms.Screen.AllScreens.FirstOrDefault();
         var area = screen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
+        // WorkingArea is in physical pixels (Per-Monitor-V2); scale every DIP size.
+        var scale = GetMonitorScale(area);
         if (DesktopSystemItems.IsRecycleBin(item))
         {
-            var inset = (int)Math.Ceiling(LooseDesktopIconLayoutProfile.EdgeInsetDip);
-            item.PositionX = Math.Max(area.Left, area.Right - (int)Math.Ceiling(LooseDesktopIconLayoutProfile.RecycleBinWidthDip) - inset);
-            item.PositionY = Math.Max(area.Top, area.Bottom - (int)Math.Ceiling(LooseDesktopIconLayoutProfile.RecycleBinHeightDip) - inset);
+            var inset = LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.EdgeInsetDip, scale);
+            item.PositionX = Math.Max(area.Left, area.Right - LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.RecycleBinWidthDip, scale) - inset);
+            item.PositionY = Math.Max(area.Top, area.Bottom - LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.RecycleBinHeightDip, scale) - inset);
             _persist();
             return;
         }
         // The default loose-icon auto-grid must also accommodate the Recycle
         // Bin's wider native clipping rectangle. Existing manual positions
         // remain untouched, and linked Fence spacing stays at its old values.
-        var slotWidth = (int)Math.Ceiling(LooseDesktopIconLayoutProfile.LooseAutoCellWidthDip);
-        var slotHeight = (int)Math.Ceiling(LooseDesktopIconLayoutProfile.LooseAutoCellHeightDip);
-        var edgeInset = (int)Math.Ceiling(LooseDesktopIconLayoutProfile.EdgeInsetDip);
-        var rows = Math.Max(1, (area.Height - edgeInset * 2) / slotHeight);
-        var column = ordinal / rows;
-        var row = ordinal % rows;
-        item.PositionX = area.Left + edgeInset + column * slotWidth;
-        item.PositionY = area.Top + edgeInset + row * slotHeight;
+        // A new icon takes the first free cell instead of its ordinal cell, so a
+        // gap left by an icon moved into a group never makes two icons overlap.
+        var slot = LooseDesktopAutoPlacementPlanner.FindSlot(area, scale, CollectAutoPlacementBlockers(item), ordinal);
+        item.PositionX = slot.X;
+        item.PositionY = slot.Y;
         _persist();
     }
+
+    private List<Rectangle> CollectAutoPlacementBlockers(DeckItem placing)
+    {
+        var blockers = new List<Rectangle>();
+        foreach (var peer in _autoPlacementPeers)
+        {
+            if (peer.Id == placing.Id) continue;
+            if (_entries.TryGetValue(peer.Id, out var entry) && entry.BoundsPx.Width > 0 && entry.BoundsPx.Height > 0)
+            {
+                blockers.Add(entry.BoundsPx);
+                continue;
+            }
+            if (peer.PositionX is not double px || peer.PositionY is not double py || !double.IsFinite(px) || !double.IsFinite(py))
+                continue;
+            // Not materialized yet: reserve the largest loose-icon footprint at its saved position.
+            var peerScale = GetMonitorScale(new Rectangle((int)Math.Round(px), (int)Math.Round(py), 1, 1));
+            var width = DesktopSystemItems.IsRecycleBin(peer)
+                ? LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.RecycleBinWidthDip, peerScale)
+                : LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.ItemWidthDip, peerScale);
+            var height = DesktopSystemItems.IsRecycleBin(peer)
+                ? LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.RecycleBinHeightDip, peerScale)
+                : LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.ItemHeightDip, peerScale);
+            blockers.Add(new Rectangle((int)Math.Round(px), (int)Math.Round(py), width, height));
+        }
+        try
+        {
+            var groups = AutoPlacementObstacles?.Invoke();
+            if (groups is not null) blockers.AddRange(groups.Where(r => r.Width > 0 && r.Height > 0));
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Loose icon placement could not read group bounds", ex);
+        }
+        return blockers;
+    }
+
+    private static double GetMonitorScale(Rectangle area)
+    {
+        try
+        {
+            var center = new CyanDeck.Interop.NativeMethods.POINT
+            {
+                X = area.Left + area.Width / 2,
+                Y = area.Top + area.Height / 2,
+            };
+            var monitor = MonitorFromPoint(center, CyanDeck.Interop.NativeMethods.MONITOR_DEFAULTTONEAREST);
+            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, 0, out var dpiX, out _) == 0 && dpiX is >= 48 and <= 960)
+                return dpiX / 96d;
+        }
+        catch { }
+        return 1d;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(CyanDeck.Interop.NativeMethods.POINT pt, uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
 
     private void Position(Entry entry)
     {
@@ -614,7 +679,11 @@ internal sealed class LooseDesktopIconHost : IDisposable
                     DesktopSystemItems.RecycleBinShellPath,
                     screenPoint,
                     canonicalVerbInterceptor: recycleVerbInterceptor))
+            {
+                // "Empty Recycle Bin" (or a restore) changes the empty/full icon.
+                RecycleBinStateMonitor.RequestCheck();
                 return;
+            }
 
             OpenFallbackContextMenu(source, BuildFallbackContextMenu(source));
             return;

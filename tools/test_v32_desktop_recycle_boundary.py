@@ -12,6 +12,11 @@ collection=f[f.index('private void RemoveCollectionReferences('):f.index('privat
 normal=f[f.index('private void DeleteItems('): f.index('private static bool IsProtectedDeletionTarget(')]
 explicit=f[f.index('private void RecycleActualDesktopCollectionItems('):f.index('private void RemoveCollectionReferences(')]
 loosemenu=l[l.index('private void ShowContextMenu('):l.index('private static void OpenFallbackContextMenu(')]
+# v70: a group shows the Windows Shell menu only when every item is a real Desktop child;
+# the Shell "delete" verb inside a group is routed to the guarded three-way choice.
+items_shell=(r/'src/CyanDeck/Views/FenceWindow.ItemsShell.cs').read_text(encoding='utf-8')
+shell_gate=items_shell[items_shell.index('private bool CanShowNativeShellMenu('):items_shell.index('private bool TryHandleNativeShellVerb(')]
+shell_verbs=items_shell[items_shell.index('private bool TryHandleNativeShellVerb('):items_shell.index('private void SchedulePostShellMenuRefresh(')]
 checks={
     'known desktop roots resolved dynamically': 'DesktopDirectoryService.GetRoots()' in s,
     'immediate children only': 'IsDirectChildOfAnyRoot' in s and 'IsDirectChild(' in resolver,
@@ -36,7 +41,8 @@ checks={
     'batch mixed external selection has no delete action': 'existing.All(t => DesktopRecycleService.IsActualDesktopItem(t.Path))' in f,
     'plain Delete and Shift Delete use guarded choice path': 'Keyboard.Modifiers == ModifierKeys.Control' in k and 'DeleteItems(deleting);' in k,
     'Ctrl Delete only for all real desktop paths': 'deleting.All(t => DesktopRecycleService.IsActualDesktopItem(t.Path))' in k,
-    'does not reinstate shell context for collection': 'SelectedTab?.Kind != DeckTabKind.Collection &&' in f,
+    'shell context for collection limited to real desktop items': 'list.All(DesktopRecycleService.IsActualDesktopItem)' in shell_gate and f.count('CanShowNativeShellMenu(') >= 2,
+    'shell delete verb in collection uses guarded choice': '"delete"' in shell_verbs and 'DeleteItems(tiles);' in shell_verbs,
     'loose external paths cannot access native delete menu': 'paths.All(DesktopRecycleService.IsActualDesktopItem)' in loosemenu,
     'loose menu allows physical desktop deletion': 'selectedDesktopPaths.All(DesktopRecycleService.IsActualDesktopItem)' in l,
     'loose menu uses shared safe recycler': 'DesktopRecycleService.RecycleConfirmed(paths,' in l,

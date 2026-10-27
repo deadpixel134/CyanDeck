@@ -182,6 +182,9 @@ public partial class FenceWindow
     {
         var sortMenu = new MenuItem { Header = "정렬" };
         var tab = SelectedTab;
+        // Folder Portal items are read from disk on every refresh: they have no open count,
+        // and their "added" time is the file's creation time.
+        var portalSort = tab?.Kind == DeckTabKind.FolderPortal;
         foreach (var mode in Enum.GetValues<DeckSortMode>())
         {
             var local = mode;
@@ -190,16 +193,19 @@ public partial class FenceWindow
                 DeckSortMode.Name => "이름",
                 DeckSortMode.Type => "형식",
                 DeckSortMode.Modified => "수정한 날짜",
-                DeckSortMode.Added => "추가한 날짜",
+                DeckSortMode.Added => portalSort ? "만든 날짜" : "추가한 날짜",
                 DeckSortMode.Size => "크기",
-                _ => "열기 횟수"
+                _ => portalSort ? "열기 횟수 (폴더 포털에서는 사용할 수 없음)" : "열기 횟수"
             };
             // Re-selecting the active key still flips the direction, as before.
-            sortMenu.Items.Add(MakeCheckItem(label, tab?.Sort == mode, () => ApplyGroupSort(t =>
+            // A newly chosen "열기 횟수" starts with the most-opened items first.
+            var sortItem = MakeCheckItem(label, tab?.Sort == mode, () => ApplyGroupSort(t =>
             {
                 if (t.Sort == local) t.SortDescending = !t.SortDescending;
-                else { t.Sort = local; t.SortDescending = false; }
-            })));
+                else { t.Sort = local; t.SortDescending = local == DeckSortMode.OpenCount; }
+            }));
+            if (portalSort && mode == DeckSortMode.OpenCount) sortItem.IsEnabled = false;
+            sortMenu.Items.Add(sortItem);
         }
         sortMenu.Items.Add(new Separator());
         sortMenu.Items.Add(MakeCheckItem("오름차순", tab is { SortDescending: false }, () => ApplyGroupSort(t => t.SortDescending = false)));
