@@ -14,7 +14,9 @@ internal enum TrayMenuSection
     Recovery,
     Tools,
     SettingsOnly,
-    Exit
+    Exit,
+    // Calendar repair/diagnostic commands, nested as "캘린더 문제 해결" inside the calendar menu.
+    CalendarRepair
 }
 
 internal static class TrayMenuRoutingPolicy
@@ -26,6 +28,7 @@ internal static class TrayMenuRoutingPolicy
             case "brand.identity": return TrayMenuSection.Tools;
             case "calendar.status":
             case "calendar.enable": return TrayMenuSection.Calendar;
+            case "calendar.repair": return TrayMenuSection.CalendarRepair;
             case "group.new":
             case "desktop.pages":
             case "desktop.peek":

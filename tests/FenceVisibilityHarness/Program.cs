@@ -269,6 +269,8 @@ var trayCases = new (string? Id, string Label, TrayMenuSection Target)[]
     ("brand.identity", "CyanDeck · v8.0.24", TrayMenuSection.Tools),
     ("calendar.status", "임의 상태", TrayMenuSection.Calendar),
     ("calendar.enable", "다른 캘린더 표시 문구", TrayMenuSection.Calendar),
+    ("calendar.repair", "캘린더 표시 복구", TrayMenuSection.CalendarRepair),
+    ("calendar.repair", "캘린더 위치 초기화 / 표시 복구", TrayMenuSection.CalendarRepair),
     ("group.new", "새 창 생성", TrayMenuSection.Primary),
     ("desktop.pages", "페이지 이동", TrayMenuSection.Primary),
     ("desktop.peek", "간편 보기", TrayMenuSection.Primary),

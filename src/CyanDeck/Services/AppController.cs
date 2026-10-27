@@ -4274,14 +4274,16 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             (_safeMode ? "안전 모드" : !_state.Settings.EnableCalendar ? "설정 꺼짐"
                 : _calendar?.GetTrayDisplayStatus() ?? "시작 대기/상태 확인 필요"))
         { Enabled = false, Tag = "calendar.status" });
+        // Calendar repair/diagnostic commands are grouped under "캘린더 문제 해결" so the
+        // everyday calendar commands (today, sync, on/off) stay visible at the first level.
         menu.Items.Add("캘린더 표시 복구", null, (_, _) =>
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RepairCalendarSurface)));
-        menu.Items.Add("캘린더 상태 진단…", null, (_, _) => QueueTrayDialog(ShowCalendarDiagnostics));
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RepairCalendarSurface))).Tag = "calendar.repair";
+        menu.Items.Add("캘린더 상태 진단…", null, (_, _) => QueueTrayDialog(ShowCalendarDiagnostics)).Tag = "calendar.repair";
         if (!_safeMode && _state.Settings.EnableCalendar)
             menu.Items.Add("캘린더 일반 창으로 열기 (표시 실패 시)", null, (_, _) =>
-                _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(OpenCalendarStandaloneWindow)));
+                _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(OpenCalendarStandaloneWindow))).Tag = "calendar.repair";
         menu.Items.Add("캘린더 위치 초기화 / 표시 복구", null, (_, _) =>
-            QueueTrayDialog(ResetCalendarPositionAndRepair));
+            QueueTrayDialog(ResetCalendarPositionAndRepair)).Tag = "calendar.repair";
         // Available in combined and calendar-only modes. The command respects
         // display-transition barriers and the calendar's 15-second retry limit.
         if (!_safeMode && (_state.Settings.EnableCyanDeck || _state.Settings.EnableCalendar))
@@ -4554,6 +4556,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             menu.Items.Remove(separator);
 
         var calendar = new Forms.ToolStripMenuItem("캘린더");
+        var calendarRepair = new Forms.ToolStripMenuItem("캘린더 문제 해결");
         var groups = new Forms.ToolStripMenuItem("그룹 및 화면");
         var iconTools = new Forms.ToolStripMenuItem("아이콘 및 분류");
         var recovery = new Forms.ToolStripMenuItem("백업 및 복구");
@@ -4571,6 +4574,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                     break;
                 case TrayMenuSection.Calendar:
                     calendar.DropDownItems.Add(item);
+                    break;
+                case TrayMenuSection.CalendarRepair:
+                    calendarRepair.DropDownItems.Add(item);
                     break;
                 case TrayMenuSection.Groups:
                     groups.DropDownItems.Add(item);
@@ -4595,6 +4601,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             }
         }
         foreach (var item in primary) menu.Items.Add(item);
+        if (calendarRepair.DropDownItems.Count > 0)
+        {
+            if (calendar.DropDownItems.Count > 0) calendar.DropDownItems.Add(new Forms.ToolStripSeparator());
+            calendar.DropDownItems.Add(calendarRepair);
+        }
         if (calendar.DropDownItems.Count > 0) menu.Items.Add(calendar);
         if (iconTools.DropDownItems.Count > 0)
             groups.DropDownItems.Add(iconTools);
