@@ -79,6 +79,9 @@ public sealed class CalendarWindow : Window
     private DateTime _moveEdgeSinceUtc;
     private bool _preserveMoveOnRender;
     private CalendarColorPicker? _preferencesBackgroundPicker;
+    // The local date "today" was last rendered for; compared after midnight, a clock change or resume.
+    private DateTime _lastObservedToday = DateTime.Today;
+    private CalendarDayRolloverWatcher? _dayRolloverWatcher;
 
 
     private bool _allowFinalClose;
@@ -135,7 +138,8 @@ public sealed class CalendarWindow : Window
         Left = settings.CalendarLeft;
         Top = settings.CalendarTop;
         WindowStartupLocation = WindowStartupLocation.Manual;
-        Opacity = settings.CalendarOpacity;
+        // Text and events stay fully opaque; only the background brushes follow the opacity sliders.
+        Opacity = CalendarOpacityPolicy.WindowOpacity;
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
         // The calendar viewport must never gain a visible scrollbar when the
@@ -201,6 +205,47 @@ public sealed class CalendarWindow : Window
                 new Action(ApplyCalendarAppearance));
         };
         RenderMonth();
+        _dayRolloverWatcher = new CalendarDayRolloverWatcher(Dispatcher, RefreshTodayIfDateChanged);
+        Closed += (_, _) => _dayRolloverWatcher?.Dispose();
+    }
+
+    // Midnight, a clock/time-zone change or resume from sleep: redraw today's highlight and the
+    // title, and move a viewport that was showing the old today onto the new one. Returns false
+    // (retry later) while editing, dragging, a menu or the settings panel is open, and also while
+    // the pointer is over a viewport that would move, so the list never jumps under the cursor.
+    // Leaving the editor or settings re-renders through RenderMonth, which applies a pending
+    // date change in that same render (ApplyTodayRolloverBeforeRender) instead of 30 s later.
+    private bool RefreshTodayIfDateChanged()
+    {
+        var today = DateTime.Today;
+        if (today == _lastObservedToday) return true;
+        if (_editing || _showingPreferences || _isMoving || _moveCandidate is not null || _openEventMenus > 0)
+            return false;
+        bool follow = CalendarTodayRefreshPolicy.ShouldFollowToday(_visibleMonth, _settings.CalendarViewMode,
+            _settings.CalendarVisibleWeekRows, _lastObservedToday);
+        if (follow && DesktopPointerHover.IsActuallyOver(this)) return false;
+        double scrollOffset = _weekScroll.VerticalOffset;
+        RenderMonth();
+        // Only the highlight changed (same period): keep the reader's place in the week list.
+        if (!follow) _weekScroll.ScrollToVerticalOffset(scrollOffset);
+        return true;
+    }
+
+    // Called at the start of every RenderMonth: a date change seen by any render (closing the
+    // editor or settings, a sync refresh, the rollover timer) moves a viewport that was showing
+    // the old today onto the new one before the anchor is used. Skipped for the re-render that
+    // keeps an event drag alive while paging.
+    private void ApplyTodayRolloverBeforeRender()
+    {
+        if (_preserveMoveOnRender) return;
+        var today = DateTime.Today;
+        if (today == _lastObservedToday) return;
+        var previousToday = _lastObservedToday;
+        _lastObservedToday = today;
+        if (CalendarTodayRefreshPolicy.ShouldFollowToday(_visibleMonth, _settings.CalendarViewMode,
+                _settings.CalendarVisibleWeekRows, previousToday))
+            _visibleMonth = today;
+        DiagnosticsLog.Info($"Calendar today refreshed: {previousToday:yyyy-MM-dd} -> {today:yyyy-MM-dd}");
     }
 
     private static readonly Brush Panel = new SolidColorBrush(Color.FromRgb(33, 39, 50));
@@ -415,6 +460,7 @@ public sealed class CalendarWindow : Window
     public void RenderMonth()
     {
         if (_editing) return;
+        ApplyTodayRolloverBeforeRender();
         _visibleMonth = CalendarViewportPolicy.AnchorAfterViewModeChange(
             _visibleMonth, _lastRenderedViewMode, _settings.CalendarViewMode, DateTime.Today);
         _lastRenderedViewMode = _settings.CalendarViewMode;
@@ -1119,23 +1165,19 @@ public sealed class CalendarWindow : Window
             (byte)Math.Min(255, baseColor.B + 74));
         // Avoid Window.Opacity entirely: the native placement pipeline controls
         // initial visibility, and changing Window.Opacity on focus can flicker.
-        double active = double.IsFinite(_settings.CalendarOpacity)
-            ? Math.Clamp(_settings.CalendarOpacity, 0.35, 1) : 0.86;
-        double idle = double.IsFinite(_settings.CalendarIdleOpacity)
-            ? Math.Clamp(_settings.CalendarIdleOpacity, 0.15, 1) : 0.38;
+        // The window stays at CalendarOpacityPolicy.WindowOpacity (fully opaque), so the
+        // slider values below are the final background opacity over their whole range.
         // Keyboard focus alone must not keep the calendar opaque: after a click the window stays
         // active until another window is chosen, so the chameleon fade would never return. Like
         // the groups, it follows the pointer, plus editing, the settings panel, an event drag and
         // an open event menu (that menu can extend outside the calendar).
         bool full = !_settings.CalendarChameleonEnabled || _editing || _showingPreferences
             || _isMoving || _openEventMenus > 0 || DesktopPointerHover.IsActuallyOver(this);
-        double activeBackground = double.IsFinite(_settings.CalendarActiveBackgroundOpacity)
-            ? Math.Clamp(_settings.CalendarActiveBackgroundOpacity, 0.15, 1) : 0.86;
-        double opacity = full ? Math.Clamp(activeBackground / active, 0.15, 1)
-            : Math.Clamp(idle / active, 0.15, 1);
+        double opacity = CalendarOpacityPolicy.BackgroundOpacity(full,
+            _settings.CalendarActiveBackgroundOpacity, _settings.CalendarIdleOpacity);
         _frameBackground.Opacity = opacity;
         _dayBackground.Opacity = opacity;
-        _todayBackground.Opacity = Math.Max(opacity, 0.7);
+        _todayBackground.Opacity = CalendarOpacityPolicy.TodayBackgroundOpacity(opacity);
     }
 
     private void StretchWeekRowsToViewport()

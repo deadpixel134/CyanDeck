@@ -14,6 +14,7 @@
     <Compile Include="../../src/CyanDeck/Calendar/CalendarWeekSizingPolicy.cs" Link="CalendarWeekSizingPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/CalendarViewportPolicy.cs" Link="CalendarViewportPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/CalendarHeaderPolicy.cs" Link="CalendarHeaderPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Calendar/CalendarDisplayPolicies.cs" Link="CalendarDisplayPolicies.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/GoogleCalendarCatalogRefreshPolicy.cs" Link="GoogleCalendarCatalogRefreshPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/CalendarSyncIntervalPolicy.cs" Link="CalendarSyncIntervalPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Calendar/GoogleEventReconciliation.cs" Link="GoogleEventReconciliation.cs" />

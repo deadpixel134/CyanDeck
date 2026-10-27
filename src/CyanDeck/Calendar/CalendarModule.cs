@@ -77,8 +77,8 @@ public sealed class CalendarModule : IDisposable
         if (_standaloneWindowMode)
         {
             _window.EnsureWithinVisibleWorkArea("standalone window start");
-            _window.Opacity = double.IsFinite(_settings.CalendarOpacity)
-                ? Math.Clamp(_settings.CalendarOpacity, 0.2, 1.0) : 0.86;
+            // Text stays opaque; ApplyCalendarAppearance fades only the background brushes.
+            _window.Opacity = CalendarOpacityPolicy.WindowOpacity;
             _window.Show();
             DiagnosticsLog.Info("Calendar user-selected standalone window opened (normal taskbar/Z-order)");
         }
@@ -392,8 +392,8 @@ public sealed class CalendarModule : IDisposable
                 }
             }
 
-            window.Opacity = double.IsFinite(_settings.CalendarOpacity)
-                ? Math.Clamp(_settings.CalendarOpacity, 0.2, 1.0) : 0.86;
+            // Revealed only after placement succeeded; fully opaque so dates and events stay crisp.
+            window.Opacity = CalendarOpacityPolicy.WindowOpacity;
             window.ApplyCalendarAppearance();
             _deferredPlacementTimer?.Stop();
             _nextDeferredPlacementUtc = DateTime.MinValue;
