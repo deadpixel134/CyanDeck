@@ -65,6 +65,13 @@ public sealed class CalendarWindow : Window
     private Canvas? _moveLayer;
     private Border? _moveGhost;
     private DateTime? _moveDropDate;
+    // Drop preview: the destination cells the event will occupy plus a short label.
+    private readonly List<Border> _moveTargetHighlights = new();
+    private Border? _moveDropBadge;
+    private TextBlock? _moveDropText;
+    private Color _moveAccentColor = Colors.SteelBlue;
+    private DateTime? _movePreviewDate;
+    private bool _movePreviewShown;
 
 
     private bool _allowFinalClose;
@@ -696,8 +703,18 @@ public sealed class CalendarWindow : Window
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 6, 0) }
         };
+        _moveAccentColor = color;
+        _moveDropText = new TextBlock { Foreground = Brushes.White, FontSize = 12, FontWeight = FontWeights.SemiBold };
+        _moveDropBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(238, 22, 25, 31)),
+            BorderBrush = new SolidColorBrush(color), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(5), Padding = new Thickness(8, 3, 8, 3),
+            IsHitTestVisible = false, Child = _moveDropText
+        };
         _moveLayer = new Canvas { IsHitTestVisible = false };
         _moveLayer.Children.Add(_moveGhost);
+        _moveLayer.Children.Add(_moveDropBadge);
         System.Windows.Controls.Panel.SetZIndex(_moveLayer, 15);
         _body.Children.Add(_moveLayer);
         UpdateMovePosition(Mouse.GetPosition(_body));
@@ -730,6 +747,120 @@ public sealed class CalendarWindow : Window
         _moveDropDate = GetDateAtPosition(point);
         if (_moveGhost is not null)
             _moveGhost.BorderBrush = _moveDropDate.HasValue ? Brushes.White : Brushes.OrangeRed;
+        UpdateMoveDropPreview(point);
+    }
+
+    // Shows, before release, exactly where the event will land: the destination
+    // cells (the whole span for multi-day events) and a short date label. It uses
+    // the same move policy as the drop itself and never changes event data.
+    private void UpdateMoveDropPreview(Point point)
+    {
+        if (_moveLayer is null || _moveCandidate is not { } ev || _moveDropBadge is null || _moveDropText is null) return;
+        var date = _moveDropDate?.Date;
+        if (!_movePreviewShown || date != _movePreviewDate)
+        {
+            _movePreviewShown = true;
+            _movePreviewDate = date;
+            var spanDays = Math.Max(0, (ev.EffectiveEndDate.Date - ev.Date.Date).Days);
+            string label;
+            Color tone;
+            if (date is not { } target)
+            {
+                label = "달력 밖 · 놓으면 이동 취소";
+                tone = Colors.OrangeRed;
+            }
+            else if (target == ev.Date.Date)
+            {
+                label = "같은 날짜 · 변경 없음";
+                tone = Color.FromRgb(150, 160, 174);
+            }
+            else if (!CanBuildMoveDraft(ev, target))
+            {
+                label = $"{FormatMoveDate(target)}: 해당 시각이 없어 옮길 수 없음";
+                tone = Colors.OrangeRed;
+            }
+            else
+            {
+                label = spanDays == 0
+                    ? $"{FormatMoveDate(target)}(으)로 이동"
+                    : $"{FormatMoveDate(target)} ~ {FormatMoveDate(target.AddDays(spanDays))}(으)로 이동";
+                tone = _moveAccentColor;
+            }
+            _moveDropText.Text = label;
+            _moveDropBadge.BorderBrush = new SolidColorBrush(tone);
+            RebuildMoveTargetHighlights(date, spanDays, tone);
+            SetStatus(label + " · Esc: 취소");
+        }
+
+        // Keep the label just above the dragged ghost and inside the calendar body.
+        _moveDropBadge.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = _moveDropBadge.DesiredSize;
+        var ghostHalf = (_moveGhost?.Height ?? 21) / 2;
+        var left = Math.Clamp(point.X - size.Width / 2, 0, Math.Max(0, _body.ActualWidth - size.Width));
+        var top = point.Y - ghostHalf - size.Height - 4;
+        if (top < 0) top = Math.Min(point.Y + ghostHalf + 4, Math.Max(0, _body.ActualHeight - size.Height));
+        Canvas.SetLeft(_moveDropBadge, left);
+        Canvas.SetTop(_moveDropBadge, top);
+    }
+
+    private void RebuildMoveTargetHighlights(DateTime? start, int spanDays, Color tone)
+    {
+        if (_moveLayer is null) return;
+        foreach (var highlight in _moveTargetHighlights) _moveLayer.Children.Remove(highlight);
+        _moveTargetHighlights.Clear();
+        if (start is not { } first || _renderedWeekRows.Count == 0) return;
+        var viewport = CalendarViewportPolicy.Calculate(_visibleMonth,
+            _settings.CalendarViewMode, _settings.CalendarVisibleWeekRows);
+        // Only paint inside the visible week area; rows scrolled out of view are clipped.
+        var scrollOrigin = _weekScroll.TranslatePoint(new Point(0, 0), _body);
+        var visible = new Rect(scrollOrigin, new Size(_weekScroll.ActualWidth, _weekScroll.ActualHeight));
+        var firstIndex = (first - viewport.FirstSunday.Date).Days;
+        var lastIndex = firstIndex + spanDays;
+        for (var week = 0; week < _renderedWeekRows.Count; week++)
+        {
+            var from = Math.Max(firstIndex, week * 7);
+            var to = Math.Min(lastIndex, week * 7 + 6);
+            if (from > to) continue;
+            var row = _renderedWeekRows[week];
+            if (row.ColumnDefinitions.Count < 7) continue;
+            double left = 0, width = 0;
+            for (var day = 0; day < 7; day++)
+            {
+                var columnWidth = row.ColumnDefinitions[day].ActualWidth;
+                if (day < from - week * 7) left += columnWidth;
+                else if (day <= to - week * 7) width += columnWidth;
+            }
+            var origin = row.TranslatePoint(new Point(0, 0), _body);
+            var rect = new Rect(origin.X + left, origin.Y, width, row.ActualHeight);
+            rect.Intersect(visible);
+            if (rect.IsEmpty || rect.Width < 1 || rect.Height < 1) continue;
+            var highlight = new Border
+            {
+                Width = rect.Width, Height = rect.Height,
+                Background = new SolidColorBrush(Color.FromArgb(56, tone.R, tone.G, tone.B)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(230, tone.R, tone.G, tone.B)),
+                BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(4),
+                IsHitTestVisible = false
+            };
+            Canvas.SetLeft(highlight, rect.X);
+            Canvas.SetTop(highlight, rect.Y);
+            _moveLayer.Children.Insert(0, highlight); // below the ghost and the label
+            _moveTargetHighlights.Add(highlight);
+        }
+    }
+
+    private static bool CanBuildMoveDraft(CalendarEvent ev, DateTime target)
+    {
+        try { CalendarEventMovePolicy.CreateDraft(ev, target); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
+    private static string FormatMoveDate(DateTime date)
+    {
+        var weekday = "일월화수목금토"[(int)date.DayOfWeek];
+        return date.Year == DateTime.Today.Year
+            ? $"{date.Month}월 {date.Day}일 ({weekday})"
+            : $"{date.Year}년 {date.Month}월 {date.Day}일 ({weekday})";
     }
 
     private DateTime? GetDateAtPosition(Point point)
@@ -803,6 +934,11 @@ public sealed class CalendarWindow : Window
         if (_moveLayer is not null) _body.Children.Remove(_moveLayer);
         _moveLayer = null;
         _moveGhost = null;
+        _moveTargetHighlights.Clear();
+        _moveDropBadge = null;
+        _moveDropText = null;
+        _movePreviewDate = null;
+        _movePreviewShown = false;
         _isMoving = false;
         _moveCandidate = null;
         _sourceBar = null;
