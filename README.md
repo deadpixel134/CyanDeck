@@ -8,6 +8,8 @@ CyanDeck은 Windows 바탕화면을 작업 공간처럼 정리할 수 있는 무
 
 [**최신 정식 버전 다운로드**](https://github.com/deadpixel134/CyanDeck/releases/latest) · [**전체 릴리스 보기**](https://github.com/deadpixel134/CyanDeck/releases) · [**오류 신고 및 기능 제안**](https://github.com/deadpixel134/CyanDeck/issues)
 
+> **v8.0.37 Beta:** 첫 실행 후 그룹·캘린더가 마우스 오버 상태로 남는 증상을 예방하기 위해, 바탕화면 창 배치가 안정된 다음 실제 커서 위치로 외관을 보정합니다. 레이아웃·로컬 일정·Google 연동 데이터는 변경하지 않습니다.
+
 ## 주요 기능
 
 | 기능 | 할 수 있는 일 |
