@@ -34,7 +34,11 @@ checks = {
     'no width multiplied by mixed screen DPI to form end rect': 'ActualWidth * dpi.DpiScaleX' not in refresh and 'ActualHeight * dpi.DpiScaleY' not in refresh,
     'per-monitor DPI for local canvas rendering': 'VisualTreeHelper.GetDpi(WallpaperBlurBackdrop)' in refresh,
     'render rectangles still use actual physical screen coordinates': 'new PixelRect(left, top, right, bottom)' in refresh,
-    'group loaded queues refresh': 'EnsureVisibleOnMonitor(); UpdateTitlebarPlacement(); QueueWallpaperBlurRefresh();' in source,
+    'group loaded queues refresh':
+        (lambda loaded: 0 <= loaded.find('EnsureVisibleOnMonitor();')
+         < loaded.find('UpdateTitlebarPlacement();')
+         < loaded.find('QueueWallpaperBlurRefresh();'))(
+            method_body('Loaded += (_, _) =>', 'SourceInitialized += (_, _) =>')),
     'WM_SETTINGCHANGE value correctly declared': 'WM_SETTINGCHANGE = 0x001A' in native,
     'wallpaper change invalidates cache & queues refresh': 'msg == NativeMethods.WM_SETTINGCHANGE' in wndmsg and '_wallpaperBlurController.InvalidateWallpaper();\n            QueueWallpaperBlurRefresh();' in wndmsg,
     'display and DPI messages keep prior restoration': 'msg is NativeMethods.WM_DPICHANGED or NativeMethods.WM_DISPLAYCHANGE' in wndmsg and 'handler(msg)' in wndmsg,
