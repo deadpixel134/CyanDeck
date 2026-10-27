@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
+using CyanDeck.Calendar;
 using CyanDeck.Models;
 using Forms = System.Windows.Forms;
 
@@ -249,9 +250,16 @@ public sealed partial class AppController
         return true;
     }
 
-    private static void ShowExportCompleted(string path)
+    // calendarEvents: local events written to the companion file next to the backup, or -1 on failure.
+    private static void ShowExportCompleted(string path, int calendarEvents)
     {
-        var message = $"백업을 저장했습니다.\n\n{path}\n\n백업에 들어 있지 않은 항목: 캘린더 일정, Google 로그인 정보\n\n저장한 폴더를 열까요?";
+        var companionName = Path.GetFileName(CalendarEventBackup.CompanionPathFor(path));
+        var calendarNote = calendarEvents > 0
+            ? $"Google에 올리지 않은 로컬 캘린더 일정 {calendarEvents}개는 같은 폴더의 {companionName} 파일에 함께 저장했습니다. 캘린더 설정의 '일정 가져오기…'로 되살릴 수 있습니다.\n\n"
+            : calendarEvents < 0
+                ? "로컬 캘린더 일정은 함께 저장하지 못했습니다. 캘린더 설정의 '로컬 일정 내보내기…'를 이용하세요.\n\n"
+                : "";
+        var message = $"백업을 저장했습니다.\n\n{path}\n\n{calendarNote}백업에 들어 있지 않은 항목: Google 캘린더 일정(Google에 보관됨), Google 로그인 정보\n\n저장한 폴더를 열까요?";
         if (System.Windows.MessageBox.Show(message, "CyanDeck 내보내기 완료", MessageBoxButton.YesNo,
                 MessageBoxImage.Information, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;

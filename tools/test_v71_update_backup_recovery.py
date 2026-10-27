@@ -136,8 +136,8 @@ checks = {
         store_export.index("VerifyExportedBackup(temp, state);") < store_export.index("File.Replace(temp, path, null, ignoreMetadataErrors: true);") and
         "File.WriteAllText(" not in store_export,
     "export shows completion, location and what is not included":
-        "ShowExportCompleted(dialog.FileName);" in export and
-        "백업에 들어 있지 않은 항목: 캘린더 일정, Google 로그인 정보" in part and '"/select,\\""' in part,
+        "ShowExportCompleted(dialog.FileName, calendarEvents);" in export and
+        "백업에 들어 있지 않은 항목: Google 캘린더 일정(Google에 보관됨), Google 로그인 정보" in part and '"/select,\\""' in part,
     "export is refused while unreadable layout files are protected (empty state)":
         export.index("if (RefuseExportWhileLayoutUnreadable()) return;") < export.index("_store.Export(_state, dialog.FileName);") and
         "if (!_layoutUnreadableProtection) return false;" in part,

@@ -17,7 +17,7 @@ namespace CyanDeck.Calendar;
 
 // Single shell-attached window: no topmost external editor windows.
 // Each multi-day event is a Grid column-spanning bar, clipped to week boundaries.
-public sealed class CalendarWindow : Window
+public sealed partial class CalendarWindow : Window
 {
     private readonly DeckSettings _settings;
     private readonly CalendarEventStore _store;
@@ -422,6 +422,7 @@ public sealed class CalendarWindow : Window
         // during an event drag re-renders while keeping that drag alive.
         if (!_preserveMoveOnRender) CancelEventMove();
         _showingPreferences = false;
+        BeginSyncStateRender(); // this render shows the latest data: clear the pending note
         if (_editorSizeHandler is not null)
         {
             _body.SizeChanged -= _editorSizeHandler;
@@ -522,9 +523,10 @@ public sealed class CalendarWindow : Window
                 {
                     CornerRadius = new CornerRadius(3), Margin = new Thickness(2, 1, 2, 1),
                     Background = new SolidColorBrush(brush), Cursor = Cursors.Hand,
-                    ToolTip = $"{bar.Event.Title}\n{bar.Event.Date:yyyy-MM-dd} ~ {bar.Event.EffectiveEndDate:yyyy-MM-dd}"
+                    ToolTip = DescribeEventForTooltip(bar.Event)
                 };
-                var name = (bar.Event.Conflict ? "⚠ " : "") + bar.Event.Title;
+                // ⚠ conflict · ↻ waiting for upload to Google
+                var name = CalendarEventStatusText.BarPrefix(bar.Event, _renderGoogleConnected) + bar.Event.Title;
                 if (bar.Event.StartAt is { } time) name = time.ToLocalTime().ToString("HH:mm") + " " + name;
                 line.Child = new TextBlock { Text = name, Foreground = new SolidColorBrush(fontColor), FontSize = eventFontSize,
                     TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(4, 0, 3, 0) };
@@ -546,6 +548,8 @@ public sealed class CalendarWindow : Window
                 if (bar.Event.Conflict)
                 {
                     menu.Items.Add(new Separator());
+                    if (!string.IsNullOrWhiteSpace(bar.Event.SyncError))
+                        menu.Items.Add(new MenuItem { Header = bar.Event.SyncError, IsEnabled = false });
                     if (bar.Event.RemoteId is not null && !bar.Event.RemoteCreatePending)
                     {
                         var restore = new MenuItem { Header = "Google 원격 버전으로 복원 (로컬 변경 취소)" };
@@ -563,6 +567,7 @@ public sealed class CalendarWindow : Window
                                 _store.CommitEventChange(bar.Event.Id, staged =>
                                 {
                                     staged.Conflict = false;
+                                    staged.SyncError = null;
                                     return true;
                                 });
                                 SetStatus("동기화 버튼으로 다시 업로드하세요."); RenderMonth();
@@ -1059,7 +1064,9 @@ public sealed class CalendarWindow : Window
             _store.UpsertBatch(CalendarEventMovePolicy.CreateDraft(ev, date.Value), ev);
             ProblemReportService.Reset("calendar-save");
             RenderMonth();
-            SetStatus($"일정 이동 완료: {date.Value:yyyy.MM.dd} · Google 동기화 대기");
+            var moveSyncNote = ev.LocalOnly ? "로컬 전용 일정"
+                : DescribeUploadAfterLocalChange(true, "Google 동기화 대기");
+            SetStatus($"일정 이동 완료: {date.Value:yyyy.MM.dd} · {moveSyncNote}");
         }
         catch (Exception ex)
         {
@@ -1085,6 +1092,7 @@ public sealed class CalendarWindow : Window
             _sourceBar.ToolTip = _savedBarTooltip;
         }
         if (_moveLayer is not null) _body.Children.Remove(_moveLayer);
+        if (_idleRenderPending) ScheduleIdleRender(); // a sync finished during the drag
         _moveLayer = null;
         _moveGhost = null;
         _moveTargetHighlights.Clear();
@@ -1173,6 +1181,7 @@ public sealed class CalendarWindow : Window
             {
                 staged.Dirty = false;
                 staged.Conflict = false;
+                staged.SyncError = null;
                 return true;
             });
             SetStatus("복원 대기: 동기화를 실행하면 Google 버전을 다시 가져옵니다.");
@@ -1390,9 +1399,10 @@ public sealed class CalendarWindow : Window
                 }
                 _editing = false;
                 RenderMonth();
+                var saveSyncNote = DescribeUploadAfterLocalChange(!saveLocalOnly, "동기화를 눌러 Google에 반영");
                 SetStatus(saveLocalOnly ? $"로컬 전용 일정 {count}건 저장됨 · Google에 업로드하지 않음"
                     : preferenceWarning is null
-                        ? $"로컬 일정 {count}건 저장 · {writable.First(x => x.Id == selectedTarget).Name} · 동기화를 눌러 Google에 반영"
+                        ? $"로컬 일정 {count}건 저장 · {writable.First(x => x.Id == selectedTarget).Name} · {saveSyncNote}"
                         : $"로컬 일정 {count}건 저장됨 · 기본 캘린더 설정은 저장 실패: {preferenceWarning}");
             }
             catch (Exception ex)
@@ -1422,7 +1432,15 @@ public sealed class CalendarWindow : Window
                 if (MessageBox.Show(this, $"'{title}' 일정을 삭제하시겠습니까?{googleNote}\n\n삭제한 일정은 되돌릴 수 없습니다.",
                         "일정 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
                     return;
-                try { _store.Delete(existing); ProblemReportService.Reset("calendar-save"); _editing = false; SetStatus("일정 삭제 완료"); RenderMonth(); }
+                var deletesOnGoogle = existing.RemoteId is not null;
+                try
+                {
+                    _store.Delete(existing); ProblemReportService.Reset("calendar-save"); _editing = false;
+                    SetStatus(deletesOnGoogle
+                        ? "일정 삭제 완료 · " + DescribeUploadAfterLocalChange(true, "다음 동기화 때 Google에서도 삭제")
+                        : "일정 삭제 완료");
+                    RenderMonth();
+                }
                 catch (Exception ex)
                 {
                     SetStatus("삭제 오류: " + ex.Message);
@@ -1649,6 +1667,7 @@ public sealed class CalendarWindow : Window
             Margin = new Thickness(0, 2, 0, 4), Padding = new Thickness(9),
             Child = CreateHolidaySettingsSection()
         });
+        AddLocalEventBackupSection(panel);
         AddPreferencesSectionTitle(panel, "Google 캘린더");
         panel.Children.Add(new TextBlock
         {
@@ -1671,13 +1690,16 @@ public sealed class CalendarWindow : Window
                 Foreground = Brushes.Khaki, TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 5)
             });
-        var connect = MakeButton(_connectAttempt is not null ? "연결 취소" : _connectHadFailure
+        // After the saved sign-in expired, one click opens the browser login directly.
+        var signInExpired = GoogleNeedsReauthorization?.Invoke() == true;
+        var connect = MakeButton(_connectAttempt is not null ? "연결 취소" : _connectHadFailure || signInExpired
             ? "Google 계정 다시 연결 / 캘린더 재시도" : "Google 계정 연결 / 캘린더 불러오기");
         connect.ToolTip = "실패 시 다시 클릭하면 브라우저에서 Google OAuth 로그인을 새로 시도합니다.";
         panel.Children.Add(connect);
         var connectionHint = new TextBlock
         {
             Text = _connectAttempt is not null ? "연결을 진행 중입니다. 취소 버튼을 누를 수 있습니다."
+                : signInExpired ? "Google 로그인이 만료되었습니다. 이 버튼을 누르면 브라우저에서 바로 다시 로그인합니다."
                 : _connectHadFailure ? "이전 연결에 실패했습니다. 다시 연결을 누르면 브라우저 인증을 다시 시작합니다."
                 : "연결이 실패하면 '다시 연결'을 누르세요. 진행 중에는 취소할 수 있습니다.",
             Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap,
@@ -1701,7 +1723,7 @@ public sealed class CalendarWindow : Window
             }
             using var attempt = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             _connectAttempt = attempt;
-            var forceReauthorize = _connectHadFailure;
+            var forceReauthorize = _connectHadFailure || GoogleNeedsReauthorization?.Invoke() == true;
             connect.Content = "연결 취소";
             connectionHint.Text = "Google 로그인 또는 캘린더 목록을 불러오는 중입니다. 3분이 지나면 종료됩니다.";
             SetStatus("Google 계정 연결 중... 실패하면 '다시 연결' 버튼이 표시됩니다.");
@@ -1749,6 +1771,7 @@ public sealed class CalendarWindow : Window
                 }
             }
         };
+        AddGoogleDisconnectControls(panel);
         panel.Children.Add(new TextBlock
         {
             Text = "자동 동기화 간격",

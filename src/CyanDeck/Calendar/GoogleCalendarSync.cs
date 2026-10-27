@@ -12,7 +12,7 @@ namespace CyanDeck.Calendar;
 
 // OAuth2/PKCE with account-bound multi-calendar synchronization.
 // Google event times use exclusive ends; the local display model uses inclusive dates.
-public sealed class GoogleCalendarSync : IDisposable
+public sealed partial class GoogleCalendarSync : IDisposable
 {
     private readonly CalendarEventStore _store;
     private readonly CalendarPreferencesStore _preferences;
@@ -80,6 +80,8 @@ public sealed class GoogleCalendarSync : IDisposable
             if (_store.IsReadOnly || _preferences.IsReadOnly) return "캘린더 저장소가 읽기 전용입니다.";
             if (DateTime.UtcNow < _quotaBlockedUntilUtc)
                 return QuotaWaitMessage();
+            // A revoked refresh token fails the same way every time: wait for the user's reconnect.
+            if (_needsReauthorization) return GoogleSyncFailurePolicy.ReauthMessage;
             _syncApiRequests = 0;
             var id = _clientId().Trim();
             if (id.Length == 0) return "설정에서 Google OAuth 데스크톱 클라이언트 ID를 입력하세요.";
@@ -91,22 +93,38 @@ public sealed class GoogleCalendarSync : IDisposable
             var pushed = 0;
             var conflicts = 0;
             var pending = 0;
+            var rejected = 0;
             foreach (var ev in _store.Events.Where(x => x.Dirty && !x.LocalOnly && !x.Conflict && !x.RemoteReadOnly).ToArray())
             {
-                var outcome = await PushAsync(ev);
+                // One event Google refuses (e.g. a meeting only its organizer may change)
+                // must not stall every other upload and the download below.
+                string outcome;
+                try { outcome = await PushAsync(ev); }
+                catch (GoogleEventRejectedException rejection)
+                {
+                    MarkUploadRejected(ev.Id, rejection.Reason);
+                    rejected++;
+                    outcome = "conflict";
+                }
                 if (outcome == "conflict") conflicts++;
                 else if (outcome == "ok") pushed++;
                 else if (outcome == "pending") pending++;
             }
+            EnsureInvitedMeetingResync();
             var pulled = await PullAsync();
             _store.Save();
             _quotaFailures = 0;
             _quotaBlockedUntilUtc = DateTime.MinValue;
-            return $"Google 동기화 완료 · 업로드 {pushed} · 가져오기/갱신 {pulled} · 충돌 {conflicts} · 로컬 재업로드 대기 {pending} · API 요청 {_syncApiRequests}회";
+            var rejectedNote = DescribeRejectedUploads(rejected);
+            return $"Google 동기화 완료 · 업로드 {pushed} · 가져오기/갱신 {pulled} · 충돌 {conflicts} · 로컬 재업로드 대기 {pending} · API 요청 {_syncApiRequests}회{rejectedNote}";
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
             return "Google 동기화가 중지되었습니다.";
+        }
+        catch (GoogleReauthRequiredException)
+        {
+            return GoogleSyncFailurePolicy.ReauthMessage;
         }
         catch (Exception ex)
         {
@@ -135,11 +153,17 @@ public sealed class GoogleCalendarSync : IDisposable
                 throw new InvalidOperationException(QuotaWaitMessage());
             var id = _clientId().Trim();
             if (id.Length == 0) throw new InvalidOperationException("설정에서 Google OAuth 클라이언트 ID를 입력하세요.");
-            if (forceReauthorize || _token is null || _token.ClientId != id)
+            if (forceReauthorize || _needsReauthorization || _token is null || _token.ClientId != id)
                 await AuthorizeAsync(id, token);
             token.ThrowIfCancellationRequested();
-            await RefreshIfNeededAsync(id, token);
+            try { await RefreshIfNeededAsync(id, token); }
+            catch (GoogleReauthRequiredException)
+            {
+                // Explicit click: open the browser sign-in now instead of failing once first.
+                await AuthorizeAsync(id, token);
+            }
             await VerifyAccountBindingAsync(token);
+            _needsReauthorization = false;
             return await RefreshCalendarListCoreAsync(token);
         }
         catch
@@ -324,10 +348,20 @@ public sealed class GoogleCalendarSync : IDisposable
         if (_token is null) throw new InvalidOperationException("Google 계정 인증이 필요합니다.");
         if (DateTime.UtcNow < _token.ExpiresUtc) return;
         if (_token.RefreshToken.Length == 0) { await AuthorizeAsync(id, cancellationToken); return; }
-        var result = await PostTokenAsync(new Dictionary<string, string>
+        JsonElement result;
+        try
         {
-            ["client_id"] = id, ["refresh_token"] = _token.RefreshToken, ["grant_type"] = "refresh_token"
-        }, cancellationToken);
+            result = await PostTokenAsync(new Dictionary<string, string>
+            {
+                ["client_id"] = id, ["refresh_token"] = _token.RefreshToken, ["grant_type"] = "refresh_token"
+            }, cancellationToken);
+        }
+        catch (GoogleReauthRequiredException)
+        {
+            // Keep the account binding and the saved token file; stop automatic retries.
+            _needsReauthorization = true;
+            throw;
+        }
         // Stage the refreshed values without mutating the previously verified
         // token. Persistence occurs after successful account-affinity check.
         var candidate = new GoogleToken
@@ -360,6 +394,11 @@ public sealed class GoogleCalendarSync : IDisposable
                 throw new InvalidOperationException("앱 배포본에 Google 데스크톱 OAuth 인증 정보가 누락되었습니다. "
                     + "앱 제작자가 OAuth 설정이 포함된 새 버전을 빌드해야 합니다. 일반 사용자는 JSON을 입력할 필요가 없습니다. "
                     + "(개발자 설정 파일: " + GoogleOAuthClientConfiguration.InstalledClientFile + ")");
+            // Only an explicit invalid_grant on a refresh means sign-in is required.
+            // Network errors and 5xx keep the saved token for the next attempt.
+            if (values.TryGetValue("grant_type", out var grantType) && grantType == "refresh_token"
+                && GoogleSyncFailurePolicy.IsReauthorizationRequired((int)response.StatusCode, body))
+                throw new GoogleReauthRequiredException();
             throw new HttpRequestException($"Google OAuth {(int)response.StatusCode}: {body[..Math.Min(200, body.Length)]}");
         }
         using var json = JsonDocument.Parse(body);
@@ -474,6 +513,7 @@ public sealed class GoogleCalendarSync : IDisposable
             current.RemoteCreatePending = false;
             current.Dirty = resolution != GoogleUploadReconciliation.Resolution.Clean;
             current.Conflict = resolution == GoogleUploadReconciliation.Resolution.Conflict;
+            current.SyncError = null;
             return true;
         });
     }
@@ -551,6 +591,13 @@ public sealed class GoogleCalendarSync : IDisposable
                 // An early 404 is not proof that the remote creation never ran.
                 return "pending";
             }
+            if (probe.StatusCode == HttpStatusCode.Gone)
+            {
+                // Already deleted on Google: the local deletion is complete.
+                _store.CommitEventRemoval(id);
+                return "ok";
+            }
+            await ThrowIfEventRejectedAsync(probe);
             probe.EnsureSuccessStatusCode();
             using var found = JsonDocument.Parse(await probe.Content.ReadAsStringAsync());
             var tag = found.RootElement.TryGetProperty("etag", out var remoteTag) ? remoteTag.GetString() : null;
@@ -621,7 +668,11 @@ public sealed class GoogleCalendarSync : IDisposable
                 return "ok";
             }
             if (!response.IsSuccessStatusCode)
+            {
+                // Permission/invalid/missing-event replies concern only this event.
+                await ThrowIfEventRejectedAsync(response);
                 throw new HttpRequestException($"Google 이벤트 업데이트 실패 {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            }
             if (sent.Deleted)
             {
                 _store.CommitEventRemoval(id);
@@ -731,6 +782,11 @@ public sealed class GoogleCalendarSync : IDisposable
                         var readOnly = !source.CanWrite || recurring || specialType
                             || (item.TryGetProperty("locked", out var locked) && locked.ValueKind == JsonValueKind.True);
                         var title = item.TryGetProperty("summary", out var summary) ? summary.GetString() ?? "(제목 없음)" : "(제목 없음)";
+
+                        // A meeting someone else organizes cannot be changed here; show it
+                        // read-only from the start instead of failing on every upload.
+                        var invitedCopy = GoogleSyncFailurePolicy.IsInvitedAttendeeCopy(item, source.Id);
+                        if (invitedCopy) readOnly = true;
                         if (local is null)
                         {
                             pageSnapshot.Add(new CalendarEvent
@@ -744,6 +800,13 @@ public sealed class GoogleCalendarSync : IDisposable
                         else if (local.Dirty)
                         {
                             if (!string.Equals(local.RemoteETag, etag, StringComparison.Ordinal)) local.Conflict = true;
+                            // Keep the unsent local edit, but surface it as a conflict that
+                            // "Google 원격 버전으로 복원" can resolve.
+                            if (invitedCopy && !local.Conflict)
+                            {
+                                local.Conflict = true;
+                                local.SyncError = GoogleSyncFailurePolicy.RejectionPrefix + GoogleSyncFailurePolicy.OrganizerOnlyDetail;
+                            }
                         }
                         else if (GoogleEventReconciliation.ShouldApplyRemote(fullSync, local, etag, source.Id, readOnly))
                         {

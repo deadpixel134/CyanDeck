@@ -32,6 +32,9 @@ public sealed class CalendarPreferences
     // Saved with the catalog in one checkpoint. Old preferences will refresh once.
     public DateTime CalendarCatalogRefreshedUtc { get; set; } = DateTime.MinValue;
     public Dictionary<string, string> SyncTokens { get; set; } = new(StringComparer.Ordinal);
+    // False in older files: one full resync marks meetings organised by someone else
+    // read-only even when they did not change remotely (incremental sync skips them).
+    public bool InvitedMeetingsResynced { get; set; }
     // Stored in the existing calendar-preferences.json (no StateSchema v35 migration).
     public int AutoSyncIntervalMinutes { get; set; } = CalendarSyncIntervalPolicy.DefaultMinutes;
     // Independent, read-only public ICS feeds; never part of the Google account catalog.
@@ -159,6 +162,21 @@ public sealed class CalendarPreferencesStore
         update(next);
         SaveSnapshot(next);
         Data = next;
+    }
+
+    // Explicit Google disconnect: forget the account's calendar list, sync tokens,
+    // selection and upload target in one checkpoint. Holiday feeds, colors and the
+    // polling interval are not account data and stay as they are.
+    public void ClearGoogleAccount()
+    {
+        CommitUpdate(next =>
+        {
+            next.Catalog = [];
+            next.SyncTokens.Clear();
+            next.SelectedCalendarIds = null;
+            next.TargetCalendarId = null;
+            next.CalendarCatalogRefreshedUtc = DateTime.MinValue;
+        });
     }
 
     public void UpdateAutoSyncInterval(int minutes)

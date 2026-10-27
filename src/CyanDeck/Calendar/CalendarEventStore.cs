@@ -24,6 +24,8 @@ public sealed class CalendarEvent
     public bool RemoteReadOnly { get; set; }
     // Explicit opt-out of Google upload, independent of Google calendar selection.
     public bool LocalOnly { get; set; }
+    // Why Google refused the last upload of this event (shown in the ⚠ menu). Null when absent.
+    public string? SyncError { get; set; }
 
     [JsonIgnore] public bool IsAllDay => !StartAt.HasValue;
     [JsonIgnore] public DateTime EffectiveEndDate =>
@@ -171,6 +173,7 @@ public sealed class CalendarEventStore
             ev.Deleted = false;
             ev.Dirty = !draft.LocalOnly;
             ev.Conflict = false;
+            ev.SyncError = null;
             updated++;
         }
         SaveSnapshot(staged);
@@ -191,6 +194,7 @@ public sealed class CalendarEventStore
             tombstone.Deleted = true;
             tombstone.Dirty = true;
             tombstone.Conflict = false;
+            tombstone.SyncError = null;
             staged[index] = tombstone;
         }
         SaveSnapshot(staged);
@@ -204,7 +208,8 @@ public sealed class CalendarEventStore
         CalendarId = source.CalendarId, RemoteId = source.RemoteId,
         RemoteCreatePending = source.RemoteCreatePending, RemoteETag = source.RemoteETag,
         Dirty = source.Dirty, Deleted = source.Deleted, Conflict = source.Conflict,
-        RemoteReadOnly = source.RemoteReadOnly, LocalOnly = source.LocalOnly
+        RemoteReadOnly = source.RemoteReadOnly, LocalOnly = source.LocalOnly,
+        SyncError = source.SyncError
     };
 
     // Publish imported Google pages only after their durable checkpoint succeeds.
