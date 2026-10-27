@@ -1209,6 +1209,188 @@ try
 }
 finally { Directory.Delete(appearanceScratch, recursive: true); }
 
+// v68: one rejected Google event must not stall the whole sync; sign-in expiry is
+// recognised; prompt upload never opens a login; disconnect clears remote identity;
+// local-only events can be backed up and imported without duplicating Google events.
+{
+    const string v68OrganizerOnly = "{\"error\":{\"errors\":[{\"domain\":\"calendar\",\"reason\":\"forbiddenForNonOrganizer\",\"message\":\"x\"}],\"code\":403,\"message\":\"x\"}}";
+    const string v68ScopeMissing = "{\"error\":{\"code\":403,\"message\":\"x\",\"status\":\"PERMISSION_DENIED\",\"details\":[{\"reason\":\"ACCESS_TOKEN_SCOPE_INSUFFICIENT\"}]}}";
+    Assert.That(GoogleSyncFailurePolicy.IsEventRejection(403, v68OrganizerOnly) &&
+        GoogleSyncFailurePolicy.DescribeRejection(403, v68OrganizerOnly) ==
+            GoogleSyncFailurePolicy.RejectionPrefix + GoogleSyncFailurePolicy.OrganizerOnlyDetail,
+        "organizer-only 403 rejects just that event with a Korean reason");
+    Assert.That(!GoogleSyncFailurePolicy.IsEventRejection(403, v68ScopeMissing),
+        "account-wide 403 (missing scope) still stops the whole sync");
+    Assert.That(!GoogleSyncFailurePolicy.IsPermanentEventRejection(500) &&
+        !GoogleSyncFailurePolicy.IsPermanentEventRejection(401) &&
+        !GoogleSyncFailurePolicy.IsPermanentEventRejection(429) &&
+        GoogleSyncFailurePolicy.IsPermanentEventRejection(400) &&
+        GoogleSyncFailurePolicy.IsPermanentEventRejection(404),
+        "network, server, sign-in and quota errors are not per-event rejections");
+    Assert.That(GoogleSyncFailurePolicy.DescribeRejection(404, "not json").Contains("찾을 수 없습니다"),
+        "unparseable 404 still gets a readable reason");
+    Assert.That(GoogleSyncFailurePolicy.IsReauthorizationRequired(400,
+            "{\"error\":\"invalid_grant\",\"error_description\":\"Token has been expired or revoked.\"}") &&
+        !GoogleSyncFailurePolicy.IsReauthorizationRequired(500, "{\"error\":\"invalid_grant\"}") &&
+        !GoogleSyncFailurePolicy.IsReauthorizationRequired(400, "{\"error\":\"invalid_client\"}"),
+        "only an explicit invalid_grant requires signing in again");
+
+    static bool V68Invited(string json, string calendarId)
+    {
+        using var document = JsonDocument.Parse(json);
+        return GoogleSyncFailurePolicy.IsInvitedAttendeeCopy(document.RootElement, calendarId);
+    }
+    Assert.That(V68Invited("{\"organizer\":{\"email\":\"boss@example.com\"},\"attendees\":[{\"email\":\"me@example.com\",\"self\":true}]}", "me@example.com"),
+        "a meeting organized by someone else is read-only from download");
+    Assert.That(!V68Invited("{\"guestsCanModify\":true,\"organizer\":{\"email\":\"boss@example.com\"},\"attendees\":[{\"self\":true}]}", "me@example.com") &&
+        !V68Invited("{\"organizer\":{\"email\":\"me@example.com\",\"self\":true},\"attendees\":[{\"self\":true}]}", "me@example.com") &&
+        !V68Invited("{\"organizer\":{\"email\":\"team@group.calendar.google.com\"},\"attendees\":[{\"self\":true}]}", "team@group.calendar.google.com") &&
+        !V68Invited("{\"organizer\":{\"email\":\"boss@example.com\"}}", "me@example.com"),
+        "own events, guest-editable meetings and shared-calendar events stay editable");
+
+    Assert.That(CalendarPromptSyncPolicy.Decide(true, true, false, false, false, false) == CalendarPromptSyncDecision.Run &&
+        CalendarPromptSyncPolicy.Decide(false, true, false, false, false, false) == CalendarPromptSyncDecision.Skip &&
+        CalendarPromptSyncPolicy.Decide(true, false, false, false, false, false) == CalendarPromptSyncDecision.Skip &&
+        CalendarPromptSyncPolicy.Decide(true, true, false, true, false, false) == CalendarPromptSyncDecision.RetryLater &&
+        CalendarPromptSyncPolicy.Decide(true, true, false, false, true, false) == CalendarPromptSyncDecision.RetryLater &&
+        CalendarPromptSyncPolicy.Decide(true, true, false, false, false, true) == CalendarPromptSyncDecision.RetryLater,
+        "prompt upload runs only with a silent token and waits for edits, drags and running syncs");
+
+    var v68Nine = new DateTime(2026, 3, 2, 9, 0, 0);
+    var v68Pending = new CalendarEvent { Title = "회의", Date = v68Nine.Date, EndDate = v68Nine.Date,
+        StartAt = new DateTimeOffset(v68Nine, TimeZoneInfo.Local.GetUtcOffset(v68Nine)),
+        EndAt = new DateTimeOffset(v68Nine.AddMinutes(90), TimeZoneInfo.Local.GetUtcOffset(v68Nine.AddMinutes(90))),
+        CalendarId = "primary", Dirty = true };
+    var v68Tooltip = CalendarEventStatusText.Tooltip(v68Pending, "내 캘린더");
+    Assert.That(CalendarEventStatusText.BarPrefix(v68Pending) == CalendarEventStatusText.PendingMarker &&
+        v68Tooltip.Contains("09:00~10:30") && v68Tooltip.Contains("내 캘린더 · Google 업로드 대기"),
+        "pending upload is marked on the bar and the tooltip shows time, calendar and state");
+    Assert.That(CalendarEventStatusText.BarPrefix(v68Pending, googleConnected: false) == "" &&
+        CalendarEventStatusText.SyncState(v68Pending, googleConnected: false) == "로컬 (Google 연결 전)",
+        "events saved before any Google connection show no upload marker");
+    var v68DeletedLinked = new CalendarEvent { Title = "삭제", RemoteId = "g4", RemoteETag = "e4",
+        Dirty = true, Deleted = true, CalendarId = "primary" };
+    Assert.That(CalendarPromptSyncPolicy.HasPendingUploads(new[] { v68DeletedLinked }) &&
+        CalendarEventStatusText.BarPrefix(v68DeletedLinked) == "" &&
+        !CalendarPromptSyncPolicy.HasPendingUploads(new[] { new CalendarEvent { Title = "x", LocalOnly = true, Dirty = true } }),
+        "a deleted Google event counts as upload work for the prompt sync");
+    var v68Rejected = new CalendarEvent { Title = "초대", Conflict = true, Dirty = true, RemoteId = "r1",
+        SyncError = GoogleSyncFailurePolicy.RejectionPrefix + GoogleSyncFailurePolicy.OrganizerOnlyDetail };
+    var v68LocalOnly = new CalendarEvent { Title = "개인", LocalOnly = true, Dirty = false,
+        CalendarId = CalendarEventStore.LocalCalendarId };
+    Assert.That(CalendarEventStatusText.BarPrefix(v68Rejected) == CalendarEventStatusText.ConflictMarker &&
+        CalendarEventStatusText.SyncState(v68Rejected).Contains(GoogleSyncFailurePolicy.OrganizerOnlyDetail) &&
+        CalendarEventStatusText.BarPrefix(v68LocalOnly) == "" &&
+        CalendarEventStatusText.SyncState(v68LocalOnly) == "로컬 전용",
+        "conflict shows its reason and local-only events show no upload marker");
+
+    var v68Events = new List<CalendarEvent>
+    {
+        v68LocalOnly,
+        new() { Title = "clean google", RemoteId = "g1", RemoteETag = "e1", Dirty = false, CalendarId = "me@example.com" },
+        new() { Title = "unsent edit", RemoteId = "g2", RemoteETag = "e2", Dirty = true, CalendarId = "me@example.com" },
+        new() { Title = "pending create", RemoteId = "ddabc", RemoteCreatePending = true, Dirty = true, CalendarId = "me@example.com" },
+        new() { Title = "never uploaded", Dirty = true, CalendarId = "me@example.com" },
+        new() { Title = "pending delete", RemoteId = "g3", RemoteETag = "e3", Dirty = true, Deleted = true, CalendarId = "me@example.com" }
+    };
+    Assert.That(GoogleDisconnectPolicy.CountUnsentChanges(v68Events) == 3 &&
+        GoogleDisconnectPolicy.CountDownloadedCopies(v68Events) == 1,
+        "disconnect warning counts unsent changes and downloaded copies");
+    var v68Disconnect = GoogleDisconnectPolicy.Apply(v68Events);
+    Assert.That(v68Disconnect.Removed == 2 && v68Disconnect.ConvertedToLocal == 3 && v68Disconnect.KeptLocal == 1 &&
+        v68Events.Count == 4 &&
+        v68Events.All(e => e.LocalOnly && e.RemoteId is null && e.RemoteETag is null && !e.RemoteCreatePending && !e.Dirty &&
+            e.CalendarId == CalendarEventStore.LocalCalendarId),
+        "disconnect leaves no event that could be pushed to a different account");
+
+    var v68Credentials = new VerifiedCredentialCheckpoint<string>();
+    v68Credentials.LoadVerified("old");
+    v68Credentials.Stage("candidate");
+    v68Credentials.Clear();
+    Assert.That(v68Credentials.Active is null && !v68Credentials.IsPending,
+        "disconnect forgets verified and candidate credentials");
+
+    var v68Scratch = Path.Combine(Path.GetTempPath(), "cyandeck-v68-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(v68Scratch);
+    try
+    {
+        var v68PrefsPath = Path.Combine(v68Scratch, "calendar-preferences.json");
+        var v68Prefs = new CalendarPreferencesStore(v68PrefsPath);
+        v68Prefs.UpdateCatalog([new GoogleCalendarSource { Id = "me@example.com", Name = "Me", AccessRole = "owner", IsPrimary = true }]);
+        v68Prefs.UpdateSyncToken("me@example.com", "sync-1");
+        v68Prefs.SetHolidayVisibility(KoreanHolidayCalendars.GoogleId, true);
+        v68Prefs.ClearGoogleAccount();
+        var v68Reopened = new CalendarPreferencesStore(v68PrefsPath).Data;
+        Assert.That(v68Reopened.Catalog.Count == 0 && v68Reopened.SyncTokens.Count == 0 &&
+            v68Reopened.SelectedCalendarIds is null && v68Reopened.TargetCalendarId is null &&
+            v68Reopened.ShowGoogleKoreanHolidays,
+            "disconnect clears account catalog, tokens and selection but keeps holiday choices");
+
+        var v68StorePath = Path.Combine(v68Scratch, "calendar-events.json");
+        var v68Store = new CalendarEventStore(v68StorePath);
+        var v68Local = new CalendarEvent { Title = "로컬 일정", Date = new DateTime(2026, 5, 1), EndDate = new DateTime(2026, 5, 2),
+            LocalOnly = true, Dirty = false, CalendarId = CalendarEventStore.LocalCalendarId };
+        var v68Linked = new CalendarEvent { Title = "구글 일정", Date = new DateTime(2026, 5, 3), RemoteId = "g9",
+            RemoteETag = "e9", Dirty = false, CalendarId = "me@example.com", SyncError = "Google이 수정을 거부함: test" };
+        v68Store.CommitSnapshot([v68Local, v68Linked]);
+        Assert.That(new CalendarEventStore(v68StorePath).Events.Single(e => e.RemoteId == "g9").SyncError == "Google이 수정을 거부함: test" &&
+            v68Store.CreateSnapshot().Single(e => e.RemoteId == "g9").SyncError == "Google이 수정을 거부함: test",
+            "rejection reason survives restart and snapshot copies");
+
+        var v68BackupPath = Path.Combine(v68Scratch, "backup.json");
+        var v68Styles = new CalendarEventAppearanceStore(Path.Combine(v68Scratch, "calendar-event-appearance.json"));
+        v68Styles.Set(v68Local.Id, "#26B7A9", null);
+        Assert.That(CalendarEventBackup.Export(v68Store.Events, v68Styles.Get, v68BackupPath) == 1,
+            "only local events are exported");
+        var v68Backup = CalendarEventBackup.Read(v68BackupPath);
+        Assert.That(v68Backup.Events.Single().Title == "로컬 일정" &&
+            v68Backup.Appearance[v68Local.Id.ToString("N")].BackgroundColor == "#26B7A9",
+            "backup keeps the event and its color");
+        Assert.That(CalendarEventBackup.PlanImport(v68Store.Events, v68Backup) is { Added.Count: 0, SkippedDuplicates: 1 },
+            "importing into the same calendar adds no duplicate");
+
+        var v68Fresh = new CalendarEventStore(Path.Combine(v68Scratch, "fresh-events.json"));
+        v68Backup.Events.Add(new CalendarEvent { Title = "구글 사본", RemoteId = "g10", Dirty = false });
+        var v68Plan = CalendarEventBackup.PlanImport(v68Fresh.Events, v68Backup);
+        Assert.That(v68Plan.Added.Count == 1 && v68Plan.SkippedLinked == 1 &&
+            v68Plan.Added[0] is { LocalOnly: true, Dirty: false, RemoteId: null } &&
+            v68Plan.Added[0].CalendarId == CalendarEventStore.LocalCalendarId &&
+            v68Plan.Appearance[v68Plan.Added[0].Id].BackgroundColor == "#26B7A9",
+            "imported events become local-only, Google copies are skipped and colors follow");
+        var v68FreshStyles = new CalendarEventAppearanceStore(Path.Combine(v68Scratch, "fresh-appearance.json"));
+        v68FreshStyles.SetMany(v68Plan.Appearance);
+        Assert.That(new CalendarEventAppearanceStore(Path.Combine(v68Scratch, "fresh-appearance.json"))
+                .Get(v68Plan.Added[0].Id).BackgroundColor == "#26B7A9",
+            "imported colors are saved in one checkpoint");
+
+        var v68NotBackup = Path.Combine(v68Scratch, "layout-export.json");
+        File.WriteAllText(v68NotBackup, "{\"Settings\":{},\"Fences\":[]}");
+        var v68Rejects = false;
+        try { CalendarEventBackup.Read(v68NotBackup); }
+        catch (InvalidDataException) { v68Rejects = true; }
+        Assert.That(v68Rejects, "a layout export is not mistaken for a calendar backup");
+        Assert.That(CalendarEventBackup.CompanionPathFor(Path.Combine(v68Scratch, "CyanDeck-backup-1.json"))
+                == Path.Combine(v68Scratch, "CyanDeck-backup-1.calendar-events.json"),
+            "layout export companion file sits next to the export");
+
+        var v68Unconfirmed = new CalendarEvent { Title = "올리지 못한 일정", Date = new DateTime(2026, 5, 5),
+            RemoteId = "dd" + Guid.NewGuid().ToString("N"), RemoteCreatePending = true, Dirty = true, CalendarId = "me@example.com" };
+        var v68UnconfirmedPath = Path.Combine(v68Scratch, "unconfirmed.json");
+        Assert.That(CalendarEventBackup.IsLocalEvent(v68Unconfirmed) &&
+            CalendarEventBackup.Export(new[] { v68Unconfirmed }, _ => new CalendarEventAppearance(), v68UnconfirmedPath) == 1 &&
+            CalendarEventBackup.Read(v68UnconfirmedPath).Events.Single().RemoteId is null,
+            "a create Google never confirmed is backed up as a local event");
+
+        var v68LayoutPath = Path.Combine(v68Scratch, "CyanDeck-backup-2.json");
+        var v68CompanionPath = CalendarEventBackup.CompanionPathFor(v68LayoutPath);
+        CalendarEventBackup.Export(new[] { v68Local }, _ => new CalendarEventAppearance(), v68CompanionPath);
+        Assert.That(CalendarEventBackup.ExportCompanion(new[] { v68Linked }, v68LayoutPath) == 0 &&
+            CalendarEventBackup.Read(v68CompanionPath).Events.Count == 0,
+            "an older companion is emptied when the new export has no local events");
+    }
+    finally { Directory.Delete(v68Scratch, recursive: true); }
+}
+
 Console.WriteLine("All calendar domain tests passed.");
 
 static class Assert

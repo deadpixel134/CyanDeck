@@ -4140,6 +4140,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         try
         {
             _calendar ??= new CalendarModule(_host, _state.Settings, () => Persist(), ownsShellRecovery: !_desktopRuntimeStarted);
+            _calendar.ManagedCapabilityAllowed = IsManagedCapabilityAllowed;
             _calendar.Start();
         }
         catch (Exception ex)
@@ -5012,6 +5013,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (dialog.ShowDialog() != true) return;
             CaptureMonitorProfile();
             _store.Export(_state, dialog.FileName);
+            ExportCalendarCompanion(dialog.FileName);
         }
         catch (Exception ex)
         {
@@ -5335,7 +5337,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             "이 컴퓨터에 저장된 CyanDeck 사용자 데이터를 모두 삭제하시겠습니까?\n\n" +
             "그룹/설정, 로컬 일정, Google 로그인 토큰/선택, 백업·스냅샷·로그를 삭제합니다.\n" +
             "Google 서버 일정, Windows 바탕화면 원본 파일과 설치된 프로그램은 삭제하지 않습니다.\n\n" +
-            "자동 백업 없이 영구 삭제합니다. 필요한 자료는 먼저 다른 폴더에 내보내세요.",
+            "자동 백업 없이 영구 삭제합니다. 필요하면 먼저 설정의 '레이아웃 및 설정 내보내기'(로컬 일정도 함께 저장)나\n" +
+            "캘린더 설정 → '일정 백업' → '로컬 일정 내보내기'로 다른 폴더에 백업하세요.",
             "CyanDeck — 모든 로컬 데이터 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning)
             != MessageBoxResult.Yes) return false;
         var owner = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();

@@ -6,7 +6,7 @@ namespace CyanDeck.Calendar;
 
 // Feature lifecycle is completely separate from the Deck runtime. Safe Mode does
 // not start this module; calendar-only mode uses the same DesktopHost instance.
-public sealed class CalendarModule : IDisposable
+public sealed partial class CalendarModule : IDisposable
 {
     private readonly DesktopHost _host;
     private readonly DeckSettings _settings;
@@ -74,6 +74,7 @@ public sealed class CalendarModule : IDisposable
         _window = new CalendarWindow(_settings, _events, _preferences, _onSettingsChanged,
             SynchronizeAsync, (ct, force) => _google.LoadCalendarsAsync(ct, force), ApplyAutoSyncInterval,
             _holidayFeeds, RefreshHolidayFeedsAsync, standaloneWindowMode: _standaloneWindowMode);
+        WireSyncAccountHooks(_window);
         if (_standaloneWindowMode)
         {
             _window.EnsureWithinVisibleWorkArea("standalone window start");
@@ -143,11 +144,9 @@ public sealed class CalendarModule : IDisposable
         _syncTimer?.Stop();
         _holidayTimer?.Stop();
         _syncTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(CalendarSyncIntervalPolicy.DefaultMinutes) };
-        _syncTimer.Tick += async (_, _) =>
-        {
-            if (_google.HasCachedToken && _window is { IsGoogleConnecting: false })
-                await SynchronizeAsync();
-        };
+        // Silent only: never opens a browser login, pauses after sign-in expiry, and
+        // waits for an open editor or an event drag to finish.
+        _syncTimer.Tick += async (_, _) => await OnAutoSyncTickAsync();
         ApplyAutoSyncInterval();
         // Subscribed holiday calendars refresh independently of Google OAuth.
         // Cached copies are already available in the window on cold/offline start.
@@ -170,8 +169,8 @@ public sealed class CalendarModule : IDisposable
                 await _holidayFeeds.RefreshAsync(_preferences.VisibleHolidayIds(), _holidayCancellation.Token);
             }
             finally { _holidayRefreshGate.Release(); }
-            if (!_disposed && _window is { IsEditing: false, IsShowingPreferences: false })
-                _window.RenderMonth();
+            // Deferred while editing, in the settings panel or during an event drag.
+            if (!_disposed) _window?.RenderMonthWhenIdle();
             return KoreanHolidayFeedService.DescribeResults(_holidayFeeds.LastResults);
         }
         catch (OperationCanceledException) when (_holidayCancellation.IsCancellationRequested)
@@ -486,7 +485,8 @@ public sealed class CalendarModule : IDisposable
             var result = await _google.SynchronizeAsync();
             if (_window is null || _disposed) return;
             _window.SetStatus(result);
-            _window.RenderMonth();
+            // Keep an open settings panel, editor, drag and scroll position intact.
+            _window.RenderMonthWhenIdle();
         }
         catch (OperationCanceledException) when (_disposed)
         {
@@ -500,7 +500,11 @@ public sealed class CalendarModule : IDisposable
             if (_window is not null && !_disposed)
                 _window.SetStatus("Google Calendar 동기화 실패. 연결 상태를 확인하고 다시 시도하세요.");
         }
-        finally { if (_window is not null) _window.IsSynchronizing = false; }
+        finally
+        {
+            if (_window is not null) _window.IsSynchronizing = false;
+            AfterSynchronizeAttempt();
+        }
     }
 
     public void Dispose()
@@ -515,6 +519,7 @@ public sealed class CalendarModule : IDisposable
         _showDesktopRecovery?.Dispose();
         _showDesktopRecovery = null;
         _syncTimer?.Stop();
+        _promptSyncTimer?.Stop();
         _holidayTimer?.Stop();
         _holidayCancellation.Cancel();
         _shellScheduler = null;
