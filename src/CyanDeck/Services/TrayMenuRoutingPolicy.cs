@@ -38,7 +38,9 @@ internal static class TrayMenuRoutingPolicy
             case "group.snapshots":
             case "desktop.display": return TrayMenuSection.Groups;
             case "desktop.native-icons": return TrayMenuSection.IconTools;
-            case "recovery.backup": return TrayMenuSection.Recovery;
+            case "recovery.backup":
+            // v8.0.43: app rollback / rollback undo ("되돌리기 취소 (v… 다시 설치)…").
+            case "recovery.app-rollback": return TrayMenuSection.Recovery;
             case "settings.startup": return TrayMenuSection.SettingsOnly;
         }
         if (string.IsNullOrEmpty(label)) return TrayMenuSection.Groups;
@@ -61,6 +63,7 @@ internal static class TrayMenuRoutingPolicy
             "미완료 업데이트 백업 복구…" or "설정 검사 / 복구" or
             "바탕화면 연결 / 레이아웃 복구" or
             "이전 세션 복구 데이터 사용 가능…" or
+            "레이아웃 파일 복구…" or
             "마지막 앱 업데이트 되돌리기…" or
             "표시 상태 복구" or "백업 / 복원")
             return TrayMenuSection.Recovery;

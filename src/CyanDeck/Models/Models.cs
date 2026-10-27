@@ -446,6 +446,11 @@ public sealed class DeckLayoutSnapshot
     public string Name { get; set; } = "Snapshot";
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public bool IsAutomatic { get; set; }
+    // v8.0.43: undo checkpoint taken before align/distribute/pack/restore. It has its own
+    // small retention bucket (never evicts user snapshots). Absent in older files => false.
+    public bool IsUndoCheckpoint { get; set; }
+    // Korean action label of an undo checkpoint (e.g. "왼쪽 맞춤"); null for other snapshots.
+    public string? UndoAction { get; set; }
     public string MonitorSignature { get; set; } = "";
     public int CurrentPage { get; set; }
     public List<DeckMonitorDescriptor> Monitors { get; set; } = [];

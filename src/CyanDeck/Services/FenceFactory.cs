@@ -8,7 +8,7 @@ public static class FenceFactory
     {
         var clone = CloneFence(source, includeCollectionItems: true);
         clone.Id = Guid.NewGuid();
-        clone.Title = string.IsNullOrWhiteSpace(source.Title) ? "Group copy" : $"{source.Title} copy";
+        clone.Title = string.IsNullOrWhiteSpace(source.Title) ? "그룹 사본" : $"{source.Title} 사본";
         clone.X = source.X + offsetX;
         clone.Y = source.Y + offsetY;
         clone.Locked = false;

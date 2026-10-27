@@ -146,6 +146,85 @@ try
         throw new Exception("Unsaved, abnormal, locked or transitioning layout cleared its recovery marker.");
     Console.WriteLine("PASS: Windows fast session exit preserves recovery on dirty/saving/transitioning layouts");
 
+    // v8.0.43: after "마지막 앱 업데이트 되돌리기" the rolled-back version is held from
+    // AUTOMATIC reinstall until a newer release is published or the user updates manually.
+    var v41 = new Version(8, 0, 41);
+    var v42 = new Version(8, 0, 42);
+    var v43 = new Version(8, 0, 43);
+    if (!UpdateRollbackHold.IsAutomaticInstallHeld(v42, new Version(8, 0, 42, 0)) ||
+        UpdateRollbackHold.IsAutomaticInstallHeld(v42, v43) ||
+        UpdateRollbackHold.IsAutomaticInstallHeld(null, v42) ||
+        !UpdateRollbackHold.ShouldReleaseHold(v42, v43) ||
+        !UpdateRollbackHold.IsRollbackUndo(v42, new Version(8, 0, 41, 0)) ||
+        UpdateRollbackHold.IsRollbackUndo(v42, v42) ||
+        !UpdateRollbackHold.IsStale(v42, v42) || UpdateRollbackHold.IsStale(v42, v41))
+        throw new Exception("Rollback hold decisions mismatch.");
+    if (!UpdateRollbackHold.Record(mockLocal, new Version(8, 0, 42, 0)) || UpdateRollbackHold.ReadHeldVersion(mockLocal) != v42)
+        throw new Exception("Rollback hold was not recorded.");
+    if (!UpdateRollbackHold.ShouldSkipAutomaticInstall(mockLocal, new Version(8, 0, 42, 0), out var heldNow) || heldNow != v42)
+        throw new Exception("The rolled-back version would be reinstalled automatically at the next start.");
+    if (UpdateRollbackHold.DescribeRollbackCommand(mockLocal, v41) != "되돌리기 취소 (v8.0.42 다시 설치)…" ||
+        UpdateRollbackHold.DescribeHold(mockLocal, v41) != "v8.0.42 자동 설치 보류 중" ||
+        UpdateRollbackHold.DescribeHold(mockLocal, v42) != "")
+        throw new Exception("Rollback hold wording mismatch.");
+    if (UpdateRollbackHold.ShouldSkipAutomaticInstall(mockLocal, v43, out _) || File.Exists(UpdateRollbackHold.HoldPath(mockLocal)))
+        throw new Exception("A newer release must release the rollback hold.");
+    if (UpdateRollbackHold.DescribeRollbackCommand(mockLocal, v41) != "마지막 앱 업데이트 되돌리기…")
+        throw new Exception("Rollback command label must return to normal once the hold is released.");
+    Console.WriteLine("PASS: rolled-back version is not reinstalled automatically; newer release releases the hold");
+
+    // v8.0.43: update storage keeps the rollback target plus one newer snapshot, removes
+    // installed packages and old installer scripts, and never runs with a pending journal.
+    var updatesRoot = Path.Combine(mockLocal, "updates");
+    var rollbackRoot = Path.Combine(updatesRoot, "rollback");
+    string MakeRollbackSnapshot(string name, DateTime createdUtc)
+    {
+        var dir = Path.Combine(rollbackRoot, name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "CyanDeck.exe"), "exe");
+        Directory.SetCreationTimeUtc(dir, createdUtc);
+        return dir;
+    }
+    var rollbackTarget = MakeRollbackSnapshot("before-update-" + new string('1', 32), nowUtc.AddDays(-5));
+    var newestSpare = MakeRollbackSnapshot("before-update-" + new string('2', 32), nowUtc.AddDays(-1));
+    var olderSpare = MakeRollbackSnapshot("before-update-" + new string('3', 32), nowUtc.AddDays(-2));
+    var oldestSpare = MakeRollbackSnapshot("pre-rollback-" + new string('4', 32), nowUtc.AddDays(-3));
+    var foreignFolder = Path.Combine(rollbackRoot, "user-folder");
+    Directory.CreateDirectory(foreignFolder);
+    File.WriteAllText(Path.Combine(updatesRoot, "last-rollback.txt"), rollbackTarget);
+    var stagedRoot = Path.Combine(updatesRoot, "staged");
+    Directory.CreateDirectory(stagedRoot);
+    foreach (var stagedVersion in new[] { "8.0.41.0", "8.0.42.0", "8.0.43.0", "8.0.44.0" })
+        File.WriteAllText(Path.Combine(stagedRoot, "CyanDeck-" + stagedVersion + "-win-x64.zip"), "zip");
+    var bootstrapRoot = Path.Combine(updatesRoot, "bootstrap");
+    Directory.CreateDirectory(bootstrapRoot);
+    var oldScript = Path.Combine(bootstrapRoot, "apply-update-" + new string('a', 32) + ".ps1");
+    var freshScript = Path.Combine(bootstrapRoot, "apply-update-" + new string('b', 32) + ".ps1");
+    File.WriteAllText(oldScript, "old");
+    File.WriteAllText(freshScript, "new");
+    File.SetLastWriteTimeUtc(oldScript, nowUtc.AddDays(-2));
+
+    var pendingJournal = Path.Combine(updatesRoot, "pending-" + new string('c', 64) + ".json");
+    File.WriteAllText(pendingJournal, "{}");
+    var blocked = UpdateStorageMaintenance.Prune(mockLocal, new Version(8, 0, 42, 0), nowUtc);
+    if (!blocked.Skipped || !Directory.Exists(olderSpare) || !File.Exists(oldScript))
+        throw new Exception("Update storage was pruned while a recovery journal was pending.");
+    File.Delete(pendingJournal);
+
+    var pruned = UpdateStorageMaintenance.Prune(mockLocal, new Version(8, 0, 42, 0), nowUtc);
+    if (pruned.DeletedRollbackSnapshots != 2 || !Directory.Exists(rollbackTarget) || !Directory.Exists(newestSpare) ||
+        Directory.Exists(olderSpare) || Directory.Exists(oldestSpare) || !Directory.Exists(foreignFolder))
+        throw new Exception("Rollback snapshot pruning must keep the rollback target and one newer snapshot only.");
+    if (pruned.DeletedPackages != 3 || !File.Exists(Path.Combine(stagedRoot, "CyanDeck-8.0.44.0-win-x64.zip")) ||
+        File.Exists(Path.Combine(stagedRoot, "CyanDeck-8.0.42.0-win-x64.zip")))
+        throw new Exception("Installed packages must be removed and only the newest pending package kept.");
+    if (pruned.DeletedScripts != 1 || File.Exists(oldScript) || !File.Exists(freshScript))
+        throw new Exception("Only installer scripts older than a day may be removed.");
+    var usageAfter = UpdateStorageMaintenance.Measure(mockLocal);
+    if (usageAfter.RollbackSnapshots != 2 || usageAfter.StagedPackages != 1 || usageAfter.TotalBytes <= 0)
+        throw new Exception("Update storage usage mismatch after pruning.");
+    Console.WriteLine("PASS: update backup/download housekeeping keeps rollback target and skips pending recovery");
+
 
     Console.WriteLine("PASS: full local data reset token, expired request, external file and disposable data");
 }

@@ -67,10 +67,15 @@ public partial class SnapshotGalleryWindow : Window
         grid.Children.Add(preview);
 
         var info = new StackPanel { Margin = new Thickness(18, 2, 0, 0) };
-        info.Children.Add(new TextBlock { Text = snapshot.Name, FontSize = 16, FontWeight = FontWeights.SemiBold });
+        // v8.0.43: Korean names for automatic/undo snapshots made by older builds as well.
+        var createdLocal = snapshot.CreatedUtc.ToLocalTime();
+        var displayName = CyanDeck.Services.LayoutSnapshotNamePolicy.Display(snapshot.Name, snapshot.IsAutomatic, createdLocal);
+        var isUndo = CyanDeck.Services.LayoutSnapshotNamePolicy.IsUndoCheckpoint(snapshot.IsUndoCheckpoint, snapshot.IsAutomatic, snapshot.Name);
+        var kindText = snapshot.IsAutomatic ? "자동 백업  ·  " : isUndo ? "되돌리기용 (최근 5개 보관)  ·  " : "";
+        info.Children.Add(new TextBlock { Text = displayName, FontSize = 16, FontWeight = FontWeights.SemiBold });
         info.Children.Add(new TextBlock
         {
-            Text = $"{snapshot.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}  ·  {(snapshot.IsAutomatic ? "자동 백업  ·  " : "")}{Math.Max(1, snapshot.Monitors.Count)}개 모니터  ·  {snapshot.Fences.Count}개 그룹",
+            Text = $"{createdLocal:yyyy-MM-dd HH:mm:ss}  ·  {kindText}{Math.Max(1, snapshot.Monitors.Count)}개 모니터  ·  {snapshot.Fences.Count}개 그룹",
             Foreground = new SolidColorBrush(Color.FromRgb(159, 171, 185)), Margin = new Thickness(0, 5, 0, 10)
         });
         if (!string.IsNullOrWhiteSpace(snapshot.MonitorSignature))
@@ -98,9 +103,12 @@ public partial class SnapshotGalleryWindow : Window
         var rename = new Button { Content = "이름 바꾸기" };
         rename.Click += (_, _) =>
         {
-            var value = TextPrompt.Show(this, "스냅샷 이름 바꾸기", "스냅샷 이름", snapshot.Name);
+            var value = TextPrompt.Show(this, "스냅샷 이름 바꾸기", "스냅샷 이름", displayName);
             if (string.IsNullOrWhiteSpace(value)) return;
             snapshot.Name = value.Trim();
+            // A renamed undo checkpoint is kept as the user's own snapshot.
+            snapshot.IsUndoCheckpoint = false;
+            snapshot.UndoAction = null;
             _changed();
             Rebuild();
         };
@@ -108,7 +116,7 @@ public partial class SnapshotGalleryWindow : Window
         delete.Click += (_, _) =>
         {
             var answer = MessageBox.Show(this,
-                $"'{snapshot.Name}' 스냅샷을 삭제하시겠습니까?\n\n삭제한 스냅샷은 되돌릴 수 없습니다. 현재 그룹 배치는 바뀌지 않습니다.",
+                $"'{displayName}' 스냅샷을 삭제하시겠습니까?\n\n삭제한 스냅샷은 되돌릴 수 없습니다. 현재 그룹 배치는 바뀌지 않습니다.",
                 "레이아웃 스냅샷 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
             if (answer != MessageBoxResult.Yes) return;
             _delete(snapshot);
