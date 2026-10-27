@@ -44,7 +44,8 @@ internal static class TrayMenuRoutingPolicy
         if (label == "종료") return TrayMenuSection.Exit;
         if (label == "설정…" || label == "새 그룹" ||
             label.StartsWith("바탕화면 페이지 (", StringComparison.Ordinal) ||
-            label is "빠른 숨김" or "빠른 숨김 종료" or "Peek" or "Peek 종료")
+            label is "빠른 숨김" or "빠른 숨김 종료" or "Peek" or "Peek 종료" or
+                "Peek: 창 위로 그룹 보기" or "Peek 끝내기")
             return TrayMenuSection.Primary;
         if (label.StartsWith("캘린더", StringComparison.Ordinal) ||
             label is "바탕화면 캘린더 사용" or "Google Calendar 동기화")

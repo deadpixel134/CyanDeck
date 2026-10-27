@@ -393,3 +393,45 @@ foreach (var userSkipped in new[] { false, true })
         throw new Exception("Startup anti-flash minimum visibility mismatch.");
 }
 Console.WriteLine("PASS: 22 startup update status anti-flash and explicit-skip cases");
+
+// v8.0.40: rule weekdays accept Korean, English and numbers; rename checks explain the
+// actual Windows rule; recovery checkpoints show readable Korean labels, not file ids.
+var weekdayCases = new (string Pattern, DayOfWeek Day, bool Expected)[]
+{
+    ("월", DayOfWeek.Monday, true), ("월요일", DayOfWeek.Monday, true), ("월,수,금", DayOfWeek.Wednesday, true),
+    ("월·화", DayOfWeek.Tuesday, true), ("토; 일", DayOfWeek.Sunday, true), ("Mon", DayOfWeek.Monday, true),
+    ("monday", DayOfWeek.Monday, true), ("Fri.", DayOfWeek.Friday, true), ("0", DayOfWeek.Sunday, true),
+    ("7", DayOfWeek.Sunday, true), ("1", DayOfWeek.Monday, true), ("월", DayOfWeek.Tuesday, false),
+    ("8", DayOfWeek.Monday, false), ("", DayOfWeek.Monday, false), ("월급", DayOfWeek.Monday, false),
+    ("Saturday,Sunday", DayOfWeek.Friday, false)
+};
+foreach (var (pattern, day, expected) in weekdayCases)
+    if (RuleWeekdayParser.Matches(pattern, day) != expected)
+        throw new Exception($"Weekday rule mismatch: '{pattern}' {day} -> {expected}");
+Console.WriteLine($"PASS: {weekdayCases.Length} Korean/English/number weekday rule cases");
+
+foreach (var bad in new[] { "", "  ", ".", "..", "a:b", "x?", "name.", "name ", "CON", "con.txt", "LPT1", "COM9.log" })
+    if (WindowsFileNamePolicy.GetProblem(bad) is null)
+        throw new Exception($"Invalid Windows name accepted: '{bad}'");
+foreach (var good in new[] { "보고서.txt", "CONTENT", "Console.log", "a.b.c", ".gitignore", "COM10" })
+    if (WindowsFileNamePolicy.GetProblem(good) is { } problem)
+        throw new Exception($"Valid Windows name rejected: '{good}' ({problem})");
+if (!WindowsFileNamePolicy.GetProblem("..")!.Contains("예약"))
+    throw new Exception("'..' must explain that it is a reserved location name.");
+Console.WriteLine("PASS: 18 Windows file name rename checks");
+
+var checkpointCases = new (string File, string Expected)[]
+{
+    ("before-import-20261027-101500", "백업 가져오기 전"),
+    ("before-auto-monitor-reduction-20261027-101500", "모니터 연결 해제로 그룹을 옮기기 전"),
+    ("before-monitor-profile-restore-0123456789abcdef0123456789abcdef-20261027-101500", "모니터 배치를 복원하기 전"),
+    ("before-github-auto-update-8-0-36-20261027-101500", "자동 업데이트 설치 전 (v8.0.36)"),
+    ("before-update-20261027-101500", "업데이트 설치 전"),
+    ("before-importer-20261027-101500", "before-importer"),
+    ("custom-0123456789abcdef0123456789abcdef-20261027-101500", "custom"),
+    ("", "복구 지점")
+};
+foreach (var (file, expected) in checkpointCases)
+    if (RecoveryCheckpointLabelPolicy.Describe(file) != expected)
+        throw new Exception($"Checkpoint label mismatch: '{file}' -> '{RecoveryCheckpointLabelPolicy.Describe(file)}', expected '{expected}'");
+Console.WriteLine($"PASS: {checkpointCases.Length} recovery checkpoint labels");

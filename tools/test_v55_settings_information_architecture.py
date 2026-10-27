@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""v8.0.31: non-destructive settings navigation and spacing regression guard."""
+"""v8.0.31: non-destructive settings navigation and spacing regression guard.
+
+v8.0.40 regrouped the sidebar by task (Peek/quick hide, desktop icons, updates and
+troubleshooting got their own entries); the safety intent of every check is kept."""
 import re
 from collections import Counter
 from pathlib import Path
@@ -41,34 +44,39 @@ def cards(tab):
             and n.get("Padding") == "18"]
 
 new_tabs = ["GeneralTab", "InteractionTab", "AppearanceTab",
-            "AnimationTab", "PerformanceTab", "LayoutTab"]
+            "AnimationTab", "PerformanceTab", "LayoutTab", "PeekTab"]
 checks = {
     "settings XAML parses with unique named controls":
         len(names) >= 216 and all(count == 1 for count in names.values()),
-    "all 39 navigation roots/leaves resolve to their actual owning page":
-        len(routes) == 39 and not route_issues,
+    "all 44 navigation roots/leaves resolve to their actual owning page":
+        len(routes) == 44 and not route_issues,
     "original calendar/system/group/about editors remain as distinct tabs":
         all(x in tabs for x in ("CalendarTab", "SystemIconsTab", "GroupsTab", "AboutTab")),
-    "six dedicated new desktop settings pages":
+    "dedicated desktop settings pages including Peek and quick hide":
         all(x in tabs for x in new_tabs),
     "general page now contains only feature and base desktop controls":
         has("GeneralTab", "FeaturesSection", "DesktopSection",
             "StartupCheck", "DefaultDesktopPlacementCombo")
         and not has("GeneralTab", "AnimatePagesCheck")
         and not has("GeneralTab", "ChameleonCheck"),
-    "interaction page collects touch, snapping, tab and peek, and quick hide":
+    "interaction page collects touch, snapping, tabs and rollup":
         has("InteractionTab", "TouchPageGesturesCheck", "SmartSnapCheck",
-            "TabsSection", "RollupSection", "PeekSection", "QuickHideSection"),
-    "appearance groups icon previews, header controls, chameleon and standalone":
+            "TabsSection", "RollupSection"),
+    "Peek and quick hide have their own page":
+        has("PeekTab", "PeekSection", "QuickHideSection", "PeekWorkAreaCheck") and
+        not has("InteractionTab", "PeekSection") and not has("InteractionTab", "QuickHideSection"),
+    "appearance groups icon previews, header controls and chameleon":
         has("AppearanceTab", "DesktopIconStyleSection", "ShowFilePreviewsCheck",
-            "ShowHeaderControlsCheck", "ChameleonSection", "StandaloneSection",
-            "StandaloneIconHoverOpacitySlider"),
+            "ShowHeaderControlsCheck", "ChameleonSection"),
+    "icons outside groups are configured with the other desktop icon settings":
+        has("SystemIconsTab", "StandaloneSection", "StandaloneIconHoverOpacitySlider",
+            "StandaloneIconIdleOpacitySlider") and not has("AppearanceTab", "StandaloneSection"),
     "standalone appearance moved out of per-group editor without losing group fields":
         not has("GroupsTab", "StandaloneSection") and
         has("GroupsTab", "GroupEditorSection", "GroupEditor", "BackgroundColorBox",
             "TitleColorBox", "IconSizeSlider"),
     "standalone icon appearance retains Settings.EditGroups managed policy":
-        has("AppearanceTab", "StandaloneAppearanceCard") and
+        has("SystemIconsTab", "StandaloneAppearanceCard") and
         "StandaloneAppearanceCard.IsEnabled = GroupsTab.IsEnabled;" in code,
     "all page and icon motion settings consolidated":
         has("AnimationTab", "PageAnimationSection", "AnimatePagesCheck",
@@ -78,10 +86,16 @@ checks = {
     "performance page owns deferred and background loading":
         has("PerformanceTab", "PerformanceSection", "SaveDebounceSlider",
             "LoadingPerformanceSection", "AsyncItemLoadingCheck", "IconCacheSlider"),
-    "layout and backup page owns snapshots, reset, import/export":
+    "layout and backup page owns snapshots and import/export":
         has("LayoutTab", "SnapshotsSection", "LayoutAdjustmentCombo",
-            "ResetSection", "BackupSection", "ImportConfigurationButton"),
-    "all six desktop pages have spaced card sections":
+            "BackupSection", "ImportConfigurationButton"),
+    "settings default restore sits with the other resets and keeps the general-settings policy":
+        has("AboutTab", "ResetSection", "ResetGeneralButton", "FactoryResetSection") and
+        "ResetGeneralButton.IsEnabled = GeneralTab.IsEnabled;" in code,
+    "updates and version information have their own page":
+        has("UpdatesTab", "UpdatesSection", "AutomaticUpdateCheck", "BetaUpdateChannelCheck",
+            "AboutSection", "AboutVersionText") and len(cards("UpdatesTab")) >= 2,
+    "all desktop pages have spaced card sections":
         all(len(cards(k)) >= 2 for k in new_tabs) and
         all("Margin=\"28,24,26,38\"" in ET.tostring(tabs[k], encoding="unicode")
             for k in new_tabs),
@@ -95,6 +109,10 @@ checks = {
         "first.IsSelected = true;" in code and
         all(x in code for x in ("PageAnimationSection", "DesktopIconStyleSection",
                                "ItemAnimationSection", "LoadingPerformanceSection")),
+    "settings search also matches the wording inside each section":
+        "BuildSearchIndex()" in code and "CollectSearchText(" in code and
+        'KeyDown="SettingsSearchBox_KeyDown"' in xaml and
+        "private void SettingsSearchBox_KeyDown(" in code,
     "Apply/OK/Cancel transaction controls remain intact":
         all(f'Click="{name}"' in xaml
             for name in ("Apply_Click", "Ok_Click", "Cancel_Click")),

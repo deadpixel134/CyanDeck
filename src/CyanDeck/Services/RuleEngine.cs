@@ -206,19 +206,8 @@ public static class RuleEngine
         DateTime created;
         try { created = File.GetCreationTime(path); }
         catch { return false; }
-        var tokens = pattern.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var token in tokens)
-        {
-            if (Enum.TryParse<DayOfWeek>(token, true, out var day) && day == created.DayOfWeek) return true;
-            if (int.TryParse(token, out var n))
-            {
-                // Accept both 0-6 (Sunday=0) and ISO-like 1-7 (Monday=1, Sunday=7).
-                if (n is >= 0 and <= 6 && (int)created.DayOfWeek == n) return true;
-                var iso = created.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)created.DayOfWeek;
-                if (n is >= 1 and <= 7 && iso == n) return true;
-            }
-        }
-        return false;
+        // Korean (월, 월요일), English (Monday, Mon) and numbers (0-6 or ISO 1-7).
+        return RuleWeekdayParser.Matches(pattern, created.DayOfWeek);
     }
 
     private static bool CreatedTimeMatches(string path, string pattern)

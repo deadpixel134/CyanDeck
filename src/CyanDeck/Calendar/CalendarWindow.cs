@@ -72,6 +72,12 @@ public sealed class CalendarWindow : Window
     private Color _moveAccentColor = Colors.SteelBlue;
     private DateTime? _movePreviewDate;
     private bool _movePreviewShown;
+    // Edge handling while dragging: scroll the weeks, then switch period after a short hold.
+    private readonly DispatcherTimer _moveEdgeTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
+    private int _moveEdgeDirection;
+    private DateTime _moveEdgeSinceUtc;
+    private bool _preserveMoveOnRender;
+    private CalendarColorPicker? _preferencesBackgroundPicker;
 
 
     private bool _allowFinalClose;
@@ -158,6 +164,7 @@ public sealed class CalendarWindow : Window
             _settings.CalendarWidth = Width; _settings.CalendarHeight = Height; _onPositionChanged();
         };
         _longPressTimer.Tick += (_, _) => ActivateLongPressMove();
+        _moveEdgeTimer.Tick += (_, _) => OnMoveEdgeTick();
         Closed += (_, _) => _connectAttempt?.Cancel();
         _body.PreviewMouseMove += OnMoveMouseMotion;
         _body.PreviewMouseLeftButtonUp += OnMoveMouseRelease;
@@ -368,7 +375,9 @@ public sealed class CalendarWindow : Window
         _visibleMonth = CalendarViewportPolicy.AnchorAfterViewModeChange(
             _visibleMonth, _lastRenderedViewMode, _settings.CalendarViewMode, DateTime.Today);
         _lastRenderedViewMode = _settings.CalendarViewMode;
-        CancelEventMove(); // Do not destroy a live editor on timer-driven synchronization.
+        // Do not destroy a live editor on timer-driven synchronization. A period switch made
+        // during an event drag re-renders while keeping that drag alive.
+        if (!_preserveMoveOnRender) CancelEventMove();
         _showingPreferences = false;
         if (_editorSizeHandler is not null)
         {
@@ -718,7 +727,9 @@ public sealed class CalendarWindow : Window
         System.Windows.Controls.Panel.SetZIndex(_moveLayer, 15);
         _body.Children.Add(_moveLayer);
         UpdateMovePosition(Mouse.GetPosition(_body));
-        SetStatus("일정 이동 중 · 이동할 날짜에 놓으세요 · Esc: 취소");
+        _moveEdgeDirection = 0;
+        _moveEdgeTimer.Start();
+        SetStatus("일정 이동 중 · 이동할 날짜에 놓으세요 · 위·아래 끝에 잠시 두면 다른 기간으로 · Esc: 취소");
     }
 
     private void OnMoveMouseMotion(object sender, MouseEventArgs e)
@@ -849,6 +860,99 @@ public sealed class CalendarWindow : Window
         }
     }
 
+    // Near the top or bottom of the week area: scroll if there are more weeks to see.
+    // When there is nothing more to scroll, holding the event over the weekday heading (or
+    // above it), or at the very bottom edge, switches to the previous/next period, so an
+    // event can be moved to dates that are not currently visible. The switch zones lie outside
+    // the date cells or in a thin edge strip and need a short hold, so an ordinary drop does
+    // not change the period by accident.
+    private void OnMoveEdgeTick()
+    {
+        if (!_isMoving || _moveLayer is null || !_body.Children.Contains(_weekScroll))
+        {
+            _moveEdgeTimer.Stop();
+            return;
+        }
+        const double scrollZone = 28;
+        const double bottomSwitchZone = 8;
+        var point = Mouse.GetPosition(_body);
+        var origin = _weekScroll.TranslatePoint(new Point(0, 0), _body);
+        var top = origin.Y;
+        var bottom = origin.Y + _weekScroll.ActualHeight;
+        var withinColumns = point.X >= origin.X - 40 && point.X <= origin.X + _weekScroll.ActualWidth + 40;
+        var direction = !withinColumns ? 0 : point.Y < top + scrollZone ? -1 : point.Y > bottom - scrollZone ? 1 : 0;
+
+        var canScroll = direction < 0
+            ? _weekScroll.VerticalOffset > 0.5
+            : direction > 0 && _weekScroll.VerticalOffset < _weekScroll.ScrollableHeight - 0.5;
+        if (canScroll)
+        {
+            var depth = direction < 0 ? top + scrollZone - point.Y : point.Y - (bottom - scrollZone);
+            var step = Math.Clamp(depth / scrollZone, 0.2, 1.5) * 14;
+            _weekScroll.ScrollToVerticalOffset(_weekScroll.VerticalOffset + direction * step);
+            _weekScroll.UpdateLayout(); // cell positions must reflect the new offset
+            _moveEdgeDirection = 0;
+            _movePreviewShown = false; // different cells are now under the pointer
+            UpdateMovePosition(point);
+            return;
+        }
+
+        var firstRowTop = _renderedWeekRows.Count > 0
+            ? _renderedWeekRows[0].TranslatePoint(new Point(0, 0), _body).Y : top;
+        var inSwitchZone = direction < 0 ? point.Y < Math.Max(top + 4, firstRowTop)
+            : direction > 0 && point.Y > bottom - bottomSwitchZone;
+        if (!inSwitchZone)
+        {
+            if (_moveEdgeDirection != 0)
+            {
+                _moveEdgeDirection = 0;
+                _movePreviewShown = false; // restore the normal date label
+                UpdateMovePosition(point);
+            }
+            return;
+        }
+
+        if (_moveEdgeDirection != direction)
+        {
+            _moveEdgeDirection = direction;
+            _moveEdgeSinceUtc = DateTime.UtcNow;
+            var hint = direction < 0 ? "잠시 그대로 두면 이전 기간으로 넘어갑니다" : "잠시 그대로 두면 다음 기간으로 넘어갑니다";
+            SetStatus(hint + " · Esc: 취소");
+            if (_moveDropText is not null) _moveDropText.Text = (direction < 0 ? "▲ " : "▼ ") + hint;
+            return;
+        }
+        if ((DateTime.UtcNow - _moveEdgeSinceUtc).TotalMilliseconds < 800) return;
+        NavigateDuringMove(direction);
+    }
+
+    private void NavigateDuringMove(int direction)
+    {
+        if (!_isMoving || _moveLayer is null) return;
+        var layer = _moveLayer;
+        _visibleMonth = CalendarViewportPolicy.Navigate(_visibleMonth, _settings.CalendarViewMode,
+            _settings.CalendarVisibleWeekRows, direction);
+        _preserveMoveOnRender = true;
+        try { RenderMonth(); }
+        finally { _preserveMoveOnRender = false; }
+        if (!_isMoving) return;
+        // The re-render cleared the body: put the drag layer back. The old source bar no longer
+        // exists, so there is nothing to restore on cancel; the new render shows the event normally.
+        if (!_body.Children.Contains(layer)) _body.Children.Add(layer);
+        _sourceBar = null;
+        if (Mouse.Captured != _body && !Mouse.Capture(_body, CaptureMode.SubTree)) { CancelEventMove(); return; }
+        _body.UpdateLayout();
+        // Coming from the next period, show the end of the previous one first.
+        if (direction < 0 && _weekScroll.ScrollableHeight > 0.5)
+        {
+            _weekScroll.ScrollToBottom();
+            _weekScroll.UpdateLayout();
+        }
+        _moveEdgeDirection = 0; // holding on keeps going after another short pause
+        _movePreviewShown = false;
+        UpdateMovePosition(Mouse.GetPosition(_body));
+        SetStatus((direction < 0 ? "이전" : "다음") + " 기간으로 넘어왔습니다 · 원하는 날짜에 놓으세요 · Esc: 취소");
+    }
+
     private static bool CanBuildMoveDraft(CalendarEvent ev, DateTime target)
     {
         try { CalendarEventMovePolicy.CreateDraft(ev, target); return true; }
@@ -925,6 +1029,8 @@ public sealed class CalendarWindow : Window
     private void CancelEventMove()
     {
         _longPressTimer.Stop();
+        _moveEdgeTimer.Stop();
+        _moveEdgeDirection = 0;
         if (_isMoving && _sourceBar is not null)
         {
             _sourceBar.Background = _savedBarBackground;
@@ -1339,10 +1445,25 @@ public sealed class CalendarWindow : Window
             IsChecked = _settings.CalendarChameleonEnabled, Foreground = TextLight,
             Margin = new Thickness(0, 0, 0, 6) };
         panel.Children.Add(chameleon);
-        panel.Children.Add(new TextBlock { Text = "배경색 (#RRGGBB)", Foreground = TextLight });
+        panel.Children.Add(new TextBlock { Text = "배경색 (#RRGGBB · 오른쪽 색 칸을 누르면 색상표에서 고를 수 있습니다)",
+            Foreground = TextLight, TextWrapping = TextWrapping.Wrap });
         var baseColor = new TextBox { Text = _settings.CalendarBackgroundColor, Width = 115,
+            VerticalContentAlignment = VerticalAlignment.Center };
+        var baseColorSwatch = new Button
+        {
+            Width = 25, Height = 23, MinHeight = 0, Padding = new Thickness(0),
+            Margin = new Thickness(7, 0, 0, 0), Cursor = Cursors.Hand,
+            BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1),
+            ToolTip = "현재 배경색 · 클릭하면 색상표 열기"
+        };
+        var baseColorRow = new StackPanel { Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Left };
-        panel.Children.Add(baseColor);
+        baseColorRow.Children.Add(baseColor);
+        baseColorRow.Children.Add(baseColorSwatch);
+        panel.Children.Add(baseColorRow);
+        // The picker edits the text box; like the other appearance values it is saved by 적용.
+        _preferencesBackgroundPicker = new CalendarColorPicker(_settings.CalendarBackgroundColor, canEdit: true,
+            _ => { }, SetStatus, baseColor, baseColorSwatch);
         panel.Children.Add(new TextBlock { Text = "평소(사용하지 않을 때) 배경 불투명도", Foreground = TextLight,
             Margin = new Thickness(0, 7, 0, 0) });
         var idleOpacity = new Slider { Minimum = 0.15, Maximum = 1, TickFrequency = 0.05,

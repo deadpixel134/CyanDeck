@@ -3103,7 +3103,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!CanRunMonitorContentSwap())
         {
             System.Windows.MessageBox.Show(
-                "현재 디스플레이 구성이 변경 중이거나 Peek/Desktop Display가 활성화되어 있습니다. 화면이 안정된 뒤 다시 시도하세요.",
+                "현재 디스플레이 구성이 변경 중이거나 Peek 또는 바탕화면 보기가 켜져 있습니다. 화면이 안정된 뒤 다시 시도하세요.",
                 "CyanDeck",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -4443,20 +4443,15 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 restoreSnapshotItem.Enabled = IsManagedCapabilityAllowed("Layout.RestoreSnapshots");
             }
             snapshots.DropDownItems.Add(new Forms.ToolStripSeparator());
-            snapshots.DropDownItems.Add("모든 스냅샷 삭제", null, (_, _) => _dispatcher.Invoke(() =>
-            {
-                _state.Snapshots.Clear();
-                Persist();
-                RebuildTrayMenu();
-            }));
+            snapshots.DropDownItems.Add("모든 스냅샷 삭제…", null, (_, _) => QueueTrayDialog(ConfirmDeleteAllSnapshots));
         }
         menu.Items.Add(snapshots);
-        var peekCommand = menu.Items.Add(_peek ? "Peek 종료" : "Peek", null,
+        var peekCommand = menu.Items.Add(_peek ? "Peek 끝내기" : "Peek: 창 위로 그룹 보기", null,
             (_, _) => _dispatcher.Invoke(TogglePeek));
         peekCommand.Tag = "desktop.peek";
         if (_state.Settings.EnableDesktopDisplay)
         {
-            var display = menu.Items.Add(_desktopDisplay.IsActive ? "Desktop Display 종료" : "Desktop Display", null,
+            var display = menu.Items.Add(_desktopDisplay.IsActive ? "바탕화면 보기 끝내기 (창 되돌리기)" : "바탕화면 보기 (모든 창 최소화)", null,
                 (_, _) => _dispatcher.Invoke(() => { _desktopDisplay.Toggle(); UpdateWindowVisibility(); RefreshDesktopTouchPageHost(); RefreshDesktopFolderPortalDropHost(); RefreshLooseDesktopIconHost(); UpdateTrayText(); RebuildTrayMenu(); }));
             display.Tag = "desktop.display";
         }
@@ -4485,8 +4480,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             foreach (var file in recoveryFiles)
             {
                 var path = file.FullName;
-                var label = $"{file.LastWriteTime:yyyy-MM-dd HH:mm} · {Path.GetFileNameWithoutExtension(file.Name)}";
-                recovery.DropDownItems.Add(label, null, (_, _) => _dispatcher.Invoke(() => RestoreRecoveryCheckpoint(path)));
+                // Show what the checkpoint was taken before, not the internal file name.
+                var label = $"{file.LastWriteTime:yyyy-MM-dd HH:mm} · {RecoveryCheckpointLabelPolicy.Describe(Path.GetFileNameWithoutExtension(file.Name))}";
+                var restoreItem = recovery.DropDownItems.Add(label, null, (_, _) => _dispatcher.Invoke(() => RestoreRecoveryCheckpoint(path)));
+                restoreItem.ToolTipText = file.Name;
             }
             if (recoveryFiles.Length > 0)
             {
@@ -4622,7 +4619,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void UpdateTrayText()
     {
         if (_trayController is null) return;
-        var status = _desktopDisplay.IsActive ? "Desktop Display" : _quickHidden ? "숨김" : _peek ? "Peek" : $"페이지 {_state.CurrentPage + 1}";
+        var status = _desktopDisplay.IsActive ? "바탕화면 보기" : _quickHidden ? "숨김" : _peek ? "Peek" : $"페이지 {_state.CurrentPage + 1}";
         _trayController.SetText($"CyanDeck - {status}");
     }
 
@@ -4641,6 +4638,19 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _trayController?.CloseMenu();
         }
         else _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, show);
+    }
+
+    private void ConfirmDeleteAllSnapshots()
+    {
+        var count = _state.Snapshots.Count;
+        if (count == 0) return;
+        if (System.Windows.MessageBox.Show(
+                $"저장된 레이아웃 스냅샷 {count}개를 모두 삭제하시겠습니까?\n\n삭제한 스냅샷은 되돌릴 수 없습니다. 현재 그룹 배치는 바뀌지 않습니다.",
+                "레이아웃 스냅샷 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+        _state.Snapshots.Clear();
+        Persist();
+        RebuildTrayMenu();
     }
 
     private void ShowCalendarDiagnostics()

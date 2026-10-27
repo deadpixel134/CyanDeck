@@ -79,7 +79,10 @@ checks = {
     "about page keeps every reset and update control":
         all(any(n.get(x_name) == name for n in tabs["AboutTab"].iter()) for name in (
             "FactoryResetButton", "CompleteLocalResetButton", "ResetAllWindowGeometryButton",
-            "ResetPlacementButton", "AutomaticUpdateCheck", "BetaUpdateChannelCheck", "RestartNormalButton")),
+            "ResetPlacementButton", "RestartNormalButton")) and
+        # v8.0.40: update controls moved to their own "업데이트·정보" page.
+        all(any(n.get(x_name) == name for n in tabs["UpdatesTab"].iter()) for name in (
+            "AutomaticUpdateCheck", "BetaUpdateChannelCheck")),
     "menu usability beta version or later":
         version >= (8, 0, 38),
 }

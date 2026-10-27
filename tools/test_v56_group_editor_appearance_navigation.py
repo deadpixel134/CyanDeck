@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""v8.0.32: per-group editor belongs under Appearance navigation, not another root."""
+"""v8.0.32: per-group editor belongs under Appearance navigation, not another root.
+
+v8.0.40 renamed the appearance root to "그룹 모양" and moved the outside-group icon
+opacity next to the other desktop icon settings."""
 from pathlib import Path
 from xml.etree import ElementTree as ET
 from collections import Counter
@@ -15,8 +18,9 @@ w="{http://schemas.microsoft.com/winfx/2006/xaml/presentation}"
 name="{http://schemas.microsoft.com/winfx/2006/xaml}Name"
 nav=next(t for t in tree.iter(w+"TreeView") if t.get(name)=="SettingsNavigation")
 roots=list(nav.findall(w+"TreeViewItem"))
-appearance=next(t for t in roots if t.get("Header")=="모양 및 외관")
+appearance=next(t for t in roots if t.get("Header")=="그룹 모양")
 children=appearance.findall(w+"TreeViewItem")
+desktop_icons=next(t for t in roots if t.get("Header")=="바탕화면 아이콘·휴지통")
 groups=[x for x in children if x.get("Header")=="그룹 개별 편집"]
 tabs={x.get(name):x for x in tree.iter(w+"TabItem")}
 groups_tab=tabs.get("GroupsTab")
@@ -30,8 +34,11 @@ checks={
     "no duplicate top-level per-group editor category":
         not any(x.get("Header")=="그룹 개별 편집" for x in roots),
     "Appearance sidebar still exposes common icon and Chameleon options":
-        {"아이콘 표시 방식","그룹 제목줄·스크롤바","카멜레온·투명도","단독 아이콘 외관"}.issubset(
+        {"아이콘 표시 방식","제목줄·버튼·스크롤바","흐리게·투명도 (카멜레온)"}.issubset(
             {x.get("Header") for x in children}),
+    "outside-group icon opacity is listed with the desktop icon settings":
+        any(x.get("Header")=="그룹 밖 아이콘 투명도" and x.get("Tag")=="SystemIconsTab|StandaloneSection"
+            for x in desktop_icons.findall(w+"TreeViewItem")),
     "dedicated group editor page retained for legibility":
         groups_tab is not None and groups_tab.get("Header")=="그룹 개별 편집" and
         "그룹을 선택한 뒤" in ET.tostring(groups_tab,encoding="unicode") and
@@ -43,7 +50,8 @@ checks={
          "LinkedIconSpacingCheck","LockedCheck"}.issubset(group_controls),
     "group-specific controls not duplicated on shared appearance page":
         not contains("AppearanceTab","GroupEditor") and
-        contains("AppearanceTab","StandaloneIconIdleOpacitySlider"),
+        not contains("SystemIconsTab","GroupEditor") and
+        contains("SystemIconsTab","StandaloneIconIdleOpacitySlider"),
     "separate Settings.EditGroups capability continues to guard the group editor":
         'GroupsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGroups")' in code and
         '"GroupsTab" => GroupsTab' in code,

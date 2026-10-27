@@ -265,10 +265,17 @@ public partial class SettingsWindow : Window
         UpdateLabels();
         ApplyManagedPolicyRestrictions();
         UpdateManagedPolicyStatus();
+        CaptureUnsavedChangesBaseline();
+        Closing += SettingsWindow_Closing;
+        SourceInitialized += (_, _) =>
+            (PresentationSource.FromVisual(this) as System.Windows.Interop.HwndSource)?.AddHook(SettingsWindowMessageHook);
     }
 
     public void RefreshManagedPolicyState()
     {
+        // Values rewritten by policy are not user edits: re-baseline only those controls so
+        // other unsaved edits are still detected when the window is closed.
+        var beforePolicy = ReadSettingsSignature();
         var wasLoading = _loading;
         _loading = true;
         try
@@ -309,16 +316,24 @@ public partial class SettingsWindow : Window
         ApplyManagedPolicyRestrictions();
         if (_currentFence is not null && _drafts.TryGetValue(_currentFence.Id, out var managedDraft)) ApplySpacingEditorValues(managedDraft);
         UpdateManagedPolicyStatus();
+        foreach (var (key, value) in ReadSettingsSignature())
+        {
+            if (!beforePolicy.TryGetValue(key, out var previous) || !string.Equals(previous, value, StringComparison.Ordinal))
+                _settingsBaseline[key] = value;
+        }
     }
 
     private void ApplyManagedPolicyRestrictions()
     {
         GeneralTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         InteractionTab.IsEnabled = GeneralTab.IsEnabled;
+        PeekTab.IsEnabled = GeneralTab.IsEnabled;
         AppearanceTab.IsEnabled = GeneralTab.IsEnabled;
         AnimationTab.IsEnabled = GeneralTab.IsEnabled;
         PerformanceTab.IsEnabled = GeneralTab.IsEnabled;
         LayoutTab.IsEnabled = GeneralTab.IsEnabled;
+        // Moved to the troubleshooting page, which stays available; keep the general-settings policy.
+        ResetGeneralButton.IsEnabled = GeneralTab.IsEnabled;
         CalendarTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         SystemIconsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");
         GroupsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGroups");
@@ -479,6 +494,7 @@ public partial class SettingsWindow : Window
             UpdateLabels();
         }
         finally { _loading = false; }
+        NormalizeVisitedGroupBaseline();
     }
 
     private void SaveCurrentGroupDraft()
@@ -514,6 +530,8 @@ public partial class SettingsWindow : Window
 
     private bool ApplyChanges()
     {
+        // Reject unreadable calendar sizes up front instead of silently keeping the old value.
+        if (!TryReadCalendarSize(out var calendarWidth, out var calendarHeight)) return false;
         SaveCurrentGroupDraft();
         // Stage edits, including both feature switches, rather than writing
         // through to the running configuration before the save checkpoint.
@@ -523,10 +541,8 @@ public partial class SettingsWindow : Window
         s.EnableCyanDeck = DeckModuleCheck.IsChecked == true;
         s.EnableCalendar = CalendarModuleCheck.IsChecked == true;
         s.GoogleCalendarClientId = GoogleClientIdBox.Text.Trim();
-        if (double.TryParse(CalendarWidthBox.Text, out var calendarWidth) && double.IsFinite(calendarWidth))
-            s.CalendarWidth = Math.Max(calendarWidth, 390);
-        if (double.TryParse(CalendarHeightBox.Text, out var calendarHeight) && double.IsFinite(calendarHeight))
-            s.CalendarHeight = Math.Clamp(calendarHeight, 310, 1200);
+        s.CalendarWidth = calendarWidth;
+        s.CalendarHeight = calendarHeight;
         s.CalendarViewMode = (CalendarViewModeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "Rolling";
         s.CalendarVisibleWeekRows = CalendarRowsCombo.SelectedItem is int calendarRows ? calendarRows : 6;
         s.CalendarChameleonEnabled = CalendarChameleonCheck.IsChecked == true;
@@ -679,6 +695,7 @@ public partial class SettingsWindow : Window
             QuickHideCheck.IsChecked = beforeSettings.EnableQuickHide;
             QuickHideStartupShowCheck.IsChecked = beforeSettings.QuickHideAlwaysShowIconsAtStartup;
         }
+        if (applied) CaptureUnsavedChangesBaseline();
         return applied;
     }
 
@@ -721,33 +738,57 @@ public partial class SettingsWindow : Window
     // their binding/draft state and the existing Apply/OK/Cancel transaction boundary.
     private void SettingsNavigation_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is not TreeViewItem selected || selected.Tag is not string route) return;
+        if (e.NewValue is TreeViewItem selected) NavigateToLeaf(selected);
+    }
+
+    private TabItem? ResolveSettingsTab(string name) => name switch
+    {
+        "GeneralTab" => GeneralTab,
+        "InteractionTab" => InteractionTab,
+        "PeekTab" => PeekTab,
+        "AppearanceTab" => AppearanceTab,
+        "AnimationTab" => AnimationTab,
+        "PerformanceTab" => PerformanceTab,
+        "LayoutTab" => LayoutTab,
+        "CalendarTab" => CalendarTab,
+        "SystemIconsTab" => SystemIconsTab,
+        "GroupsTab" => GroupsTab,
+        "UpdatesTab" => UpdatesTab,
+        "AboutTab" => AboutTab,
+        _ => null
+    };
+
+    // Shows the page that owns the selected entry and scrolls to its section. When the
+    // entry was found by searching a setting's own wording, scroll to that exact control
+    // and briefly highlight it instead of the section heading.
+    private void NavigateToLeaf(TreeViewItem selected)
+    {
+        if (selected.Tag is not string route) return;
         var parts = route.Split('|', 2);
         if (parts.Length != 2) return;
-        var tab = parts[0] switch
-        {
-            "GeneralTab" => GeneralTab,
-            "InteractionTab" => InteractionTab,
-            "AppearanceTab" => AppearanceTab,
-            "AnimationTab" => AnimationTab,
-            "PerformanceTab" => PerformanceTab,
-            "LayoutTab" => LayoutTab,
-            "CalendarTab" => CalendarTab,
-            "SystemIconsTab" => SystemIconsTab,
-            "GroupsTab" => GroupsTab,
-            "AboutTab" => AboutTab,
-            _ => null
-        };
+        var tab = ResolveSettingsTab(parts[0]);
         if (tab is null || !tab.IsEnabled) return;
         SettingsTabs.SelectedItem = tab;
-        // After the selected TabItem is measured, BringIntoView scrolls its ScrollViewer.
+        var hit = _searchHits.TryGetValue(selected, out var found) ? found : null;
         var anchorName = parts[1];
+        // After the selected TabItem is measured, BringIntoView scrolls its ScrollViewer.
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
         {
             if (SettingsTabs.SelectedItem != tab) return;
-            if (FindName(anchorName) is FrameworkElement anchor)
-                anchor.BringIntoView(new Rect(0, 0, Math.Max(1, anchor.ActualWidth), Math.Max(1, anchor.ActualHeight)));
+            var target = hit ?? FindName(anchorName) as FrameworkElement;
+            if (target is null) return;
+            target.BringIntoView(new Rect(0, -24, Math.Max(1, target.ActualWidth), Math.Max(1, target.ActualHeight) + 48));
+            if (hit is not null) FlashSearchHit(hit);
         }));
+    }
+
+    private void NavigateToSettingsAnchor(string route)
+    {
+        var leaf = SettingsNavigationLeaves(SettingsNavigation)
+            .FirstOrDefault(l => string.Equals(l.Tag as string, route, StringComparison.Ordinal));
+        if (leaf is null) return;
+        if (leaf.IsSelected) NavigateToLeaf(leaf);
+        else leaf.IsSelected = true;
     }
 
     private static IEnumerable<TreeViewItem> SettingsNavigationLeaves(ItemsControl parent)
@@ -763,11 +804,133 @@ public partial class SettingsWindow : Window
         }
     }
 
+    // Extra words people type instead of the exact labels. Every visible label, option
+    // and description inside a section is also searched (see BuildSearchIndex).
+    private static readonly Dictionary<string, string> SearchAliases = new(StringComparer.Ordinal)
+    {
+        ["FeaturesSection"] = "기능 켜기 끄기 그룹 관리 캘린더 사용 모듈",
+        ["DesktopSection"] = "바탕화면 자동 분류 시작 프로그램 windows 시작 시 실행 onedrive 새 항목 가져오기 아이콘 숨기기",
+        ["DesktopIconStyleSection"] = "아이콘 썸네일 미리보기 배지 바로가기 화살표 파일 폴더 모양 외관",
+        ["GroupChromeSection"] = "그룹 헤더 제목줄 제목 표시 버튼 스크롤바 비활성",
+        ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온 배경화면 흐림",
+        ["GroupEditorSection"] = "그룹 아이콘 이름 글자 글꼴 폰트 크기 배치 제목 크기 색상 글꼴 배경 프리셋 잠금",
+        ["StandaloneSection"] = "개별 독립 단독 그룹 밖 아이콘 카멜레온 불투명도 투명도",
+        ["RecycleSection"] = "휴지통 recycle bin 표시 숨기기",
+        ["SystemGroupSection"] = "윈도우 windows pc 내 pc 제어판 네트워크 기본 아이콘 그룹",
+        ["GesturesSection"] = "제스처 페이지 마우스 터치 휠 드래그 스와이프 alt 가운데 버튼 두 손가락",
+        ["CreateGroupSection"] = "새 그룹 만들기 사각형 드래그 마우스 버튼 왼쪽 오른쪽 folder portal 생성",
+        ["SmartSnapCheck"] = "스냅 맞춤 간격 정렬 자석 그룹 이동 크기",
+        ["TabsSection"] = "탭 전환 클릭 포인터 호버 결합 합치기",
+        ["RollupSection"] = "접기 롤업 펼치기 가장자리 제목 두 번 클릭",
+        ["PeekSection"] = "peek 핫코너 작업 표시줄 버튼 창 위로 그룹 보기 작업 영역",
+        ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 숨기기 quick hide 더블클릭",
+        ["PageAnimationSection"] = "애니메이션 페이지 전환 이징 시간 부드럽게 바운스",
+        ["ItemAnimationSection"] = "애니메이션 아이콘 이동 효과 항목 배치 시간 최대 항목 수",
+        ["CalendarSection"] = "달력 캘린더 calendar 크기 너비 높이 보기 월 주",
+        ["CalendarAppearanceSection"] = "달력 캘린더 글자 크기 배경색 투명도 불투명도 카멜레온",
+        ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
+        ["SnapshotsSection"] = "레이아웃 모니터 해상도 스냅샷 자동 백업 조정 화면 내용 교환",
+        ["BackupSection"] = "백업 내보내기 가져오기 복원 파일",
+        ["PerformanceSection"] = "성능 저장 지연 드래그 다중 선택",
+        ["LoadingPerformanceSection"] = "성능 대량 작업 확인 폴더 포털 로딩 캐시 기록",
+        ["UpdatesSection"] = "버전 업데이트 배포 릴리스 베타 자동 설치 되돌리기",
+        ["AboutSection"] = "버전 정보 스키마 실행 모드",
+        ["TroubleshootSection"] = "문제 해결 진단 로그 복구 자체 테스트 설정 폴더",
+        ["StartupSection"] = "시작 충돌 반복 안전 모드 보호",
+        ["ResetSection"] = "초기화 기본값 되돌리기 설정 복원",
+        ["FactoryResetSection"] = "프로그램 초기화 모든 창 위치 크기 배치 그룹 복원 삭제된 그룹 빠진 아이콘 캘린더 초기 설정 전체 프로그램 공장 초기화 개인정보 데이터 삭제 완전 초기화 계정 로그아웃 로컬 일정",
+        ["RestartSection"] = "다시 시작 재시작 안전 모드 일반 모드",
+        ["PolicySection"] = "관리 정책 회사 관리자 잠금"
+    };
+
+    private Dictionary<TreeViewItem, List<(FrameworkElement Element, string Text)>>? _searchIndex;
+    private readonly Dictionary<TreeViewItem, FrameworkElement> _searchHits = new();
+    private int _searchCursor = -1;
+    private FrameworkElement? _flashedElement;
+    private System.Windows.Media.Effects.Effect? _flashedPreviousEffect;
+    private DispatcherTimer? _flashTimer;
+
+    // Ignore spaces and separators so "빠른숨김" finds "빠른 숨김" and "시작시실행" finds "시작 시 실행".
+    private static string FoldForSearch(string text)
+        => new string(text.Where(ch => !char.IsWhiteSpace(ch) && ch is not '·' and not '/' and not '(' and not ')' and not ',' and not '.')
+            .ToArray()).ToLowerInvariant();
+
+    // Every navigation entry owns the controls from its anchor up to the next entry's anchor.
+    private Dictionary<TreeViewItem, List<(FrameworkElement Element, string Text)>> BuildSearchIndex()
+    {
+        var index = new Dictionary<TreeViewItem, List<(FrameworkElement Element, string Text)>>();
+        var leaves = SettingsNavigationLeaves(SettingsNavigation).ToList();
+        var anchors = new HashSet<string>(leaves.Select(l => (l.Tag as string ?? "").Split('|').Last()), StringComparer.Ordinal);
+        foreach (var leaf in leaves)
+        {
+            var entries = new List<(FrameworkElement Element, string Text)>();
+            var anchorName = (leaf.Tag as string ?? "").Split('|').Last();
+            if (FindName(anchorName) is FrameworkElement anchor && LogicalTreeHelper.GetParent(anchor) is Panel panel)
+            {
+                var start = panel.Children.IndexOf(anchor);
+                for (var i = start; i >= 0 && i < panel.Children.Count; i++)
+                {
+                    if (panel.Children[i] is not FrameworkElement child) continue;
+                    if (i > start && anchors.Contains(child.Name)) break;
+                    CollectSearchText(child, entries);
+                }
+            }
+            index[leaf] = entries;
+        }
+        return index;
+    }
+
+    private static void CollectSearchText(DependencyObject node, List<(FrameworkElement Element, string Text)> entries)
+    {
+        switch (node)
+        {
+            case TextBlock text when !string.IsNullOrWhiteSpace(text.Text):
+                entries.Add((text, text.Text));
+                break;
+            case ContentControl content when content.Content is string label && !string.IsNullOrWhiteSpace(label):
+                entries.Add((content, label));
+                break;
+        }
+        if (node is ItemsControl items and not TreeView)
+        {
+            foreach (var item in items.Items)
+                if (item is string option && !string.IsNullOrWhiteSpace(option)) entries.Add((items, option));
+        }
+        foreach (var child in LogicalTreeHelper.GetChildren(node))
+            if (child is DependencyObject dependency) CollectSearchText(dependency, entries);
+    }
+
+    private void FlashSearchHit(FrameworkElement element)
+    {
+        _flashTimer?.Stop();
+        if (_flashedElement is not null) _flashedElement.Effect = _flashedPreviousEffect;
+        _flashedElement = element;
+        _flashedPreviousEffect = element.Effect;
+        element.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            Color = Color.FromRgb(0x5D, 0x91, 0xD8), BlurRadius = 16, ShadowDepth = 0, Opacity = 1
+        };
+        _flashTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.8) };
+        _flashTimer.Tick -= FlashTimer_Tick;
+        _flashTimer.Tick += FlashTimer_Tick;
+        _flashTimer.Start();
+    }
+
+    private void FlashTimer_Tick(object? sender, EventArgs e)
+    {
+        _flashTimer?.Stop();
+        if (_flashedElement is not null) _flashedElement.Effect = _flashedPreviousEffect;
+        _flashedElement = null;
+        _flashedPreviousEffect = null;
+    }
+
     private void SettingsSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (SettingsSearchHint is null || SettingsTabs is null || SettingsNavigation is null) return;
         var query = SettingsSearchBox.Text.Trim();
         var leaves = SettingsNavigationLeaves(SettingsNavigation).ToList();
+        _searchHits.Clear();
+        _searchCursor = -1;
         if (query.Length == 0)
         {
             foreach (var leaf in leaves) leaf.Visibility = Visibility.Visible;
@@ -776,45 +939,32 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        // Search the section labels, and a few common terms users type instead of labels.
-        // Unlike the previous coarse tab-only search, results link directly to a section.
-        var aliases = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["DesktopSection"] = "바탕화면 자동 분류 시작 프로그램 onedrive 새 항목 가져오기",
-            ["DesktopIconStyleSection"] = "아이콘 썸네일 미리보기 배지 바로가기 화살표 파일 폴더 모양 외관",
-            ["GroupChromeSection"] = "그룹 헤더 제목줄 제목 표시 버튼 스크롤바 비활성",
-            ["PageAnimationSection"] = "애니메이션 페이지 전환 이징 시간 부드럽게 바운스",
-            ["ItemAnimationSection"] = "애니메이션 아이콘 이동 효과 항목 배치 시간 최대 항목 수",
-            ["LoadingPerformanceSection"] = "성능 대량 작업 확인 폴더 포털 로딩 캐시",
-            ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 표시 숨김",
-            ["BackupSection"] = "백업 내보내기 가져오기 복원",
-            ["TabsSection"] = "탭 전환 클릭 포인터 호버 그룹 접기 마우스",
-            ["GesturesSection"] = "제스처 페이지 마우스 터치 휠 드래그 스와이프",
-            ["PeekSection"] = "peek 핫코너 빠른 숨김 quick hide",
-            ["PerformanceSection"] = "성능 저장 지연 Peek 화면 작업영역 복구",
-            ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온",
-            ["SnapshotsSection"] = "레이아웃 백업 모니터 스냅샷 자동 조정",
-            ["ResetSection"] = "초기화 복구 백업 가져오기 내보내기",
-            ["FactoryResetSection"] = "프로그램 초기화 모든 창 위치 크기 배치 그룹 복원 삭제된 그룹 빠진 아이콘 캘린더 초기 설정 전체 프로그램 공장 초기화 백업 개인정보 데이터 삭제 완전 초기화 계정 로그아웃 로컬 일정",
-            ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
-            ["CalendarSection"] = "달력 캘린더 calendar 배경색 투명도 크기 날짜",
-            ["StandaloneSection"] = "개별 독립 아이콘 카멜레온 불투명도",
-            ["GroupEditorSection"] = "그룹 아이콘 이름 글자 글꼴 폰트 크기 배치 제목 크기 색상 글꼴 배경",
-            ["RecycleSection"] = "휴지통 recycle bin 표시 숨기기",
-            ["SystemGroupSection"] = "윈도우 windows pc 제어판 네트워크 기본 아이콘 그룹",
-            ["TroubleshootSection"] = "문제 해결 진단 로그 복구 안전 모드",
-            ["UpdatesSection"] = "버전 업데이트 배포 릴리스"
-        };
+        // Search entry titles, extra keywords and the actual wording of every control in
+        // the section, so a setting can be found by what it says rather than where it lives.
+        _searchIndex ??= BuildSearchIndex();
+        var folded = FoldForSearch(query);
         var count = 0;
         TreeViewItem? first = null;
         foreach (var leaf in leaves)
         {
             var route = leaf.Tag as string ?? "";
             var anchor = route.Split('|').LastOrDefault() ?? "";
-            var haystack = $"{leaf.Header} {aliases.GetValueOrDefault(anchor, "")}";
-            var match = haystack.Contains(query, StringComparison.OrdinalIgnoreCase);
+            var aliases = SearchAliases.TryGetValue(anchor, out var aliasText) ? aliasText : string.Empty;
+            var titleMatch = FoldForSearch($"{leaf.Header} {aliases}").Contains(folded);
+            FrameworkElement? hit = null;
+            if (_searchIndex.TryGetValue(leaf, out var entries))
+            {
+                foreach (var (element, text) in entries)
+                {
+                    if (!FoldForSearch(text).Contains(folded)) continue;
+                    hit = element;
+                    break;
+                }
+            }
+            var match = titleMatch || hit is not null;
             leaf.Visibility = match ? Visibility.Visible : Visibility.Collapsed;
             if (!match) continue;
+            if (hit is not null) _searchHits[leaf] = hit;
             count++;
             first ??= leaf;
         }
@@ -824,8 +974,178 @@ public partial class SettingsWindow : Window
                 ? Visibility.Visible : Visibility.Collapsed;
             if (root.Visibility == Visibility.Visible) root.IsExpanded = true;
         }
-        SettingsSearchHint.Text = count == 0 ? "일치하는 설정 없음" : $"{count}개 분류";
-        if (first is not null) first.IsSelected = true;
+        SettingsSearchHint.Text = count == 0 ? "일치하는 설정 없음" : count == 1 ? "1곳에서 찾음" : $"{count}곳에서 찾음 · Enter: 다음";
+        if (first is not null)
+        {
+            _searchCursor = 0;
+            if (first.IsSelected) NavigateToLeaf(first);
+            else first.IsSelected = true;
+        }
+    }
+
+    private void SettingsSearchBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && SettingsSearchBox.Text.Length > 0)
+        {
+            SettingsSearchBox.Clear();
+            e.Handled = true;
+            return;
+        }
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        if (SettingsSearchBox.Text.Trim().Length == 0) return;
+        var visible = SettingsNavigationLeaves(SettingsNavigation).Where(l => l.Visibility == Visibility.Visible).ToList();
+        if (visible.Count == 0) return;
+        _searchCursor = (_searchCursor + 1) % visible.Count;
+        var leaf = visible[_searchCursor];
+        if (leaf.IsSelected) NavigateToLeaf(leaf);
+        else leaf.IsSelected = true;
+    }
+
+    // ---- Unsaved-change protection ----------------------------------------------------
+    // Cancel and the window's close button ask before discarding edits. Values are compared
+    // with a baseline taken after loading and after every successful Apply; the per-group
+    // editor is compared through its drafts, normalised the same way on both sides.
+    private Dictionary<string, string> _settingsBaseline = new(StringComparer.Ordinal);
+    private Dictionary<Guid, GroupDraft>? _draftBaseline;
+    private bool _closeWithoutPrompt;
+    // Only closes the user starts (취소/Esc, title-bar X, Alt+F4) ask about unsaved changes.
+    // Application exit and Windows logoff close the window with a plain WM_CLOSE and must
+    // never wait on a dialog.
+    private bool _userRequestedClose;
+
+    private IntPtr SettingsWindowMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_SYSCOMMAND = 0x0112;
+        const int SC_CLOSE = 0xF060;
+        if (msg == WM_SYSCOMMAND && (wParam.ToInt64() & 0xFFF0) == SC_CLOSE) _userRequestedClose = true;
+        return IntPtr.Zero;
+    }
+
+    private static readonly HashSet<string> UnsavedChangeExclusions = new(StringComparer.Ordinal)
+    {
+        // Options that only steer one-off reset buttons, not saved settings.
+        "ResetGroupGeometryCheck", "ResetCalendarGeometryCheck",
+        // The group picker only chooses which group the editor shows.
+        "FencePicker"
+    };
+
+    private Dictionary<string, string> ReadSettingsSignature()
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        void Visit(object node)
+        {
+            if (node is FrameworkElement element)
+            {
+                if (ReferenceEquals(element, GroupEditor)) return;
+                var name = element.Name;
+                if (!string.IsNullOrEmpty(name) && !UnsavedChangeExclusions.Contains(name))
+                {
+                    switch (element)
+                    {
+                        case CheckBox check:
+                            values[name] = check.IsChecked?.ToString() ?? "null";
+                            break;
+                        case Slider slider:
+                            values[name] = slider.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                            break;
+                        case TextBox text:
+                            values[name] = text.Text ?? "";
+                            break;
+                        case ComboBox combo:
+                            values[name] = combo.SelectedIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                + "|" + (combo.IsEditable ? combo.Text : "");
+                            break;
+                    }
+                }
+            }
+            if (node is DependencyObject dependency)
+                foreach (var child in LogicalTreeHelper.GetChildren(dependency)) Visit(child);
+        }
+        Visit(SettingsTabs);
+        return values;
+    }
+
+    private void CaptureUnsavedChangesBaseline()
+    {
+        SaveCurrentGroupDraft();
+        _draftBaseline = new Dictionary<Guid, GroupDraft>(_drafts);
+        _settingsBaseline = ReadSettingsSignature();
+    }
+
+    // A group shown in the editor for the first time is normalised by the editor's sliders
+    // (snapping, colour format). Re-baseline it once so merely viewing it is not an edit.
+    private void NormalizeVisitedGroupBaseline()
+    {
+        if (_currentFence is null || _draftBaseline is null) return;
+        if (!_draftBaseline.TryGetValue(_currentFence.Id, out var baseline)
+            || !_drafts.TryGetValue(_currentFence.Id, out var draft) || baseline != draft) return;
+        SaveCurrentGroupDraft();
+        _draftBaseline[_currentFence.Id] = _drafts[_currentFence.Id];
+    }
+
+    private bool HasUnsavedChanges()
+    {
+        if (_compatibilityReadOnly) return false;
+        var current = ReadSettingsSignature();
+        foreach (var (key, value) in current)
+        {
+            if (!_settingsBaseline.TryGetValue(key, out var baseline) || !string.Equals(baseline, value, StringComparison.Ordinal))
+                return true;
+        }
+        SaveCurrentGroupDraft();
+        if (_draftBaseline is null) return false;
+        foreach (var (id, draft) in _drafts)
+        {
+            if (!_draftBaseline.TryGetValue(id, out var baseline) || baseline != draft) return true;
+        }
+        return false;
+    }
+
+    private void SettingsWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        var userRequested = _userRequestedClose;
+        _userRequestedClose = false; // a cancelled close has to be requested again
+        if (_closeWithoutPrompt || !userRequested || !HasUnsavedChanges()) return;
+        var answer = MessageBox.Show(this,
+            "저장하지 않은 변경 사항이 있습니다. 저장하고 닫을까요?\n\n[예] 저장 후 닫기\n[아니요] 저장하지 않고 닫기\n[취소] 계속 편집",
+            "CyanDeck 설정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
+        if (answer == MessageBoxResult.Cancel || answer == MessageBoxResult.None)
+        {
+            e.Cancel = true;
+            return;
+        }
+        if (answer == MessageBoxResult.Yes && !ApplyChanges()) e.Cancel = true;
+    }
+
+    private void CloseWithoutPrompt()
+    {
+        _closeWithoutPrompt = true;
+        Close();
+    }
+
+    private bool TryReadCalendarSize(out double width, out double height)
+    {
+        static bool Parse(string text, out double value)
+            => (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.CurrentCulture, out value)
+                || double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value))
+               && double.IsFinite(value);
+        if (!Parse(CalendarWidthBox.Text.Trim(), out width) || !Parse(CalendarHeightBox.Text.Trim(), out height))
+        {
+            width = height = 0;
+            NavigateToSettingsAnchor("CalendarTab|CalendarSection");
+            MessageBox.Show(this, "캘린더 너비와 높이는 숫자로 입력하세요.\n너비는 390 이상, 높이는 310~1200 사이로 맞춰집니다.",
+                "CyanDeck 설정", MessageBoxButton.OK, MessageBoxImage.Warning);
+            CalendarWidthBox.Focus();
+            CalendarWidthBox.SelectAll();
+            return false;
+        }
+        width = Math.Max(width, 390);
+        height = Math.Clamp(height, 310, 1200);
+        // Show the value that will actually be used.
+        CalendarWidthBox.Text = width.ToString("F0");
+        CalendarHeightBox.Text = height.ToString("F0");
+        return true;
     }
 
     private void CompactPreset_Click(object sender, RoutedEventArgs e) => ApplyGroupPreset(34, 6, 6, 10);
@@ -865,15 +1185,16 @@ public partial class SettingsWindow : Window
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
         DiagnosticsLog.Info("Settings OK button clicked");
-        if (ApplyChanges()) { DialogResult = true; Close(); }
+        if (ApplyChanges()) { _closeWithoutPrompt = true; DialogResult = true; Close(); }
     }
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
         DiagnosticsLog.Info("Settings cancel button clicked");
+        _userRequestedClose = true;
         Close();
     }
     private void Export_Click(object sender, RoutedEventArgs e) { if (ApplyChanges()) _export(); }
-    private void Import_Click(object sender, RoutedEventArgs e) { if (_import()) Close(); }
+    private void Import_Click(object sender, RoutedEventArgs e) { if (_import()) CloseWithoutPrompt(); }
     private void BuildDefaultDesktopPlacementChoices(DeckSettings settings)
     {
         var choices = new List<DefaultPlacementChoice>
@@ -985,7 +1306,7 @@ public partial class SettingsWindow : Window
     private void AutomaticLayout_Click(object sender, RoutedEventArgs e)
     {
         if (!ApplyChanges()) return;
-        Close();
+        CloseWithoutPrompt();
         _automaticLayout();
     }
 
@@ -1170,7 +1491,7 @@ public partial class SettingsWindow : Window
     private void ResetAllWindowGeometry_Click(object sender, RoutedEventArgs e)
     {
         if (_safeMode || _compatibilityReadOnly || !ResetAllWindowGeometryButton.IsEnabled) return;
-        if (_resetAllWindowGeometry() && IsVisible) Close();
+        if (_resetAllWindowGeometry() && IsVisible) CloseWithoutPrompt();
     }
 
     private void ResetPlacement_Click(object sender, RoutedEventArgs e)
@@ -1184,20 +1505,20 @@ public partial class SettingsWindow : Window
                 "CyanDeck 위치 초기화", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (_resetPlacement(groups, calendar) && IsVisible) Close();
+        if (_resetPlacement(groups, calendar) && IsVisible) CloseWithoutPrompt();
     }
 
     private void FactoryReset_Click(object sender, RoutedEventArgs e)
     {
         if (_compatibilityReadOnly || _safeMode || !_isManagedCapabilityAllowed("ImportExport.Import") ||
             !_isManagedCapabilityAllowed("Settings.EditGeneral")) return;
-        if (_factoryReset() && IsVisible) Close();
+        if (_factoryReset() && IsVisible) CloseWithoutPrompt();
     }
 
     private void CompleteLocalReset_Click(object sender, RoutedEventArgs e)
     {
         if (_compatibilityReadOnly || _safeMode || !CompleteLocalResetButton.IsEnabled) return;
-        if (_completeLocalReset() && IsVisible) Close();
+        if (_completeLocalReset() && IsVisible) CloseWithoutPrompt();
     }
 
     private void RestartSafeMode_Click(object sender, RoutedEventArgs e) => _restartSafeMode();

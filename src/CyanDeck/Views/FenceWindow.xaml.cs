@@ -43,6 +43,8 @@ public partial class FenceWindow : Window
     private bool _listDragStarted;
     private bool _moving;
     private bool _movePending;
+    // True once the pointer-entered presentation has been applied for the current hover.
+    private bool _hoverPresentationActive;
     private Point _moveStartScreen;
     private double _moveStartLeft;
     private double _moveStartTop;
@@ -219,6 +221,7 @@ public partial class FenceWindow : Window
         // Ordinary-app foreground transitions are coalesced centrally by AppController instead.
         PreviewMouseLeftButtonDown += Fence_PreviewMouseLeftButtonDown;
         PreviewMouseMove += Fence_PreviewMouseMove;
+        PreviewMouseMove += Fence_HoverMouseMove;
         PreviewMouseLeftButtonUp += Fence_PreviewMouseLeftButtonUp;
         LostMouseCapture += Fence_LostMouseCapture;
         FreeCanvas.MouseMove += FreeCanvas_MouseMove;
@@ -3167,7 +3170,8 @@ public partial class FenceWindow : Window
                 }
                 else if (Directory.Exists(sourceFull))
                 {
-                    if (move) Directory.Move(sourceFull, destination);
+                    if (move && IsSameVolume(sourceFull, destination)) Directory.Move(sourceFull, destination);
+                    else if (move) MoveDirectoryAcrossVolumes(sourceFull, destination);
                     else CopyDirectory(sourceFull, destination);
                 }
             }
@@ -3205,6 +3209,31 @@ public partial class FenceWindow : Window
         if (IsProtectedDeletionTarget(destination))
             throw new IOException("보호된 시스템 경로로 파일을 복사하거나 이동할 수 없습니다.");
         return destination;
+    }
+
+    private static bool IsSameVolume(string first, string second)
+        => string.Equals(Path.GetPathRoot(Path.GetFullPath(first)), Path.GetPathRoot(Path.GetFullPath(second)),
+            StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Directory.Move cannot cross drives. Copy completely first (staged, see CopyDirectory),
+    /// then send the original to the Recycle Bin. The original is never permanently deleted;
+    /// if recycling fails both copies remain and the user is told.
+    /// </summary>
+    private static void MoveDirectoryAcrossVolumes(string source, string destination)
+    {
+        CopyDirectory(source, destination);
+        try
+        {
+            Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(source,
+                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin,
+                Microsoft.VisualBasic.FileIO.UICancelOption.ThrowException);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            throw new IOException($"'{Path.GetFileName(destination)}' 폴더는 복사했지만 다른 드라이브의 원본을 휴지통으로 옮기지 못해 원본이 그대로 남아 있습니다. ({ex.Message})", ex);
+        }
     }
 
     /// <summary>
@@ -3601,9 +3630,11 @@ public partial class FenceWindow : Window
         var oldName = Path.GetFileName(tile.Path.TrimEnd(Path.DirectorySeparatorChar));
         var newName = TextPrompt.Show(this, "이름 바꾸기", "새 이름", oldName);
         if (string.IsNullOrWhiteSpace(newName) || string.Equals(oldName, newName, StringComparison.Ordinal)) return;
-        if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        // Explain names Windows rejects ("." / "..", trailing dot or space, CON, ...) instead of
+        // letting them fail later with a misleading "already exists" message.
+        if (WindowsFileNamePolicy.GetProblem(newName) is { } nameProblem)
         {
-            System.Windows.MessageBox.Show("이름에 사용할 수 없는 문자가 포함되어 있습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(nameProblem, "CyanDeck — 이름 바꾸기", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         try
@@ -4308,6 +4339,8 @@ public partial class FenceWindow : Window
     {
         if (!IsLoaded || !IsVisible) return;
         var pointerInside = DesktopPointerHover.IsActuallyOver(this);
+        // Let the next real pointer movement run the full enter path.
+        _hoverPresentationActive = false;
         ApplyTitlebarMode(pointerInside);
         UpdateHeaderControls(pointerInside);
         ApplyItemScrollbars(pointerInside);
@@ -4323,6 +4356,23 @@ public partial class FenceWindow : Window
             ReconcileInitialHoverPresentation();
             return;
         }
+        ApplyPointerEnteredPresentation();
+    }
+
+    // After a synthetic MouseEnter is ignored, WPF can still consider the pointer "over" this
+    // window and will not raise MouseEnter again when the pointer really arrives. The first real
+    // movement inside the window therefore completes the entered presentation (header controls,
+    // full colour, scrollbars, roll-up preview).
+    private void Fence_HoverMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_hoverPresentationActive || _moving || _movePending) return;
+        if (!DesktopPointerHover.IsActuallyOver(this)) return;
+        ApplyPointerEnteredPresentation();
+    }
+
+    private void ApplyPointerEnteredPresentation()
+    {
+        _hoverPresentationActive = true;
         VerifyCutClipboardAfterInteraction();
         if (_chameleonActivationBridge is null) Shell.Opacity = 1;
         else _chameleonActivationBridge.Refresh();
@@ -4355,6 +4405,7 @@ public partial class FenceWindow : Window
 
     private void Window_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        _hoverPresentationActive = false;
         _rollupHoverTimer?.Stop();
         ApplyTitlebarMode(false);
         UpdateHeaderControls(false);

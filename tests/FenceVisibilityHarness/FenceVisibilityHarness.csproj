@@ -19,5 +19,8 @@
     <Compile Include="../../src/CyanDeck/Services/TabSwitchActivationPolicy.cs" Link="Production/TabSwitchActivationPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TrayMenuRoutingPolicy.cs" Link="Production/TrayMenuRoutingPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/DisplaySurfaceRecoveryPlan.cs" Link="Production/DisplaySurfaceRecoveryPlan.cs" />
+    <Compile Include="../../src/CyanDeck/Services/RuleWeekdayParser.cs" Link="Production/RuleWeekdayParser.cs" />
+    <Compile Include="../../src/CyanDeck/Services/WindowsFileNamePolicy.cs" Link="Production/WindowsFileNamePolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/RecoveryCheckpointLabelPolicy.cs" Link="Production/RecoveryCheckpointLabelPolicy.cs" />
   </ItemGroup>
 </Project>
