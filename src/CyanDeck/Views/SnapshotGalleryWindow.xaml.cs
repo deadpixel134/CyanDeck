@@ -67,7 +67,7 @@ public partial class SnapshotGalleryWindow : Window
         grid.Children.Add(preview);
 
         var info = new StackPanel { Margin = new Thickness(18, 2, 0, 0) };
-        // v8.0.43: Korean names for automatic/undo snapshots made by older builds as well.
+        // v8.0.44: Korean names for automatic/undo snapshots made by older builds as well.
         var createdLocal = snapshot.CreatedUtc.ToLocalTime();
         var displayName = CyanDeck.Services.LayoutSnapshotNamePolicy.Display(snapshot.Name, snapshot.IsAutomatic, createdLocal);
         var isUndo = CyanDeck.Services.LayoutSnapshotNamePolicy.IsUndoCheckpoint(snapshot.IsUndoCheckpoint, snapshot.IsAutomatic, snapshot.Name);

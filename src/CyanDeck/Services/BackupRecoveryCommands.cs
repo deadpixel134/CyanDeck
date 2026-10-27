@@ -1,7 +1,7 @@
 namespace CyanDeck.Services;
 
 /// <summary>
-/// v8.0.43: commands the Settings window needs for update/backup/recovery controls that only
+/// v8.0.44: commands the Settings window needs for update/backup/recovery controls that only
 /// the running AppController can perform (they confirm, write checkpoints or restart). The
 /// controller registers them at startup so Settings does not need new constructor arguments.
 /// Each delegate shows its own confirmation and result message. Null when not running.

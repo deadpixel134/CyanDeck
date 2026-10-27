@@ -148,7 +148,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _safeMode = true;
             DiagnosticsLog.Info($"Automatically entering Safe Mode because configuration schema v{_store.UnsupportedStateVersion} is newer than supported v{StateSchema.Current}.");
         }
-        // v8.0.43: unreadable layout files => protected read-only Safe Mode, no default layout.
+        // v8.0.44: unreadable layout files => protected read-only Safe Mode, no default layout.
         EnterLayoutLoadProtectionIfUnreadable();
         RegisterBackupRecoveryCommands();
         _icons.Configure(_state.Settings.IconCacheMaxEntries, _state.Settings.ShowFilePreviews);
@@ -182,7 +182,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _activeMonitorSignature = MonitorConfigurationService.GetSignature();
         _lastStableMonitorCount = MonitorConfigurationService.CaptureMonitors().Count;
         _state.CurrentPage = Math.Clamp(_state.CurrentPage, 0, GetMaxPage());
-        // v8.0.43: backup-loaded / unclean-session notices and update storage housekeeping.
+        // v8.0.44: backup-loaded / unclean-session notices and update storage housekeeping.
         ScheduleStartupLayoutNotices();
         StartUpdateStorageMaintenance();
 
@@ -3283,7 +3283,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void SaveLayoutSnapshot()
     {
-        // v8.0.43: ask for a name (default: current time) and confirm the save.
+        // v8.0.44: ask for a name (default: current time) and confirm the save.
         var name = TextPrompt.Show(null!, "현재 레이아웃 저장", "스냅샷 이름",
             LayoutSnapshotNamePolicy.BuildManualDefaultName(DateTime.Now));
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -3297,7 +3297,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             $"'{name}' 스냅샷을 저장했습니다. 트레이의 '레이아웃 스냅샷'에서 복원할 수 있습니다.", Forms.ToolTipIcon.Info);
     }
 
-    // v8.0.43: reason is the Korean action label (LayoutSnapshotNamePolicy). Undo checkpoints
+    // v8.0.44: reason is the Korean action label (LayoutSnapshotNamePolicy). Undo checkpoints
     // keep their own small retention bucket and never evict the user's own snapshots.
     private void SaveUndoLayoutSnapshot(string reason)
     {
@@ -3523,7 +3523,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (windows.Count < 2) return;
         var monitors = MonitorConfigurationService.CaptureMonitors();
         if (monitors.Count == 0) return;
-        // v8.0.43: save the undo checkpoint only once the arrangement will actually run.
+        // v8.0.44: save the undo checkpoint only once the arrangement will actually run.
         SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.PackGroups);
         var gap = Math.Max(4, _state.Settings.GroupSnapGap);
         var grouped = windows.GroupBy(w =>
@@ -3583,7 +3583,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var manualLimit = Math.Clamp(_state.Settings.MaxLayoutSnapshots, 1, 100);
         var automaticLimit = Math.Clamp(_state.Settings.AutomaticSnapshotRetentionDays, 1, 30);
         var keep = new HashSet<Guid>();
-        // v8.0.43: undo checkpoints (align/distribute/pack/restore) use their own bucket.
+        // v8.0.44: undo checkpoints (align/distribute/pack/restore) use their own bucket.
         foreach (var snapshot in _state.Snapshots.Where(s => !s.IsAutomatic && !IsUndoSnapshot(s)).OrderByDescending(s => s.CreatedUtc).Take(manualLimit)) keep.Add(snapshot.Id);
         foreach (var snapshot in _state.Snapshots.Where(s => s.IsAutomatic).OrderByDescending(s => s.CreatedUtc).Take(automaticLimit)) keep.Add(snapshot.Id);
         foreach (var snapshot in _state.Snapshots.Where(s => !s.IsAutomatic && IsUndoSnapshot(s)).OrderByDescending(s => s.CreatedUtc).Take(LayoutSnapshotNamePolicy.UndoRetention)) keep.Add(snapshot.Id);
@@ -3803,7 +3803,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var previous = CapturePlacements();
         try
         {
-            // v8.0.43: when the saved placements equal the current model there is nothing to
+            // v8.0.44: when the saved placements equal the current model there is nothing to
             // undo, so no recovery checkpoint is created (windows are still re-applied).
             var unchanged = !HasPlacementDifferences(previous, selected);
             var checkpoint = unchanged ? "" : _store.SaveRecoveryCheckpoint(_state,
@@ -4421,7 +4421,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_safeMode)
         {
             menu.Items.Add(new Forms.ToolStripMenuItem("안전 모드 활성화 — 바탕화면 통합 비활성") { Enabled = false });
-            // v8.0.43: protected start after unreadable layout files.
+            // v8.0.44: protected start after unreadable layout files.
             if (_layoutUnreadableProtection)
                 menu.Items.Add("레이아웃 파일 복구…", null, (_, _) => QueueTrayDialog(OfferUnreadableLayoutRecovery));
             menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
@@ -4477,7 +4477,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         arrange.DropDownItems.Add("가로 간격 균등 배치", null, (_, _) => _dispatcher.Invoke(DistributeCurrentPageHorizontally));
         arrange.DropDownItems.Add("세로 간격 균등 배치", null, (_, _) => _dispatcher.Invoke(DistributeCurrentPageVertically));
         arrange.DropDownItems.Add("각 모니터 안에 그룹 정리", null, (_, _) => _dispatcher.Invoke(PackCurrentPage));
-        // v8.0.43: one-step undo of the last arrange/restore (its own undo checkpoint).
+        // v8.0.44: one-step undo of the last arrange/restore (its own undo checkpoint).
         if (DescribeLatestUndoCommand() is { } undoLabel)
         {
             arrange.DropDownItems.Add(new Forms.ToolStripSeparator());
@@ -4499,7 +4499,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_state.Snapshots.Count > 0)
         {
             snapshots.DropDownItems.Add(new Forms.ToolStripSeparator());
-            // v8.0.43: undo checkpoints stay out of this list (undo command and gallery keep them).
+            // v8.0.44: undo checkpoints stay out of this list (undo command and gallery keep them).
             foreach (var snapshot in _state.Snapshots.Where(s => !IsUndoSnapshot(s)).Take(12))
             {
                 var local = snapshot;
@@ -4540,7 +4540,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var allRecoveryFiles = Directory.Exists(_store.RecoveryFolder)
                 ? new DirectoryInfo(_store.RecoveryFolder).GetFiles("*.json").OrderByDescending(f => f.LastWriteTimeUtc).ToArray()
                 : Array.Empty<FileInfo>();
-            // v8.0.43: automatic monitor checkpoints cannot crowd the other kinds out of the menu.
+            // v8.0.44: automatic monitor checkpoints cannot crowd the other kinds out of the menu.
             static bool IsMonitorCheckpoint(FileInfo f) => RecoveryCheckpointRetentionPolicy.Classify(
                 Path.GetFileNameWithoutExtension(f.Name)) == RecoveryCheckpointBucket.MonitorAutomatic;
             var recoveryFiles = allRecoveryFiles.Where(f => !IsMonitorCheckpoint(f)).Take(10)
@@ -4596,7 +4596,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         menu.Items.Add("진단 묶음 만들기…", null, (_, _) => _dispatcher.Invoke(CreateDiagnosticBundle));
         menu.Items.Add("업데이트 확인…", null, (_, _) => _dispatcher.BeginInvoke(new Action(() => _ = CheckForUpdatesInteractiveAsync())));
         if (UpdateService.GetLatestRollbackDirectory() is not null)
-            // v8.0.43: after a rollback the same command reinstalls the held version.
+            // v8.0.44: after a rollback the same command reinstalls the held version.
             menu.Items.Add(UpdateRollbackHold.DescribeRollbackCommand(DataRootPaths.ActiveLocal, RunningAppVersion), null,
                 (_, _) => _dispatcher.Invoke(RollbackLastUpdate)).Tag = "recovery.app-rollback";
         menu.Items.Add("바탕화면 항목 지금 다시 검색", null, (_, _) => _dispatcher.Invoke(() => { RefreshDesktopWatchers(force: true, reconcile: false); ReorganizeDesktop(); }));
@@ -5074,7 +5074,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void ExportConfiguration()
     {
-        // v8.0.43: the in-memory state is empty while unreadable layout files are protected.
+        // v8.0.44: the in-memory state is empty while unreadable layout files are protected.
         if (RefuseExportWhileLayoutUnreadable()) return;
         try
         {
@@ -5113,7 +5113,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 CheckFileExists = true
             };
             if (dialog.ShowDialog() != true) return false;
-            // v8.0.43: read and validate the file first, then show what will change.
+            // v8.0.44: read and validate the file first, then show what will change.
             var imported = ReadImportCandidate(dialog.FileName);
             if (imported is null) return false;
             // Current snapshots are merged (and retention applied) before the summary, so the
@@ -5590,7 +5590,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 }
                 // Background installation requires all existing recovery safeguards.
                 if (_safeMode || _compatibilityReadOnly || UpdateService.HasPendingRecovery()) return;
-                // v8.0.43: never auto-reinstall a version the user rolled back from.
+                // v8.0.44: never auto-reinstall a version the user rolled back from.
                 if (IsAutomaticInstallHeld(check)) return;
                 var verifiedPackage = await UpdateService.StagePackageAsync(check);
                 _store.SaveRecoveryCheckpoint(_state, $"before-github-auto-update-{check.LatestVersion}");
@@ -5642,7 +5642,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 System.Windows.MessageBox.Show("되돌릴 수 있는 이전 프로그램 버전이 없습니다.", "CyanDeck 버전 되돌리기", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            // v8.0.43: after a rollback the same command reinstalls the held version (undo).
+            // v8.0.44: after a rollback the same command reinstalls the held version (undo).
             var undoRollback = IsRollbackUndoPending();
             if (System.Windows.MessageBox.Show(BuildRollbackConfirmation(undoRollback), "CyanDeck 버전 되돌리기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
@@ -5795,7 +5795,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void PersistTimer_Tick(object? sender, EventArgs e)
     {
         _persistTimer?.Stop();
-        // v8.0.43: auto-save serializes here and writes/replaces/retries on a background
+        // v8.0.44: auto-save serializes here and writes/replaces/retries on a background
         // thread, so a locked layout.json no longer freezes the UI and mouse hooks.
         PersistInBackground();
     }

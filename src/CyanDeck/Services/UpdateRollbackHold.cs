@@ -4,7 +4,7 @@ using System.IO;
 namespace CyanDeck.Services;
 
 /// <summary>
-/// v8.0.43: after "마지막 앱 업데이트 되돌리기" the version that was rolled back from is
+/// v8.0.44: after "마지막 앱 업데이트 되돌리기" the version that was rolled back from is
 /// recorded as held. Start-time preflight and background auto-install skip any release at
 /// or below the held version, so the problematic build is not reinstalled on the next start.
 /// A newer published release releases the hold automatically (security fixes keep flowing),

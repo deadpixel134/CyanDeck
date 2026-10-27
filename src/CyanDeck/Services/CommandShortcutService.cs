@@ -7,7 +7,7 @@ using ComTypes = System.Runtime.InteropServices.ComTypes;
 namespace CyanDeck.Services;
 
 /// <summary>
-/// v8.0.43: creates Start menu shortcuts for CyanDeck's single-instance commands
+/// v8.0.44: creates Start menu shortcuts for CyanDeck's single-instance commands
 /// (Peek, quick hide, desktop view, next/previous page). Users assign a key in the
 /// shortcut's Properties ("바로 가기 키"); Windows itself handles that key, so CyanDeck
 /// still installs no keyboard hook and registers no global hotkey. Re-running keeps

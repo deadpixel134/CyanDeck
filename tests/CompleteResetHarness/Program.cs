@@ -146,7 +146,7 @@ try
         throw new Exception("Unsaved, abnormal, locked or transitioning layout cleared its recovery marker.");
     Console.WriteLine("PASS: Windows fast session exit preserves recovery on dirty/saving/transitioning layouts");
 
-    // v8.0.43: after "마지막 앱 업데이트 되돌리기" the rolled-back version is held from
+    // v8.0.44: after "마지막 앱 업데이트 되돌리기" the rolled-back version is held from
     // AUTOMATIC reinstall until a newer release is published or the user updates manually.
     var v41 = new Version(8, 0, 41);
     var v42 = new Version(8, 0, 42);
@@ -173,7 +173,7 @@ try
         throw new Exception("Rollback command label must return to normal once the hold is released.");
     Console.WriteLine("PASS: rolled-back version is not reinstalled automatically; newer release releases the hold");
 
-    // v8.0.43: update storage keeps the rollback target plus one newer snapshot, removes
+    // v8.0.44: update storage keeps the rollback target plus one newer snapshot, removes
     // installed packages and old installer scripts, and never runs with a pending journal.
     var updatesRoot = Path.Combine(mockLocal, "updates");
     var rollbackRoot = Path.Combine(updatesRoot, "rollback");

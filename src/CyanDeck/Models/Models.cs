@@ -161,7 +161,7 @@ public sealed class DeckSettings
     public bool QuickHideAlwaysShowIconsAtStartup { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DeckQuickHideMode QuickHideMode { get; set; } = DeckQuickHideMode.AllDesktop;
-    // v8.0.43 additive input preferences. Absent keys keep the earlier behavior:
+    // v8.0.44 additive input preferences. Absent keys keep the earlier behavior:
     // blank-desktop and tray double-clicks both toggle quick hide.
     public bool EnableDesktopDoubleClickQuickHide { get; set; } = true;
     [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -460,7 +460,7 @@ public sealed class DeckLayoutSnapshot
     public string Name { get; set; } = "Snapshot";
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public bool IsAutomatic { get; set; }
-    // v8.0.43: undo checkpoint taken before align/distribute/pack/restore. It has its own
+    // v8.0.44: undo checkpoint taken before align/distribute/pack/restore. It has its own
     // small retention bucket (never evicts user snapshots). Absent in older files => false.
     public bool IsUndoCheckpoint { get; set; }
     // Korean action label of an undo checkpoint (e.g. "왼쪽 맞춤"); null for other snapshots.

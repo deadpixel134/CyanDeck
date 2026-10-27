@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v8.0.43: the calendar keeps "today" current across midnight, clock changes and resume
+"""v8.0.44: the calendar keeps "today" current across midnight, clock changes and resume
 from sleep, and its text stays fully opaque while only the background follows the
 idle / in-use opacity sliders over their whole range.
 Non-destructive static checks; the real midnight/resume behaviour is verified on Windows."""

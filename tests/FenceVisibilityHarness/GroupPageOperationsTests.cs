@@ -1,7 +1,7 @@
 using CyanDeck.Services;
 using CyanDeck.Topology;
 
-// v8.0.43 group/page operations: dropping at screen edges on two monitors, seam fitting,
+// v8.0.44 group/page operations: dropping at screen edges on two monitors, seam fitting,
 // free-spot placement, page sending, the template limit and the global item search.
 internal static class GroupPageOperationsTests
 {

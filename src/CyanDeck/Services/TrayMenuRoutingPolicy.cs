@@ -41,7 +41,7 @@ internal static class TrayMenuRoutingPolicy
             case "desktop.display": return TrayMenuSection.Groups;
             case "desktop.native-icons": return TrayMenuSection.IconTools;
             case "recovery.backup":
-            // v8.0.43: app rollback / rollback undo ("되돌리기 취소 (v… 다시 설치)…").
+            // v8.0.44: app rollback / rollback undo ("되돌리기 취소 (v… 다시 설치)…").
             case "recovery.app-rollback": return TrayMenuSection.Recovery;
             case "settings.startup": return TrayMenuSection.SettingsOnly;
         }

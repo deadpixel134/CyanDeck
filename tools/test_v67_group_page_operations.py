@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v8.0.43: group, page and template operations. Dropping a group near a monitor edge no longer
+"""v8.0.44: group, page and template operations. Dropping a group near a monitor edge no longer
 switches pages (pointer edge + dwell, seam rules shared with the page gesture, seam-straddling
 groups fitted into one monitor), groups can be sent to another or a new page from their menu,
 new groups land at a free spot of the right monitor, templates can be renamed/deleted one by one

@@ -26,7 +26,7 @@ internal static class RecoveryCheckpointLabelPolicy
         ("before-github-auto-update", "자동 업데이트 설치 전"),
         ("before-startup-auto-update", "시작 시 자동 업데이트 전"),
         ("before-update", "업데이트 설치 전"),
-        // v8.0.43: StateStore.BeginSession copies the previous session's start state here.
+        // v8.0.44: StateStore.BeginSession copies the previous session's start state here.
         ("unclean-session", "비정상 종료된 세션 시작 시점"),
         ("before-layout-undo", "배치 변경 되돌리기 전"),
         ("before-move-all-groups-to-monitor", "모든 그룹을 한 모니터로 옮기기 전"),

@@ -307,9 +307,9 @@ foreach (var (id, label, expected) in trayCases)
         throw new Exception($"Tray policy mismatch: {id ?? "(legacy)"} / {label} -> {expected}");
 Console.WriteLine($"PASS: {trayCases.Length} tray routes including safe-mode, calendar-only, fallback and settings de-duplication");
 
-// v8.0.43 group/page operations (GroupPageOperationsTests.cs).
+// v8.0.44 group/page operations (GroupPageOperationsTests.cs).
 GroupPageOperationsTests.Run();
-// v8.0.43 input discoverability: keyboard-free command shortcuts, double-click
+// v8.0.44 input discoverability: keyboard-free command shortcuts, double-click
 // choices, the one-time hint, the what's-new notice and the mouse-hook watchdog.
 if (TrayMenuRoutingPolicy.Route("help.input-guide", "단축키·제스처 안내…") != TrayMenuSection.Tools)
     throw new Exception("Input guide tray item must be routed to Tools");
@@ -668,7 +668,7 @@ if (LooseDesktopAutoPlacementPlanner.NormalizeScale(double.NaN) != 1d ||
     LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.ItemWidthDip, 1.75) != 154)
     throw new Exception("Loose icon DPI scaling mismatch.");
 Console.WriteLine("PASS: 6 loose icon auto-placement checks");
-// v8.0.43: recovery checkpoints are retained per kind, so frequent automatic monitor
+// v8.0.44: recovery checkpoints are retained per kind, so frequent automatic monitor
 // checkpoints keep only 5 and never push out pre-update/pre-import/unclean-session ones.
 if (RecoveryCheckpointRetentionPolicy.Classify("before-monitor-profile-restore-0123456789abcdef0123456789abcdef-20261027-101500") != RecoveryCheckpointBucket.MonitorAutomatic ||
     RecoveryCheckpointRetentionPolicy.Classify("before-auto-monitor-reduction-0123456789abcdef0123456789abcdef-20261027-101500") != RecoveryCheckpointBucket.MonitorAutomatic ||
@@ -697,7 +697,7 @@ if (RecoveryCheckpointLabelPolicy.Describe("unclean-session-20261027-101500") !=
     throw new Exception("Unclean-session checkpoint must have a Korean label.");
 Console.WriteLine("PASS: per-kind recovery checkpoint retention and unclean-session label");
 
-// v8.0.43: undo snapshots have Korean names and their own retention bucket; legacy names
+// v8.0.44: undo snapshots have Korean names and their own retention bucket; legacy names
 // are recognized only in their exact machine-generated form.
 var namedAt = new DateTime(2026, 10, 27, 14, 3, 0);
 if (LayoutSnapshotNamePolicy.BuildUndoName(LayoutSnapshotNamePolicy.AlignLeft, namedAt) != "왼쪽 맞춤 전 · 10월 27일 14:03" ||

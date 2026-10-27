@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v8.0.43: input discoverability and reliability (quick-hide double-click hint and
+"""v8.0.44: input discoverability and reliability (quick-hide double-click hint and
 choices, keyboard-free command shortcuts, dedicated mouse-hook thread with watchdog,
 Peek icon / hot-corner backend, shortcut and gesture guide, README paths).
 Non-destructive static checks; hooks, shortcuts and notifications are verified on Windows by hand."""

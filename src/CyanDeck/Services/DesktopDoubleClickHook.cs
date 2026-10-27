@@ -9,7 +9,7 @@ public sealed class DesktopDoubleClickHook : IDisposable, ILowLevelMouseHookClie
     private readonly Dispatcher _dispatcher;
     private readonly NativeMethods.LowLevelMouseProc _proc;
     private readonly Func<bool>? _isEnabled;
-    // v8.0.43: the hook lives on CyanDeck's dedicated input thread (see LowLevelMouseHookThread)
+    // v8.0.44: the hook lives on CyanDeck's dedicated input thread (see LowLevelMouseHookThread)
     // so a busy UI thread can no longer stall the system mouse or get the hook removed.
     private LowLevelMouseHookThread? _hookThread;
     private IntPtr _hook;

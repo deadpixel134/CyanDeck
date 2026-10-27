@@ -56,7 +56,7 @@ public static class PeekTaskbarButtonIconResolver
     }
 
     /// <summary>
-    /// v8.0.43: user-facing check for the Settings icon picker. Returns null when the file
+    /// v8.0.44: user-facing check for the Settings icon picker. Returns null when the file
     /// would be used, otherwise a short Korean reason (the button then keeps the default icon).
     /// Mirrors the rules of <see cref="Resolve"/>.
     /// </summary>

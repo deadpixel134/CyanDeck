@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v8.0.43: update/backup/recovery fixes. A rolled-back version is not reinstalled automatically,
+"""v8.0.44: update/backup/recovery fixes. A rolled-back version is not reinstalled automatically,
 undo snapshots and monitor checkpoints have their own retention, export/import verify and summarize,
 unreadable layout files are preserved, auto-save writes in the background, update backups are
 pruned and the diagnostic bundle covers update failures. Non-destructive static checks only."""

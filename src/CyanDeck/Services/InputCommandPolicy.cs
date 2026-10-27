@@ -2,7 +2,7 @@ using CyanDeck.Models;
 
 namespace CyanDeck.Services;
 
-// Pure, UI-free policies for v8.0.43 input discoverability: external single-instance
+// Pure, UI-free policies for v8.0.44 input discoverability: external single-instance
 // commands (usable from Windows shortcut keys without any keyboard hook), first-use
 // hints, the tray double-click choice, the "what's new" notice and the mouse-hook
 // watchdog. Compiled into tests/FenceVisibilityHarness.
@@ -120,7 +120,7 @@ internal static class InputHintPolicy
 
     /// <summary>
     /// Shows the "what's new" notice once per newer version. A missing value means the
-    /// settings predate v8.0.43 (an update); fresh installs are stamped by the first-run setup.
+    /// settings predate v8.0.44 (an update); fresh installs are stamped by the first-run setup.
     /// </summary>
     internal static bool ShouldShowWhatsNew(string? lastSeenVersion, Version current)
     {

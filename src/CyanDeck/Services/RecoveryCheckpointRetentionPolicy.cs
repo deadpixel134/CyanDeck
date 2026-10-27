@@ -16,7 +16,7 @@ internal enum RecoveryCheckpointBucket
 }
 
 /// <summary>
-/// v8.0.43: recovery checkpoints are retained per kind. Frequent automatic monitor
+/// v8.0.44: recovery checkpoints are retained per kind. Frequent automatic monitor
 /// checkpoints keep only the newest 5 so they can no longer push out the checkpoints taken
 /// before an update, import, reset, deletion or an unclean session, which keep the newest 20
 /// plus anything from the last 30 days (bounded by a hard cap).

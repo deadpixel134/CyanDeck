@@ -23,7 +23,7 @@ internal sealed class DesktopPageGestureHook : IDisposable, ILowLevelMouseHookCl
     private readonly Func<NativeMethods.POINT, int?>? _resolveEdgeDirection;
     private readonly Func<bool>? _canCreateGroups;
     private readonly DesktopCreationGestureGate _creationGate = new();
-    // v8.0.43: gesture state is owned by CyanDeck's dedicated input thread (LowLevelMouseHookThread);
+    // v8.0.44: gesture state is owned by CyanDeck's dedicated input thread (LowLevelMouseHookThread);
     // UI-thread calls (cancel, dispose) are marshalled there instead of racing the callback.
     private LowLevelMouseHookThread? _hookThread;
     private bool _started;

@@ -36,7 +36,7 @@ public partial class App : Application
         // Capture the physical cursor monitor *before* Explorer can close/reposition its menu.
         var recoveryMonitor = recoverGroups ? Forms.Screen.FromPoint(Forms.Cursor.Position).DeviceName : null;
         var managedPolicyPath = GetOptionValue(e.Args, "--managed-policy");
-        // v8.0.43 keyboard-free commands for Windows shortcut keys (--quick-hide-toggle,
+        // v8.0.44 keyboard-free commands for Windows shortcut keys (--quick-hide-toggle,
         // --desktop-display-toggle, --page-next, --page-previous). --peek-toggle keeps its own path.
         string? desktopCommand = null;
         if (ExternalDesktopCommandCatalog.TryParseArguments(e.Args, out var parsedDesktopCommand) &&
@@ -184,7 +184,7 @@ public partial class App : Application
             var crashSafeMode = !ignoreCrashLoop && settings.EnableCrashLoopProtection
                 && StartupHealthService.GetSnapshot(settings.CrashLoopWindowMinutes,
                     settings.CrashLoopThreshold).ShouldUseSafeMode;
-            // v8.0.43: unreadable layout files start protected; never update over them.
+            // v8.0.44: unreadable layout files start protected; never update over them.
             var readOnly = store.EncounteredUnsupportedState || store.EncounteredUnreadableState;
             if (!StartupUpdatePolicy.ShouldPreflight(settings.EnableAutomaticUpdateChecks,
                     settings.InstallUpdatesAutomatically, safeMode || crashSafeMode,
@@ -247,7 +247,7 @@ public partial class App : Application
                 splash?.SetStage("이전 자동 업데이트에 실패하여 현재 버전으로 실행합니다.\\n환경설정에서 업데이트를 직접 다시 시도할 수 있습니다.", false);
                 return (false, true);
             }
-            // v8.0.43: the user rolled back from this version. Skip automatic reinstall until a
+            // v8.0.44: the user rolled back from this version. Skip automatic reinstall until a
             // newer release is published (which releases the hold) or the user updates manually.
             if (UpdateRollbackHold.ShouldSkipAutomaticInstall(DataRootPaths.ActiveLocal,
                 check.LatestVersion, out var heldVersion))

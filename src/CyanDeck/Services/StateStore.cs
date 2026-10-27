@@ -16,7 +16,7 @@ public sealed class StateStore
 
     public bool EncounteredUnsupportedState { get; private set; }
     public int UnsupportedStateVersion { get; private set; }
-    // v8.0.43: where the last Load() found the layout. Unreadable means layout files exist but
+    // v8.0.44: where the last Load() found the layout. Unreadable means layout files exist but
     // none could be read: callers must not create/save a default layout over them.
     public LayoutLoadOutcome LastLoadOutcome { get; private set; } = LayoutLoadOutcome.NoLayout;
     public bool EncounteredUnreadableState => LastLoadOutcome == LayoutLoadOutcome.Unreadable;
@@ -66,7 +66,7 @@ public sealed class StateStore
                     DiagnosticsLog.Warn("Recovered newer staged layout after interrupted/locked save; primary layout and backup retained.");
                 }
             }
-            // v8.0.43: a backup/sync/antivirus lock is often brief, so retry a locked file a
+            // v8.0.44: a backup/sync/antivirus lock is often brief, so retry a locked file a
             // few times before falling back to an older copy.
             if (state is null && (state = TryLoadWithRetry(_path)) is not null)
                 LastLoadOutcome = LayoutLoadOutcome.Primary;
@@ -503,7 +503,7 @@ public sealed class StateStore
         {
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
-            // v8.0.43: never write over an existing backup (USB/cloud folder) directly. Write a
+            // v8.0.44: never write over an existing backup (USB/cloud folder) directly. Write a
             // temporary file next to it, read it back, then swap it in.
             var payload = JsonSerializer.Serialize(state, _json);
             var temp = path + ".cyandeck-" + Guid.NewGuid().ToString("N") + ".tmp";
@@ -570,7 +570,7 @@ public sealed class StateStore
     }
 
     /// <summary>
-    /// v8.0.43 auto-save, step 1 (UI thread): serialize the live state. Only this step touches
+    /// v8.0.44 auto-save, step 1 (UI thread): serialize the live state. Only this step touches
     /// the in-memory model; the file work happens in <see cref="SavePrepared"/>.
     /// </summary>
     public PreparedLayoutSave PrepareSave(DeckState state)
@@ -860,7 +860,7 @@ public sealed class StateStore
         }
     }
 
-    // v8.0.43: retention is per checkpoint kind (RecoveryCheckpointRetentionPolicy), so frequent
+    // v8.0.44: retention is per checkpoint kind (RecoveryCheckpointRetentionPolicy), so frequent
     // automatic monitor checkpoints can no longer evict pre-update/pre-import/reset ones.
     private static void PruneRecoveryFiles(string recoveryDir)
     {

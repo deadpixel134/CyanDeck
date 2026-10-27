@@ -15,7 +15,7 @@ internal sealed class TrayIconController : IDisposable
     private readonly Forms.ContextMenuStrip _menu;
     private readonly Forms.NotifyIcon _notify;
     private readonly Icon? _ownedIcon;
-    // v8.0.43: dimmed icon shown while the desktop is quick-hidden, and the action of
+    // v8.0.44: dimmed icon shown while the desktop is quick-hidden, and the action of
     // the most recent balloon (null when that balloon has no click action).
     private Icon? _hiddenStateIcon;
     private bool _hiddenStateShown;

@@ -6,7 +6,7 @@ using CyanDeck.Services;
 namespace CyanDeck.Views;
 
 /// <summary>
-/// v8.0.43 "단축키·제스처 안내": a read-only overview of conveniences that already exist
+/// v8.0.44 "단축키·제스처 안내": a read-only overview of conveniences that already exist
 /// (rectangle creation, Alt+folder drop, page gestures, quick-hide double-click, group
 /// keys). The only action creates the optional command shortcuts. Content comes from
 /// InputGuideContent so wording stays in one place. Uses system colors in high contrast.

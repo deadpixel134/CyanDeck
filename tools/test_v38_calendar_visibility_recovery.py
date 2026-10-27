@@ -19,7 +19,7 @@ checks={
  'retry only for desktop band failures': 'reason.Contains("Cannot enter desktop Z-order band"' in schedule,
  'no tray focus or automatic topmost': 'Topmost = true' not in attach and 'Activate()' not in tick and 'HWND_TOPMOST' not in attach,
  'WPF Show only after desktop attachment': attach.index('TryAttachInteractiveSurface(window, out var reason)') < attach.index('window.Show()'),
- # v8.0.43: the window is revealed at a fixed full opacity (text opaque, only the background fades).
+ # v8.0.44: the window is revealed at a fixed full opacity (text opaque, only the background fades).
  'Show revalidated before opacity restored': attach.index('TryAttachInteractiveSurface(window, out var postShowReason)') < attach.index('window.Opacity = CalendarOpacityPolicy.WindowOpacity;'),
  'failure remains invisible': 'window.Opacity = 0;' in attach and 'if (window.IsVisible) window.Hide();' in attach,
  'manual repair cooldown retained': 'ManualRepairCooldown = TimeSpan.FromSeconds(15)' in mod,

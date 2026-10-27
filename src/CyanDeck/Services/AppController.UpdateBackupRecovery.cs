@@ -8,7 +8,7 @@ using Forms = System.Windows.Forms;
 namespace CyanDeck.Services;
 
 /// <summary>
-/// v8.0.43 update/backup/recovery behavior: rollback hold, update storage housekeeping,
+/// v8.0.44 update/backup/recovery behavior: rollback hold, update storage housekeeping,
 /// undo snapshots with their own retention, verified export/import, protected start when
 /// layout files are unreadable, start-up notices and background auto-save.
 /// </summary>

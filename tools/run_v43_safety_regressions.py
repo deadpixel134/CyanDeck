@@ -37,6 +37,14 @@ scripts = [
   'test_v63_settings_findability_ux_batch.py',
   'test_v64_ux_followups.py',
   'test_v65_settings_sections_dark_dialogs.py',
+  'test_v66_icon_group_preservation.py',
+  'test_v67_group_page_operations.py',
+  'test_v68_calendar_sync_account.py',
+  'test_v69_calendar_today_text.py',
+  'test_v70_items_shell_menu.py',
+  'test_v71_update_backup_recovery.py',
+  'test_v72_input_hints_shortcuts.py',
+  'test_v73_calendar_recurrence_time.py',
   'test_full_source_structure.py',
 ]
 results = []

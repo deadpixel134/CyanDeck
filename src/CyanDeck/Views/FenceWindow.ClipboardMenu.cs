@@ -8,7 +8,7 @@ using CyanDeck.Services;
 namespace CyanDeck.Views;
 
 /// <summary>
-/// v8.0.43: mouse access to the existing window-local Ctrl+C / Ctrl+X / Ctrl+V file commands
+/// v8.0.44: mouse access to the existing window-local Ctrl+C / Ctrl+X / Ctrl+V file commands
 /// (see FenceWindow.Keyboard.cs, whose semantics and Folder Portal path checks are mirrored
 /// here) and visible shortcut hints in the group menus. No keyboard hook is involved.
 /// </summary>

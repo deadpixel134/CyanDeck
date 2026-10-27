@@ -8,7 +8,7 @@ using Forms = System.Windows.Forms;
 namespace CyanDeck.Services;
 
 /// <summary>
-/// v8.0.43 input discoverability: double-click quick-hide choices and one-time hint,
+/// v8.0.44 input discoverability: double-click quick-hide choices and one-time hint,
 /// single-instance desktop commands for Windows shortcut keys (no keyboard hook),
 /// the "단축키·제스처 안내" entry point and the one-time "what's new" notice.
 /// </summary>

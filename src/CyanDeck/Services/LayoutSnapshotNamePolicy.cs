@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace CyanDeck.Services;
 
 /// <summary>
-/// v8.0.43: Korean names for automatic layout snapshots and the separate retention bucket for
+/// v8.0.44: Korean names for automatic layout snapshots and the separate retention bucket for
 /// undo checkpoints taken before align/distribute/pack/restore. Undo checkpoints keep only
 /// the newest few and never count against the user's own snapshot limit. Snapshots created
 /// by older builds ("Before align-left 2026-10-27 14:03:00", "Automatic 2026-10-27") are

@@ -36,7 +36,7 @@ public static class DiagnosticBundleService
                     catch { }
                 }
             }
-            // v8.0.43: the independent installer logs its failures under %LOCALAPPDATA%.
+            // v8.0.44: the independent installer logs its failures under %LOCALAPPDATA%.
             // Same redaction and bounded tail as every other log; links are never followed.
             try
             {
@@ -188,7 +188,7 @@ public static class DiagnosticBundleService
         if (iconCacheStats is IconCacheStats stats)
             sb.AppendLine($"Icon cache live stats: count={stats.Count}, capacity={stats.Capacity}, hits={stats.Hits}, misses={stats.Misses}, evictions={stats.Evictions}");
         sb.AppendLine($"Quick-hide: enabled={state.Settings.EnableQuickHide}, mode={state.Settings.QuickHideMode}, always-show-at-startup={state.Settings.QuickHideAlwaysShowIconsAtStartup}");
-        // v8.0.43: no global hotkeys or keyboard hook exist; keyboard use is via single-instance command shortcuts.
+        // v8.0.44: no global hotkeys or keyboard hook exist; keyboard use is via single-instance command shortcuts.
         sb.AppendLine($"Input commands: desktop-double-click={state.Settings.EnableDesktopDoubleClickQuickHide}, tray-double-click={state.Settings.TrayDoubleClickAction}, global-hotkeys=none, keyboard-hook=none, hot-corner-px={state.Settings.PeekHotCornerHitThicknessPx}");
         sb.AppendLine($"Automation: auto-import={state.Settings.AutoImportDesktop}, keep-rules-updated={state.Settings.KeepRulesUpdatedAtAllTimes}");
         sb.AppendLine($"Default desktop placement: enabled={state.Settings.UseDefaultDesktopPlacement}, kind={state.Settings.DefaultDesktopPlacementKind}, group-id-set={!string.IsNullOrWhiteSpace(state.Settings.DefaultDesktopPlacementGroupId)}, tab-id-set={!string.IsNullOrWhiteSpace(state.Settings.DefaultDesktopPlacementTabId)}, activate-tab={state.Settings.ActivateDefaultDestinationTab}");
@@ -218,7 +218,7 @@ public static class DiagnosticBundleService
         return sb.ToString();
     }
 
-    // v8.0.43: update channel, automatic install, recent failed packages, rollback availability
+    // v8.0.44: update channel, automatic install, recent failed packages, rollback availability
     // and hold, and update backup storage. Counts and flags only; no paths are written.
     private static void AppendUpdateState(StringBuilder sb, DeckState state)
     {

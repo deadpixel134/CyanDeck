@@ -21,7 +21,7 @@ internal interface ILowLevelMouseHookClient
 }
 
 /// <summary>
-/// v8.0.43: one dedicated background thread with its own message loop owns every CyanDeck
+/// v8.0.44: one dedicated background thread with its own message loop owns every CyanDeck
 /// low-level mouse hook. Windows delivers WH_MOUSE_LL callbacks to the installing thread
 /// while the whole system's mouse input waits, so a busy WPF dispatcher (layout, saving,
 /// a modal dialog) must never be that thread. Hook callbacks only classify the event and

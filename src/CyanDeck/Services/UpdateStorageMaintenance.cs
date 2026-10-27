@@ -23,7 +23,7 @@ public sealed record UpdateStoragePruneResult(int DeletedRollbackSnapshots, int 
 }
 
 /// <summary>
-/// v8.0.43: every update copies the previous executable into updates/rollback and leaves the
+/// v8.0.44: every update copies the previous executable into updates/rollback and leaves the
 /// downloaded ZIP in updates/staged, but only the snapshot named by last-rollback.txt can be
 /// used. Keep that snapshot plus the newest other one, delete packages that are already
 /// installed (version at or below the running one) and installer scripts older than a day.
