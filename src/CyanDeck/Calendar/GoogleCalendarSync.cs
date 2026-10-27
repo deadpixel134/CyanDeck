@@ -548,6 +548,10 @@ public sealed partial class GoogleCalendarSync : IDisposable
         if (ev is null || !ev.Dirty || ev.LocalOnly || ev.Conflict || ev.RemoteReadOnly) return "skip";
         var id = ev.Id;
         var calendarId = ResolveCalendarId(ev);
+        // "모든 반복 일정" edits/deletes go to the series event, not this instance
+        // (it checks write access itself and undoes a rejected series delete).
+        if (ev.SeriesEditPending && ev.IsRecurringInstance)
+            return await PushSeriesChangeAsync(ev, calendarId);
         if (!_preferences.Data.Catalog.Any(c => c.Id == calendarId && c.CanWrite))
         {
             MarkUploadConflict(id);
@@ -634,14 +638,18 @@ public sealed partial class GoogleCalendarSync : IDisposable
                     @private = new Dictionary<string, string> { ["desktopDeckLocalId"] = sent.Id.ToString("N") }
                 }
             };
+            // A local series is uploaded with its RRULE/EXDATE and time zone.
+            object insertPayload = RecurringInsertPayload(sent) ?? insert;
             response = await SendApiAsync(HttpMethod.Post,
-                "calendars/" + Uri.EscapeDataString(calendarId) + "/events", insert);
+                "calendars/" + Uri.EscapeDataString(calendarId) + "/events", insertPayload);
         }
         else
         {
             // PATCH only owned fields; retain guests, descriptions and Meet links.
             var patch = new { summary = sent.Title, start = PatchTimeBody(sent, true), end = PatchTimeBody(sent, false) };
-            response = await SendApiAsync(HttpMethod.Patch, remoteUrl, patch, sent.RemoteETag);
+            // An uploaded local series keeps its time zone (required for recurring events).
+            object patchPayload = RecurringPatchPayload(sent) ?? patch;
+            response = await SendApiAsync(HttpMethod.Patch, remoteUrl, patchPayload, sent.RemoteETag);
         }
 
         using (response)
@@ -700,6 +708,7 @@ public sealed partial class GoogleCalendarSync : IDisposable
         foreach (var source in _preferences.Data.Catalog.Where(x => selected.Contains(x.Id)))
         {
             _preferences.Data.SyncTokens.TryGetValue(source.Id, out var syncToken);
+            if (NeedsRecurringRefresh(source.Id)) syncToken = null; // one full listing for old recurring instances
             var completed = false;
             for (var attempt = 0; attempt < 2 && !completed; attempt++)
             {
@@ -776,7 +785,11 @@ public sealed partial class GoogleCalendarSync : IDisposable
                             endDate = finishAt.ToLocalTime().AddTicks(-1).Date;
                         }
                         if (endDate < date) endDate = date;
-                        var recurring = item.TryGetProperty("recurringEventId", out _) || item.TryGetProperty("recurrence", out _);
+                        // Instances are editable when this calendar holds the organizer's copy
+                        // (or guests may modify); other recurring copies stay read-only.
+                        var recurring = GoogleRecurringEditPolicy.IsReadOnlyRecurring(item);
+                        var recurringId = GoogleRecurringEditPolicy.StoredRecurringEventId(item, remoteId);
+                        var organizerOnly = GoogleRecurringEditPolicy.IsOrganizerOnly(item, source.CanWrite);
                         var specialType = item.TryGetProperty("eventType", out var type)
                             && type.GetString() is not null and not "default";
                         var readOnly = !source.CanWrite || recurring || specialType
@@ -793,7 +806,8 @@ public sealed partial class GoogleCalendarSync : IDisposable
                             {
                                 Date = date, EndDate = endDate, StartAt = startAt, EndAt = endAt,
                                 Title = title, CalendarId = source.Id, RemoteId = remoteId,
-                                RemoteETag = etag, Dirty = false, RemoteReadOnly = readOnly
+                                RemoteETag = etag, Dirty = false, RemoteReadOnly = readOnly,
+                                RecurringEventId = recurringId, RemoteOrganizerOnly = organizerOnly
                             });
                             imported++;
                         }
@@ -808,15 +822,22 @@ public sealed partial class GoogleCalendarSync : IDisposable
                                 local.SyncError = GoogleSyncFailurePolicy.RejectionPrefix + GoogleSyncFailurePolicy.OrganizerOnlyDetail;
                             }
                         }
-                        else if (GoogleEventReconciliation.ShouldApplyRemote(fullSync, local, etag, source.Id, readOnly))
+                        else if (GoogleEventReconciliation.ShouldApplyRemote(fullSync, local, etag, source.Id, readOnly)
+                            || !string.Equals(local.RecurringEventId, recurringId, StringComparison.Ordinal)
+                            || local.RemoteOrganizerOnly != organizerOnly)
                         {
                             local.Title = title; local.Date = date; local.EndDate = endDate;
                             local.StartAt = startAt; local.EndAt = endAt;
                             local.CalendarId = source.Id; local.RemoteETag = etag;
                             local.Deleted = false; local.RemoteReadOnly = readOnly;
+                            local.RecurringEventId = recurringId;
+                            local.RemoteOrganizerOnly = organizerOnly;
                             imported++;
                         }
                     }
+                    // An uploaded local series is replaced by the instances Google returns.
+                    CalendarRecurrenceExpander.RemoveReplacedMasters(pageSnapshot);
+                    CalendarRecurrenceExpander.RevealConflictedSeriesDeletes(pageSnapshot);
                     pageToken = json.RootElement.TryGetProperty("nextPageToken", out var next) ? next.GetString() : null;
                     if (pageToken is null && json.RootElement.TryGetProperty("nextSyncToken", out var newToken))
                         nextSyncToken = newToken.GetString();

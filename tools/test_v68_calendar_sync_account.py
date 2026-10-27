@@ -113,7 +113,7 @@ checks = {
     "event bars mark pending uploads and the tooltip shows time, calendar and sync state":
         "var name = CalendarEventStatusText.BarPrefix(bar.Event, _renderGoogleConnected) + bar.Event.Title;" in draw and
         "ToolTip = DescribeEventForTooltip(bar.Event)" in draw and
-        'PendingMarker = "↻ "' in policies and '"Google 업로드 대기"' in policies and
+        'PendingMarker = "⇡ "' in policies and '"Google 업로드 대기"' in policies and
         '"yyyy-MM-dd HH:mm"' in policies and '"로컬 전용"' in policies,
     "without any Google connection, events show no upload marker":
         "googleConnected && IsPendingUpload(ev) ? PendingMarker" in policies and

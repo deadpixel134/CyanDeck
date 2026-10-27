@@ -32,7 +32,7 @@ public static class CalendarPromptSyncPolicy
 // Short, consistent sync-state wording for the event bar and its tooltip.
 public static class CalendarEventStatusText
 {
-    public const string PendingMarker = "↻ ";
+    public const string PendingMarker = "⇡ ";
     public const string ConflictMarker = "⚠ ";
 
     public static bool IsPendingUpload(CalendarEvent ev)
