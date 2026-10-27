@@ -72,7 +72,7 @@ internal sealed class WpfChameleonActivationBridge : IDisposable
         ChameleonActivationContext host = SafeReadContext();
         ChameleonActivationContext context = host with
         {
-            IsPointerOverGroup = _groupRoot.IsMouseOver,
+            IsPointerOverGroup = DesktopPointerHover.IsActuallyOver(_groupRoot),
             IsDesktopOrCyanDeckForeground = _isDesktopOrCyanDeckForeground,
         };
 
