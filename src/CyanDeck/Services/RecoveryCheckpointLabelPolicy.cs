@@ -13,6 +13,11 @@ internal static class RecoveryCheckpointLabelPolicy
         ("before-auto-monitor-reduction", "모니터 연결 해제로 그룹을 옮기기 전"),
         ("before-monitor-profile-restore", "모니터 배치를 복원하기 전"),
         ("before-screen-content-swap", "화면 내용 교환 전"),
+        // MonitorContentSwapCoordinator passes this English label as the checkpoint reason.
+        ("Before-swapping-screen-contents", "화면 내용 교환 전"),
+        ("before-delete-group", "그룹 삭제 전"),
+        ("before-remove-tab", "탭 제거 전"),
+        ("before-desktop-cleanup", "바탕화면 항목 정리 전"),
         ("before-automatic-layout", "자동 레이아웃 실행 전"),
         ("before-geometry-reset", "창 위치·크기 초기화 전"),
         ("before-factory-reset", "전체 초기화 전"),
@@ -23,6 +28,10 @@ internal static class RecoveryCheckpointLabelPolicy
         ("before-github-auto-update", "자동 업데이트 설치 전"),
         ("before-startup-auto-update", "시작 시 자동 업데이트 전"),
         ("before-update", "업데이트 설치 전"),
+        // v8.0.44: StateStore.BeginSession copies the previous session's start state here.
+        ("unclean-session", "비정상 종료된 세션 시작 시점"),
+        ("before-layout-undo", "배치 변경 되돌리기 전"),
+        ("before-move-all-groups-to-monitor", "모든 그룹을 한 모니터로 옮기기 전"),
     };
 
     internal static string Describe(string? fileNameWithoutExtension)

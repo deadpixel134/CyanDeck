@@ -143,6 +143,12 @@ public sealed class DeckSettings
     public double StandaloneIconIdleOpacity { get; set; } = 0.38;
     public double StandaloneIconHoverOpacity { get; set; } = 1.0;
     public bool ApplyStandaloneIconChameleonToRecycleBin { get; set; }
+    // Legacy compatibility values (pre-v8): CyanDeck registers no global hotkeys and installs
+    // no keyboard hook, so the *HotkeyLabel / *Activation values have no runtime effect. They
+    // stay readable for old layout files and managed policies. Keyboard use goes through
+    // single-instance commands (--peek-toggle, --quick-hide-toggle, --desktop-display-toggle,
+    // --page-next, --page-previous) started by Windows shortcut keys on Start menu shortcuts;
+    // EnablePageKeyboardNavigation gates the two page commands.
     public string PeekHotkeyLabel { get; set; } = "Win+Space";
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DeckHotkeyActivation PeekActivation { get; set; } = DeckHotkeyActivation.Toggle;
@@ -155,6 +161,14 @@ public sealed class DeckSettings
     public bool QuickHideAlwaysShowIconsAtStartup { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DeckQuickHideMode QuickHideMode { get; set; } = DeckQuickHideMode.AllDesktop;
+    // v8.0.44 additive input preferences. Absent keys keep the earlier behavior:
+    // blank-desktop and tray double-clicks both toggle quick hide.
+    public bool EnableDesktopDoubleClickQuickHide { get; set; } = true;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DeckTrayDoubleClickAction TrayDoubleClickAction { get; set; } = DeckTrayDoubleClickAction.QuickHide;
+    // One-time notices (bookkeeping, excluded from the settings audit).
+    public bool QuickHideDoubleClickHintShown { get; set; }
+    public string LastSeenFeatureNoticeVersion { get; set; } = "";
     public int MaxLayoutSnapshots { get; set; } = 20;
     public bool EnableAutomaticDailySnapshots { get; set; } = true;
     public int AutomaticSnapshotRetentionDays { get; set; } = 7;
@@ -184,6 +198,11 @@ public sealed class DeckSettings
     public bool UseSameSpacingInsideAndOutsideGroups { get; set; }
     public int GroupSnapGap { get; set; } = 12;
     public bool PeekRespectWorkingArea { get; set; } = true;
+    // Opening an item from a Peek-raised group ends Peek so the new window is not covered.
+    // Absent in older layouts: true.
+    public bool EndPeekAfterLaunch { get; set; } = true;
+    // "다른 페이지로 보내기" in the group menu then switches to that page. Absent in older layouts: true.
+    public bool FollowGroupSentToPage { get; set; } = true;
     public bool PeekHotCornerEnabled { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public PeekHotCornerAction PeekHotCornerLeftAction { get; set; } = PeekHotCornerAction.ShowFences;
@@ -229,7 +248,8 @@ public sealed class DeckSettings
 
     public string UpdateManifestSource { get; set; } = "";
     public DateTime? LastUpdateCheckUtc { get; set; }
-    public bool RequireSignedUpdateManifests { get; set; } = true;
+    // Manifest signature verification is always on. The retired always-true signing toggle
+    // may still appear in older layout.json files; unknown JSON members are skipped on load.
     public string UpdatePublicKeyPath { get; set; } = "";
 }
 
@@ -399,6 +419,10 @@ public sealed class DeckItem
     public double? PositionX { get; set; }
     public double? PositionY { get; set; }
     public long OpenCount { get; set; }
+    // Set when the user drags or menu-moves this item into its current tab (or renames an
+    // established desktop file). Automatic desktop arrangement then leaves it where it is until
+    // "자동 분류 규칙 지금 실행" or "자동 분류에 다시 맡기기". Missing in older files = false.
+    public bool UserPlaced { get; set; }
     public bool ExcludeFromQuickHide { get; set; }
     // User-pinned loose desktop icons stay outside automatic classification until the
     // user explicitly sends them back to a group (auto-classify or touch flick).
@@ -437,6 +461,11 @@ public sealed class DeckLayoutSnapshot
     public string Name { get; set; } = "Snapshot";
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public bool IsAutomatic { get; set; }
+    // v8.0.44: undo checkpoint taken before align/distribute/pack/restore. It has its own
+    // small retention bucket (never evicts user snapshots). Absent in older files => false.
+    public bool IsUndoCheckpoint { get; set; }
+    // Korean action label of an undo checkpoint (e.g. "왼쪽 맞춤"); null for other snapshots.
+    public string? UndoAction { get; set; }
     public string MonitorSignature { get; set; } = "";
     public int CurrentPage { get; set; }
     public List<DeckMonitorDescriptor> Monitors { get; set; } = [];

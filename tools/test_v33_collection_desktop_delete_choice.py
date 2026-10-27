@@ -11,6 +11,9 @@ clipboard=(root/'src/CyanDeck/Services/DeckShellClipboardService.cs').read_text(
 choose=view[view.index('private void DeleteItems('): view.index('private static bool IsProtectedDeletionTarget(')]
 explicit=view[view.index('private void RecycleActualDesktopCollectionItems('):view.index('private void RemoveCollectionReferences(')]
 remove=view[view.index('private void RemoveCollectionReferences('):view.index('private void DeleteItems(')]
+# v70: Windows Shell menu inside a group only for real Desktop children (loose-icon rule).
+items_shell=(root/'src/CyanDeck/Views/FenceWindow.ItemsShell.cs').read_text(encoding='utf-8')
+shell_gate=items_shell[items_shell.index('private bool CanShowNativeShellMenu('):items_shell.index('private bool TryHandleNativeShellVerb(')]
 checks={
  'Delete only offers choice to Collection tabs':'if (SelectedTab?.Kind == DeckTabKind.Collection)' in choose,
  'empty selection cannot trigger destructive choice':'tiles.Count > 0' in choose,
@@ -42,7 +45,7 @@ checks={
  'Ctrl+Delete remains explicit':'Keyboard.Modifiers == ModifierKeys.Control' in keyboard and 'RecycleActualDesktopCollectionItems(deleting);' in keyboard,
  'plain Delete routes to choice':'DeleteItems(deleting);' in keyboard,
  'Portal still recycles only':'RecycleOption.SendToRecycleBin' in choose,
- 'Windows Shell context remains disabled for Collection':'SelectedTab?.Kind != DeckTabKind.Collection &&' in view,
+ 'Windows Shell context in Collection only for real Desktop children':'list.All(DesktopRecycleService.IsActualDesktopItem)' in shell_gate and view.count('CanShowNativeShellMenu(') >= 2,
  'no new global hook':all('WH_KEYBOARD_LL' not in t for t in (dialog,keyboard,choose)),
 }
 for name,ok in checks.items(): print(('PASS' if ok else 'FAIL')+': '+name)

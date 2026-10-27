@@ -17,7 +17,7 @@ namespace CyanDeck.Calendar;
 
 // Single shell-attached window: no topmost external editor windows.
 // Each multi-day event is a Grid column-spanning bar, clipped to week boundaries.
-public sealed class CalendarWindow : Window
+public sealed partial class CalendarWindow : Window
 {
     private readonly DeckSettings _settings;
     private readonly CalendarEventStore _store;
@@ -79,6 +79,9 @@ public sealed class CalendarWindow : Window
     private DateTime _moveEdgeSinceUtc;
     private bool _preserveMoveOnRender;
     private CalendarColorPicker? _preferencesBackgroundPicker;
+    // The local date "today" was last rendered for; compared after midnight, a clock change or resume.
+    private DateTime _lastObservedToday = DateTime.Today;
+    private CalendarDayRolloverWatcher? _dayRolloverWatcher;
 
 
     private bool _allowFinalClose;
@@ -135,7 +138,8 @@ public sealed class CalendarWindow : Window
         Left = settings.CalendarLeft;
         Top = settings.CalendarTop;
         WindowStartupLocation = WindowStartupLocation.Manual;
-        Opacity = settings.CalendarOpacity;
+        // Text and events stay fully opaque; only the background brushes follow the opacity sliders.
+        Opacity = CalendarOpacityPolicy.WindowOpacity;
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
         // The calendar viewport must never gain a visible scrollbar when the
@@ -201,6 +205,47 @@ public sealed class CalendarWindow : Window
                 new Action(ApplyCalendarAppearance));
         };
         RenderMonth();
+        _dayRolloverWatcher = new CalendarDayRolloverWatcher(Dispatcher, RefreshTodayIfDateChanged);
+        Closed += (_, _) => _dayRolloverWatcher?.Dispose();
+    }
+
+    // Midnight, a clock/time-zone change or resume from sleep: redraw today's highlight and the
+    // title, and move a viewport that was showing the old today onto the new one. Returns false
+    // (retry later) while editing, dragging, a menu or the settings panel is open, and also while
+    // the pointer is over a viewport that would move, so the list never jumps under the cursor.
+    // Leaving the editor or settings re-renders through RenderMonth, which applies a pending
+    // date change in that same render (ApplyTodayRolloverBeforeRender) instead of 30 s later.
+    private bool RefreshTodayIfDateChanged()
+    {
+        var today = DateTime.Today;
+        if (today == _lastObservedToday) return true;
+        if (_editing || _showingPreferences || _isMoving || _moveCandidate is not null || _openEventMenus > 0)
+            return false;
+        bool follow = CalendarTodayRefreshPolicy.ShouldFollowToday(_visibleMonth, _settings.CalendarViewMode,
+            _settings.CalendarVisibleWeekRows, _lastObservedToday);
+        if (follow && DesktopPointerHover.IsActuallyOver(this)) return false;
+        double scrollOffset = _weekScroll.VerticalOffset;
+        RenderMonth();
+        // Only the highlight changed (same period): keep the reader's place in the week list.
+        if (!follow) _weekScroll.ScrollToVerticalOffset(scrollOffset);
+        return true;
+    }
+
+    // Called at the start of every RenderMonth: a date change seen by any render (closing the
+    // editor or settings, a sync refresh, the rollover timer) moves a viewport that was showing
+    // the old today onto the new one before the anchor is used. Skipped for the re-render that
+    // keeps an event drag alive while paging.
+    private void ApplyTodayRolloverBeforeRender()
+    {
+        if (_preserveMoveOnRender) return;
+        var today = DateTime.Today;
+        if (today == _lastObservedToday) return;
+        var previousToday = _lastObservedToday;
+        _lastObservedToday = today;
+        if (CalendarTodayRefreshPolicy.ShouldFollowToday(_visibleMonth, _settings.CalendarViewMode,
+                _settings.CalendarVisibleWeekRows, previousToday))
+            _visibleMonth = today;
+        DiagnosticsLog.Info($"Calendar today refreshed: {previousToday:yyyy-MM-dd} -> {today:yyyy-MM-dd}");
     }
 
     private static readonly Brush Panel = new SolidColorBrush(Color.FromRgb(33, 39, 50));
@@ -415,6 +460,7 @@ public sealed class CalendarWindow : Window
     public void RenderMonth()
     {
         if (_editing) return;
+        ApplyTodayRolloverBeforeRender();
         _visibleMonth = CalendarViewportPolicy.AnchorAfterViewModeChange(
             _visibleMonth, _lastRenderedViewMode, _settings.CalendarViewMode, DateTime.Today);
         _lastRenderedViewMode = _settings.CalendarViewMode;
@@ -422,6 +468,7 @@ public sealed class CalendarWindow : Window
         // during an event drag re-renders while keeping that drag alive.
         if (!_preserveMoveOnRender) CancelEventMove();
         _showingPreferences = false;
+        BeginSyncStateRender(); // this render shows the latest data: clear the pending note
         if (_editorSizeHandler is not null)
         {
             _body.SizeChanged -= _editorSizeHandler;
@@ -465,6 +512,8 @@ public sealed class CalendarWindow : Window
         var first = viewport.FirstSunday;
         var events = _store.Events.Where(e => !e.Deleted && (e.LocalOnly || _preferences.IsVisible(e.CalendarId)))
             .Concat(_holidayFeeds.Events.Where(e => _preferences.IsVisible(e.CalendarId))).ToArray();
+        // Local repeating events become one bar per occurrence in the rendered range.
+        events = ExpandRecurringForDisplay(events, first, first.AddDays(viewport.WeekCount * 7)).ToArray();
         for (var w = 0; w < viewport.WeekCount; w++)
         {
             var weekStart = first.AddDays(w * 7);
@@ -513,7 +562,7 @@ public sealed class CalendarWindow : Window
             }
             foreach (var bar in bars)
             {
-                var appearance = _eventAppearance.Get(bar.Event.Id);
+                var appearance = AppearanceFor(bar.Event);
                 var brush = ParseColor(appearance.BackgroundColor ??
                     _preferences.ColorFor(bar.Event.CalendarId));
                 var fontColor = appearance.TextColor is { } customText
@@ -522,9 +571,11 @@ public sealed class CalendarWindow : Window
                 {
                     CornerRadius = new CornerRadius(3), Margin = new Thickness(2, 1, 2, 1),
                     Background = new SolidColorBrush(brush), Cursor = Cursors.Hand,
-                    ToolTip = $"{bar.Event.Title}\n{bar.Event.Date:yyyy-MM-dd} ~ {bar.Event.EffectiveEndDate:yyyy-MM-dd}"
+                    ToolTip = DescribeEventForTooltip(bar.Event)
                 };
-                var name = (bar.Event.Conflict ? "⚠ " : "") + bar.Event.Title;
+                // ⚠ conflict · ⇡ waiting for upload to Google · ↻ recurring
+                var name = CalendarEventStatusText.BarPrefix(bar.Event, _renderGoogleConnected) + bar.Event.Title;
+                if (IsRecurringForDisplay(bar.Event)) name = "↻ " + name;
                 if (bar.Event.StartAt is { } time) name = time.ToLocalTime().ToString("HH:mm") + " " + name;
                 line.Child = new TextBlock { Text = name, Foreground = new SolidColorBrush(fontColor), FontSize = eventFontSize,
                     TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(4, 0, 3, 0) };
@@ -546,6 +597,8 @@ public sealed class CalendarWindow : Window
                 if (bar.Event.Conflict)
                 {
                     menu.Items.Add(new Separator());
+                    if (!string.IsNullOrWhiteSpace(bar.Event.SyncError))
+                        menu.Items.Add(new MenuItem { Header = bar.Event.SyncError, IsEnabled = false });
                     if (bar.Event.RemoteId is not null && !bar.Event.RemoteCreatePending)
                     {
                         var restore = new MenuItem { Header = "Google 원격 버전으로 복원 (로컬 변경 취소)" };
@@ -563,6 +616,7 @@ public sealed class CalendarWindow : Window
                                 _store.CommitEventChange(bar.Event.Id, staged =>
                                 {
                                     staged.Conflict = false;
+                                    staged.SyncError = null;
                                     return true;
                                 });
                                 SetStatus("동기화 버튼으로 다시 업로드하세요."); RenderMonth();
@@ -670,7 +724,7 @@ public sealed class CalendarWindow : Window
 
     private void ChangeEventColor(CalendarEvent ev, bool background, string? selected)
     {
-        var style = _eventAppearance.Get(ev.Id);
+        var style = AppearanceFor(ev);
         SaveEventAppearance(ev,
             background ? selected : style.BackgroundColor,
             background ? style.TextColor : selected);
@@ -697,7 +751,12 @@ public sealed class CalendarWindow : Window
         if (_editing || _showingPreferences || IsSynchronizing || _store.IsReadOnly || _preferences.IsReadOnly)
         { reason = "편집·동기화 중이거나 캘린더 데이터가 읽기 전용입니다."; return false; }
         if (ev.Deleted || ev.RemoteReadOnly)
-        { reason = "이 일정은 읽기 전용이므로 이동할 수 없습니다."; return false; }
+        {
+            // Read-only Google events say why (no write access, another organizer's series, ...).
+            reason = ev.Deleted ? "이 일정은 읽기 전용이므로 이동할 수 없습니다." : ReadOnlyEditMessage(ev);
+            return false;
+        }
+        if (!CanRelocateRecurring(ev, out reason)) return false;
         if (ev.LocalOnly) return true;
         var sources = _preferences.Data.Catalog;
         if (sources.Count == 0)
@@ -744,7 +803,7 @@ public sealed class CalendarWindow : Window
             StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 3, 2 },
             Fill = Brushes.Transparent, IsHitTestVisible = false
         };
-        var eventStyle = _eventAppearance.Get(ev.Id);
+        var eventStyle = AppearanceFor(ev);
         var color = ParseColor(eventStyle.BackgroundColor ?? _preferences.ColorFor(ev.CalendarId));
         var ghostTextColor = eventStyle.TextColor is { } customText
             ? ParseColor(customText) : Colors.White;
@@ -1059,7 +1118,9 @@ public sealed class CalendarWindow : Window
             _store.UpsertBatch(CalendarEventMovePolicy.CreateDraft(ev, date.Value), ev);
             ProblemReportService.Reset("calendar-save");
             RenderMonth();
-            SetStatus($"일정 이동 완료: {date.Value:yyyy.MM.dd} · Google 동기화 대기");
+            var moveSyncNote = ev.LocalOnly ? "로컬 전용 일정"
+                : DescribeUploadAfterLocalChange(true, "Google 동기화 대기");
+            SetStatus($"일정 이동 완료: {date.Value:yyyy.MM.dd} · {moveSyncNote}");
         }
         catch (Exception ex)
         {
@@ -1085,6 +1146,7 @@ public sealed class CalendarWindow : Window
             _sourceBar.ToolTip = _savedBarTooltip;
         }
         if (_moveLayer is not null) _body.Children.Remove(_moveLayer);
+        if (_idleRenderPending) ScheduleIdleRender(); // a sync finished during the drag
         _moveLayer = null;
         _moveGhost = null;
         _moveTargetHighlights.Clear();
@@ -1119,23 +1181,19 @@ public sealed class CalendarWindow : Window
             (byte)Math.Min(255, baseColor.B + 74));
         // Avoid Window.Opacity entirely: the native placement pipeline controls
         // initial visibility, and changing Window.Opacity on focus can flicker.
-        double active = double.IsFinite(_settings.CalendarOpacity)
-            ? Math.Clamp(_settings.CalendarOpacity, 0.35, 1) : 0.86;
-        double idle = double.IsFinite(_settings.CalendarIdleOpacity)
-            ? Math.Clamp(_settings.CalendarIdleOpacity, 0.15, 1) : 0.38;
+        // The window stays at CalendarOpacityPolicy.WindowOpacity (fully opaque), so the
+        // slider values below are the final background opacity over their whole range.
         // Keyboard focus alone must not keep the calendar opaque: after a click the window stays
         // active until another window is chosen, so the chameleon fade would never return. Like
         // the groups, it follows the pointer, plus editing, the settings panel, an event drag and
         // an open event menu (that menu can extend outside the calendar).
         bool full = !_settings.CalendarChameleonEnabled || _editing || _showingPreferences
             || _isMoving || _openEventMenus > 0 || DesktopPointerHover.IsActuallyOver(this);
-        double activeBackground = double.IsFinite(_settings.CalendarActiveBackgroundOpacity)
-            ? Math.Clamp(_settings.CalendarActiveBackgroundOpacity, 0.15, 1) : 0.86;
-        double opacity = full ? Math.Clamp(activeBackground / active, 0.15, 1)
-            : Math.Clamp(idle / active, 0.15, 1);
+        double opacity = CalendarOpacityPolicy.BackgroundOpacity(full,
+            _settings.CalendarActiveBackgroundOpacity, _settings.CalendarIdleOpacity);
         _frameBackground.Opacity = opacity;
         _dayBackground.Opacity = opacity;
-        _todayBackground.Opacity = Math.Max(opacity, 0.7);
+        _todayBackground.Opacity = CalendarOpacityPolicy.TodayBackgroundOpacity(opacity);
     }
 
     private void StretchWeekRowsToViewport()
@@ -1173,6 +1231,10 @@ public sealed class CalendarWindow : Window
             {
                 staged.Dirty = false;
                 staged.Conflict = false;
+                staged.SyncError = null;
+                // A discarded "모든 반복 일정" change must not be sent later.
+                staged.SeriesEditPending = false;
+                staged.SeriesBaseStartAt = null;
                 return true;
             });
             SetStatus("복원 대기: 동기화를 실행하면 Google 버전을 다시 가져옵니다.");
@@ -1199,13 +1261,18 @@ public sealed class CalendarWindow : Window
         if (_store.IsReadOnly || _preferences.IsReadOnly) { SetStatus("캘린더 데이터가 읽기 전용 상태입니다."); return; }
         if (existing?.RemoteReadOnly == true)
         {
-            SetStatus(KoreanHolidayCalendars.Contains(existing.CalendarId)
-                ? "기본 제공 공휴일 캘린더는 읽기 전용입니다. 설정에서 표시 여부를 변경할 수 있습니다."
-                : "Google에서 편집이 제한된 일정입니다.");
+            // Holiday feeds, calendars without write access and recurring copies
+            // owned by another organizer each get their own explanation.
+            SetStatus(ReadOnlyEditMessage(existing));
             return;
         }
         if (_editing) return;
         if (IsSynchronizing) { SetStatus("동기화가 완료된 후 일정을 수정할 수 있습니다."); return; }
+        // Repeating events: a local series occurrence (virtual clone) or a Google instance.
+        var occurrence = ResolveOccurrence(existing);
+        var isGoogleInstance = occurrence is null && existing?.IsRecurringInstance == true;
+        var hasSeriesScope = occurrence is not null || isGoogleInstance;
+        var seriesMasterLinked = occurrence is not null && !string.IsNullOrEmpty(occurrence.Master.RemoteId);
         _editing = true;
         _showingPreferences = false;
         // Float a compact editor above only the right side; leave the date grid
@@ -1235,6 +1302,18 @@ public sealed class CalendarWindow : Window
         ApplyCalendarAppearance();
         panel.Children.Add(new TextBlock { Text = existing is null ? "새 일정 (한 줄당 하나의 일정)" : "일정 수정 (추가 줄은 별도 일정)",
             Foreground = TextLight, FontSize = 14, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 8) });
+        CalendarSeriesScopeSelector? scope = null;
+        if (hasSeriesScope)
+        {
+            scope = new CalendarSeriesScopeSelector(TextLight,
+                isGoogleInstance ? "같은 반복의 모든 일정 제목·시간이 바뀝니다 (날짜는 유지)." : "같은 반복의 모든 일정이 바뀝니다.",
+                forceAll: existing!.SeriesEditPending || seriesMasterLinked,
+                forcedReason: existing.SeriesEditPending ? "모든 반복 일정 변경이 아직 동기화되지 않았습니다."
+                    : seriesMasterLinked ? "Google에 올리는 중인 반복 일정입니다." : null,
+                allBlockedReason: isGoogleInstance && existing.Dirty && !existing.SeriesEditPending
+                    ? "이 일정만 변경한 내용이 아직 동기화되지 않았습니다. 동기화한 뒤 모든 반복 일정을 바꾸세요." : null);
+            panel.Children.Add(scope.Root);
+        }
         var input = new TextBox { Text = existing?.Title ?? "", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MinHeight = 70, MaxHeight = 140,
             ToolTip = "여러 줄을 입력하면 한 줄마다 독립적인 일정이 생성됩니다. Ctrl+Enter: 저장" };
@@ -1305,6 +1384,49 @@ public sealed class CalendarWindow : Window
             if (timedEndDate.HasValue && endPicker.SelectedDate == timedEndDate)
                 endPicker.SelectedDate = allDayEndDate;
         };
+        // Changing the start keeps the event length; an overnight end is explained, not rejected.
+        var endHint = new TextBlock { Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0), Visibility = Visibility.Collapsed };
+        panel.Children.Add(endHint);
+        var timeLink = new CalendarEditorTimeLink(useDate, startPicker, endPicker, useTime, startTime, endTime,
+            clickedDate.Date, endHint, SetStatus);
+        // Repeat rule for new events, local events and a whole local series.
+        // Google instances keep the rule Google owns.
+        CalendarRecurrenceEditor? recurrenceEditor = null;
+        if (!isGoogleInstance && (existing is null || occurrence is not null || string.IsNullOrEmpty(existing.RemoteId)))
+        {
+            CalendarRecurrenceRule.TryParse(occurrence?.Master.Recurrence ?? existing?.Recurrence, out var initialRule);
+            var repeatEditor = new CalendarRecurrenceEditor(initialRule, timeLink.StartDate, TextLight);
+            panel.Children.Add(repeatEditor.Root);
+            timeLink.StartDateChanged += date => repeatEditor.SyncStartDate(date);
+            recurrenceEditor = repeatEditor;
+        }
+        void ApplySeriesScope()
+        {
+            var wholeSeries = scope?.AllSelected == true;
+            if (isGoogleInstance)
+            {
+                // A Google series change keeps the dates; only title and time of day change.
+                useDate.IsEnabled = !wholeSeries;
+                useTime.IsEnabled = !wholeSeries;
+                startPicker.IsEnabled = !wholeSeries && useDate.IsChecked == true;
+                endPicker.IsEnabled = !wholeSeries && useDate.IsChecked == true;
+            }
+            if (recurrenceEditor is not null)
+                recurrenceEditor.Root.IsEnabled = occurrence is null || (wholeSeries && !seriesMasterLinked);
+            // Google keeps its own EXDATEs: an uploaded series keeps its dates (time/title only).
+            if (seriesMasterLinked)
+            {
+                useDate.IsEnabled = false;
+                startPicker.IsEnabled = false;
+            }
+        }
+        if (scope is not null)
+        {
+            scope.ThisOnly.Checked += (_, _) => ApplySeriesScope();
+            scope.All.Checked += (_, _) => ApplySeriesScope();
+        }
+        ApplySeriesScope();
         panel.Children.Add(new TextBlock { Text = "저장할 Google 캘린더", Foreground = TextLight, Margin = new Thickness(0, 9, 0, 4) });
         var writable = _preferences.Data.Catalog.Where(x => x.CanWrite).ToList();
         // Offline editing remains possible before the first Google connection.
@@ -1370,15 +1492,34 @@ public sealed class CalendarWindow : Window
                 {
                     // The picker supplies a validated 24-hour TimeSpan, never free-form text.
                     startAt = AtLocal(from, startTime.SelectedTime);
-                    endAt = AtLocal(to, endTime.SelectedTime);
+                    // An end earlier than the start on the same day ends on the next day (23:00 ~ 01:00).
+                    var resolvedEnd = CalendarEditorTimePolicy.ResolveTimedEnd(from, startTime.SelectedTime, to, endTime.SelectedTime);
+                    to = resolvedEnd.Date;
+                    endAt = AtLocal(to, resolvedEnd.TimeOfDay);
                 }
-                var count = _store.UpsertBatch(new CalendarEventDraft
+                // The repeat section is read only when it is editable; otherwise the stored rule is kept.
+                var recurrence = recurrenceEditor is not null && recurrenceEditor.Root.IsEnabled
+                    ? recurrenceEditor.BuildRule()
+                    : occurrence?.Master.Recurrence ?? existing?.Recurrence;
+                var draft = new CalendarEventDraft
                 {
                     StartDate = from, EndDate = to, StartAt = startAt, EndAt = endAt,
                     CalendarId = existing is not null && existing.RemoteId is not null
                         && (existing.CalendarId is null or "primary")
-                        ? "primary" : selectedTarget, LocalOnly = saveLocalOnly, Text = input.Text
-                }, existing);
+                        ? "primary" : selectedTarget, LocalOnly = saveLocalOnly, Text = input.Text,
+                    Recurrence = recurrence
+                };
+                var recurringStatus = hasSeriesScope
+                    ? SaveRecurringEdit(draft, existing!, occurrence, scope?.AllSelected == true) : null;
+                if (recurringStatus is not null)
+                {
+                    ProblemReportService.Reset("calendar-save");
+                    _editing = false;
+                    RenderMonth();
+                    SetStatus(recurringStatus);
+                    return;
+                }
+                var count = _store.UpsertBatch(draft, existing);
                 ProblemReportService.Reset("calendar-save");
                 // The event is already durable. Failure to remember the last
                 // target must not incorrectly report that the event was lost.
@@ -1390,9 +1531,10 @@ public sealed class CalendarWindow : Window
                 }
                 _editing = false;
                 RenderMonth();
+                var saveSyncNote = DescribeUploadAfterLocalChange(!saveLocalOnly, "동기화를 눌러 Google에 반영");
                 SetStatus(saveLocalOnly ? $"로컬 전용 일정 {count}건 저장됨 · Google에 업로드하지 않음"
                     : preferenceWarning is null
-                        ? $"로컬 일정 {count}건 저장 · {writable.First(x => x.Id == selectedTarget).Name} · 동기화를 눌러 Google에 반영"
+                        ? $"로컬 일정 {count}건 저장 · {writable.First(x => x.Id == selectedTarget).Name} · {saveSyncNote}"
                         : $"로컬 일정 {count}건 저장됨 · 기본 캘린더 설정은 저장 실패: {preferenceWarning}");
             }
             catch (Exception ex)
@@ -1419,10 +1561,22 @@ public sealed class CalendarWindow : Window
                 var googleNote = existing.RemoteId is not null
                     ? "\n\nGoogle 캘린더와 연결된 일정이라 다음 동기화 때 Google 캘린더에서도 삭제됩니다."
                     : "";
-                if (MessageBox.Show(this, $"'{title}' 일정을 삭제하시겠습니까?{googleNote}\n\n삭제한 일정은 되돌릴 수 없습니다.",
+                // Repeating events follow the chosen scope: this occurrence only or the whole series.
+                var deleteWholeSeries = scope?.AllSelected == true;
+                var question = RecurringDeleteQuestion(title, hasSeriesScope, deleteWholeSeries);
+                if (MessageBox.Show(this, $"{question}{googleNote}\n\n삭제한 일정은 되돌릴 수 없습니다.",
                         "일정 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
                     return;
-                try { _store.Delete(existing); ProblemReportService.Reset("calendar-save"); _editing = false; SetStatus("일정 삭제 완료"); RenderMonth(); }
+                if (hasSeriesScope && DeleteRecurring(existing, occurrence, deleteWholeSeries)) return;
+                var deletesOnGoogle = existing.RemoteId is not null;
+                try
+                {
+                    _store.Delete(existing); ProblemReportService.Reset("calendar-save"); _editing = false;
+                    SetStatus(deletesOnGoogle
+                        ? "일정 삭제 완료 · " + DescribeUploadAfterLocalChange(true, "다음 동기화 때 Google에서도 삭제")
+                        : "일정 삭제 완료");
+                    RenderMonth();
+                }
                 catch (Exception ex)
                 {
                     SetStatus("삭제 오류: " + ex.Message);
@@ -1440,7 +1594,7 @@ public sealed class CalendarWindow : Window
         // handles Esc itself) and asks before discarding edits. Ctrl+Enter saves from any field.
         string EditorSignature() => string.Join("\u001F", input.Text, useDate.IsChecked, startPicker.SelectedDate,
             endPicker.SelectedDate, useTime.IsChecked, startTime.SelectedTime, endTime.SelectedTime,
-            targets.SelectedValue, localOnly.IsChecked);
+            targets.SelectedValue, localOnly.IsChecked, scope?.AllSelected, recurrenceEditor?.Signature());
         var initialSignature = EditorSignature();
         void CancelFromKeyboard()
         {
@@ -1649,6 +1803,7 @@ public sealed class CalendarWindow : Window
             Margin = new Thickness(0, 2, 0, 4), Padding = new Thickness(9),
             Child = CreateHolidaySettingsSection()
         });
+        AddLocalEventBackupSection(panel);
         AddPreferencesSectionTitle(panel, "Google 캘린더");
         panel.Children.Add(new TextBlock
         {
@@ -1671,13 +1826,16 @@ public sealed class CalendarWindow : Window
                 Foreground = Brushes.Khaki, TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 5)
             });
-        var connect = MakeButton(_connectAttempt is not null ? "연결 취소" : _connectHadFailure
+        // After the saved sign-in expired, one click opens the browser login directly.
+        var signInExpired = GoogleNeedsReauthorization?.Invoke() == true;
+        var connect = MakeButton(_connectAttempt is not null ? "연결 취소" : _connectHadFailure || signInExpired
             ? "Google 계정 다시 연결 / 캘린더 재시도" : "Google 계정 연결 / 캘린더 불러오기");
         connect.ToolTip = "실패 시 다시 클릭하면 브라우저에서 Google OAuth 로그인을 새로 시도합니다.";
         panel.Children.Add(connect);
         var connectionHint = new TextBlock
         {
             Text = _connectAttempt is not null ? "연결을 진행 중입니다. 취소 버튼을 누를 수 있습니다."
+                : signInExpired ? "Google 로그인이 만료되었습니다. 이 버튼을 누르면 브라우저에서 바로 다시 로그인합니다."
                 : _connectHadFailure ? "이전 연결에 실패했습니다. 다시 연결을 누르면 브라우저 인증을 다시 시작합니다."
                 : "연결이 실패하면 '다시 연결'을 누르세요. 진행 중에는 취소할 수 있습니다.",
             Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap,
@@ -1701,7 +1859,7 @@ public sealed class CalendarWindow : Window
             }
             using var attempt = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             _connectAttempt = attempt;
-            var forceReauthorize = _connectHadFailure;
+            var forceReauthorize = _connectHadFailure || GoogleNeedsReauthorization?.Invoke() == true;
             connect.Content = "연결 취소";
             connectionHint.Text = "Google 로그인 또는 캘린더 목록을 불러오는 중입니다. 3분이 지나면 종료됩니다.";
             SetStatus("Google 계정 연결 중... 실패하면 '다시 연결' 버튼이 표시됩니다.");
@@ -1749,6 +1907,7 @@ public sealed class CalendarWindow : Window
                 }
             }
         };
+        AddGoogleDisconnectControls(panel);
         panel.Children.Add(new TextBlock
         {
             Text = "자동 동기화 간격",

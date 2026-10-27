@@ -31,6 +31,14 @@ internal sealed class VerifiedCredentialCheckpoint<T> where T : class
         IsPending = false;
     }
 
+    // Explicit Google disconnect: forget both the candidate and the verified credential.
+    public void Clear()
+    {
+        Active = null;
+        _lastVerified = null;
+        IsPending = false;
+    }
+
     public void PersistVerified(Action<T> persist)
     {
         ArgumentNullException.ThrowIfNull(persist);

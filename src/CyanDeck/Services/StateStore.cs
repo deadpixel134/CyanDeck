@@ -16,6 +16,18 @@ public sealed class StateStore
 
     public bool EncounteredUnsupportedState { get; private set; }
     public int UnsupportedStateVersion { get; private set; }
+    // v8.0.44: where the last Load() found the layout. Unreadable means layout files exist but
+    // none could be read: callers must not create/save a default layout over them.
+    public LayoutLoadOutcome LastLoadOutcome { get; private set; } = LayoutLoadOutcome.NoLayout;
+    public bool EncounteredUnreadableState => LastLoadOutcome == LayoutLoadOutcome.Unreadable;
+    public bool LoadedFromBackup => LastLoadOutcome is LayoutLoadOutcome.Backup or LayoutLoadOutcome.Staged;
+    // Folder that keeps copies of the unreadable files (null when nothing could be copied).
+    public string? UnreadableArchiveFolder { get; private set; }
+    private bool _lastTryLoadIoFailure;
+    // Auto-save prepares its payload on the UI thread and commits it in the background. A
+    // prepared payload older than an already committed one must never overwrite it.
+    private long _saveSequence;
+    private long _committedSequence;
 
     public StateStore()
     {
@@ -30,12 +42,16 @@ public sealed class StateStore
         };
     }
 
-    public DeckState Load()
+    public DeckState Load() => Load(archiveUnreadable: true);
+
+    public DeckState Load(bool archiveUnreadable)
     {
         lock (_gate)
         {
             EncounteredUnsupportedState = false;
             UnsupportedStateVersion = 0;
+            LastLoadOutcome = LayoutLoadOutcome.NoLayout;
+            UnreadableArchiveFolder = null;
             // A sharing violation may leave a fully flushed, newer layout.json.tmp.
             // Recover it first on the next launch; if incomplete or invalid, keep
             // the existing primary/backup recovery order without deleting either.
@@ -45,14 +61,125 @@ public sealed class StateStore
             {
                 state = TryLoad(stagedPath);
                 if (state is not null)
+                {
+                    LastLoadOutcome = LayoutLoadOutcome.StagedNewer;
                     DiagnosticsLog.Warn("Recovered newer staged layout after interrupted/locked save; primary layout and backup retained.");
+                }
             }
-            state ??= TryLoad(_path, archiveUnsupported: true)
-                ?? TryLoad(_backupPath, archiveUnsupported: true)
-                ?? TryLoad(stagedPath, archiveUnsupported: true)
-                ?? new DeckState();
+            // v8.0.44: a backup/sync/antivirus lock is often brief, so retry a locked file a
+            // few times before falling back to an older copy.
+            if (state is null && (state = TryLoadWithRetry(_path)) is not null)
+                LastLoadOutcome = LayoutLoadOutcome.Primary;
+            if (state is null && (state = TryLoadWithRetry(_backupPath)) is not null)
+                LastLoadOutcome = LayoutLoadOutcome.Backup;
+            if (state is null && (state = TryLoad(stagedPath, archiveUnsupported: true)) is not null)
+                LastLoadOutcome = LayoutLoadOutcome.Staged;
+            if (state is null)
+            {
+                if (EncounteredUnsupportedState)
+                    LastLoadOutcome = LayoutLoadOutcome.UnsupportedFuture;
+                else if (File.Exists(_path) || File.Exists(_backupPath) || File.Exists(stagedPath))
+                {
+                    // Files exist but none could be read: keep copies, never overwrite silently.
+                    LastLoadOutcome = LayoutLoadOutcome.Unreadable;
+                    if (archiveUnreadable) ArchiveUnreadableLayoutFiles(includeBackup: true);
+                    DiagnosticsLog.Warn("Layout files exist but could not be read; starting protected without creating or saving a default layout.");
+                }
+                state = new DeckState();
+            }
+            else if (LoadedFromBackup && File.Exists(_path))
+            {
+                // The primary could not be read: keep a copy before the next save rotates it away.
+                if (archiveUnreadable) ArchiveUnreadableLayoutFiles(includeBackup: LastLoadOutcome == LayoutLoadOutcome.Staged);
+                DiagnosticsLog.Warn($"Layout loaded from {LastLoadOutcome} copy; recent changes may be missing.");
+            }
             Normalize(state);
             return state;
+        }
+    }
+
+    private DeckState? TryLoadWithRetry(string path)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            _lastTryLoadIoFailure = false;
+            var state = TryLoad(path, archiveUnsupported: true);
+            if (state is not null || !_lastTryLoadIoFailure || attempt >= 3) return state;
+            System.Threading.Thread.Sleep(200 * attempt);
+        }
+    }
+
+    // Copies (never moves) the layout files that could not be read into
+    // unreadable\yyyyMMdd-HHmmss so the next save cannot rotate them away.
+    private void ArchiveUnreadableLayoutFiles(bool includeBackup)
+    {
+        try
+        {
+            var folder = Path.Combine(_dir, "unreadable", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+            Directory.CreateDirectory(folder);
+            var copied = 0;
+            var sources = new List<string> { _path, _path + ".tmp", Path.Combine(_dir, "startup-baseline.json") };
+            if (includeBackup) sources.Insert(1, _backupPath);
+            foreach (var source in sources)
+            {
+                try
+                {
+                    if (!File.Exists(source)) continue;
+                    File.Copy(source, Path.Combine(folder, Path.GetFileName(source)), overwrite: true);
+                    copied++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    DiagnosticsLog.Warn($"Could not keep a copy of unreadable {Path.GetFileName(source)} (HRESULT 0x{ex.HResult:X8}).");
+                }
+            }
+            UnreadableArchiveFolder = copied > 0 ? folder : null;
+            if (copied == 0)
+            {
+                try { Directory.Delete(folder); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            DiagnosticsLog.Error("Failed to archive unreadable layout files", ex);
+        }
+    }
+
+    /// <summary>A normalized empty state, identical to a first start without layout.json.</summary>
+    public DeckState CreateDefaultState()
+    {
+        var state = new DeckState();
+        Normalize(state);
+        return state;
+    }
+
+    /// <summary>
+    /// Newest readable recovery source that still contains groups: a recovery checkpoint or the
+    /// previous session's start baseline. Used when layout.json and its backup are unreadable.
+    /// </summary>
+    public string? FindLatestRecoveryCandidate()
+    {
+        lock (_gate)
+        {
+            try
+            {
+                var candidates = new List<FileInfo>();
+                var recoveryDir = Path.Combine(_dir, "recovery");
+                if (Directory.Exists(recoveryDir)) candidates.AddRange(new DirectoryInfo(recoveryDir).GetFiles("*.json"));
+                var baseline = new FileInfo(Path.Combine(_dir, "startup-baseline.json"));
+                if (baseline.Exists) candidates.Add(baseline);
+                foreach (var file in candidates.Where(f => (f.Attributes & FileAttributes.ReparsePoint) == 0)
+                             .OrderByDescending(f => f.LastWriteTimeUtc))
+                {
+                    var state = TryLoad(file.FullName);
+                    if (state?.Fences is { Count: > 0 }) return file.FullName;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DiagnosticsLog.Warn($"Recovery candidate search failed (HRESULT 0x{ex.HResult:X8}).");
+            }
+            return null;
         }
     }
 
@@ -94,6 +221,7 @@ public sealed class StateStore
         }
         catch (Exception ex)
         {
+            _lastTryLoadIoFailure = ex is IOException or UnauthorizedAccessException;
             DiagnosticsLog.Error($"Failed to load state from {path}", ex);
             return null;
         }
@@ -375,8 +503,55 @@ public sealed class StateStore
         {
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(path, JsonSerializer.Serialize(state, _json));
+            // v8.0.44: never write over an existing backup (USB/cloud folder) directly. Write a
+            // temporary file next to it, read it back, then swap it in.
+            var payload = JsonSerializer.Serialize(state, _json);
+            var temp = path + ".cyandeck-" + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 32 * 1024, FileOptions.WriteThrough))
+                using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
+                {
+                    writer.Write(payload);
+                    writer.Flush();
+                    stream.Flush(flushToDisk: true);
+                }
+                VerifyExportedBackup(temp, state);
+                if (File.Exists(path))
+                {
+                    if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                        throw new IOException("백업 파일 위치가 연결 파일이라 덮어쓰지 않았습니다. 다른 위치를 선택하세요.");
+                    try
+                    {
+                        File.Replace(temp, path, null, ignoreMetadataErrors: true);
+                    }
+                    catch (IOException ex) when (!IsTemporaryFileLock(ex) && File.Exists(temp))
+                    {
+                        // Some USB/network/cloud file systems cannot replace atomically. The new
+                        // copy has been verified, so overwriting is now the safe fallback.
+                        File.Copy(temp, path, overwrite: true);
+                    }
+                }
+                else File.Move(temp, path);
+            }
+            finally
+            {
+                try { if (File.Exists(temp)) File.Delete(temp); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
         }
+    }
+
+    // Reads an exported backup back and checks it is complete before it replaces anything.
+    private void VerifyExportedBackup(string path, DeckState expected)
+    {
+        var json = File.ReadAllText(path);
+        var version = ReadSchemaVersion(json);
+        var check = JsonSerializer.Deserialize<DeckState>(json, _json)
+            ?? throw new InvalidDataException("내보낸 백업을 다시 읽지 못했습니다.");
+        if (version != expected.Version || (check.Fences?.Count ?? -1) != expected.Fences.Count ||
+            (check.Snapshots?.Count ?? -1) != expected.Snapshots.Count)
+            throw new InvalidDataException("내보낸 백업 내용이 현재 레이아웃과 일치하지 않아 저장하지 않았습니다.");
     }
 
     // Win32 ERROR_SHARING_VIOLATION (32) and ERROR_LOCK_VIOLATION (33).
@@ -388,11 +563,42 @@ public sealed class StateStore
     {
         lock (_gate)
         {
+            var sequence = Interlocked.Increment(ref _saveSequence);
+            CommitLayoutPayload(() => JsonSerializer.Serialize(state, _json));
+            _committedSequence = Math.Max(_committedSequence, sequence);
+        }
+    }
+
+    /// <summary>
+    /// v8.0.44 auto-save, step 1 (UI thread): serialize the live state. Only this step touches
+    /// the in-memory model; the file work happens in <see cref="SavePrepared"/>.
+    /// </summary>
+    public PreparedLayoutSave PrepareSave(DeckState state)
+        => new(JsonSerializer.Serialize(state, _json), Interlocked.Increment(ref _saveSequence));
+
+    /// <summary>
+    /// Step 2 (background thread): write, flush, replace and retry. Returns false when a newer
+    /// payload was already committed (for example by a forced save), so nothing was written.
+    /// </summary>
+    public bool SavePrepared(PreparedLayoutSave prepared)
+    {
+        lock (_gate)
+        {
+            if (prepared.Sequence <= _committedSequence) return false;
+            CommitLayoutPayload(() => prepared.Payload);
+            _committedSequence = prepared.Sequence;
+            return true;
+        }
+    }
+
+    private void CommitLayoutPayload(Func<string> createPayload)
+    {
+        {
             try
             {
                 Directory.CreateDirectory(_dir);
                 var tmp = _path + ".tmp";
-                var payload = JsonSerializer.Serialize(state, _json);
+                var payload = createPayload();
                 using (var stream = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 32 * 1024, FileOptions.WriteThrough))
                 using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
                 {
@@ -598,7 +804,7 @@ public sealed class StateStore
                     Directory.CreateDirectory(recoveryDir);
                     recoveryPath = Path.Combine(recoveryDir, $"unclean-session-{DateTime.Now:yyyyMMdd-HHmmss}.json");
                     File.Copy(baseline, recoveryPath, true);
-                    PruneRecoveryFiles(recoveryDir, 12);
+                    PruneRecoveryFiles(recoveryDir);
                 }
                 File.WriteAllText(baseline, JsonSerializer.Serialize(state, _json));
                 File.WriteAllText(marker, $"pid={Environment.ProcessId};started={DateTime.UtcNow:O}");
@@ -649,17 +855,24 @@ public sealed class StateStore
             if (string.IsNullOrWhiteSpace(safeReason)) safeReason = "checkpoint";
             var path = Path.Combine(recoveryDir, $"{safeReason}-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             File.WriteAllText(path, JsonSerializer.Serialize(state, _json));
-            PruneRecoveryFiles(recoveryDir, 12);
+            PruneRecoveryFiles(recoveryDir);
             return path;
         }
     }
 
-    private static void PruneRecoveryFiles(string recoveryDir, int keep)
+    // v8.0.44: retention is per checkpoint kind (RecoveryCheckpointRetentionPolicy), so frequent
+    // automatic monitor checkpoints can no longer evict pre-update/pre-import/reset ones.
+    private static void PruneRecoveryFiles(string recoveryDir)
     {
         try
         {
-            foreach (var file in new DirectoryInfo(recoveryDir).GetFiles("*.json").OrderByDescending(f => f.LastWriteTimeUtc).Skip(Math.Max(1, keep)))
-                file.Delete();
+            var files = new DirectoryInfo(recoveryDir).GetFiles("*.json")
+                .Where(f => (f.Attributes & FileAttributes.ReparsePoint) == 0)
+                .ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+            var delete = RecoveryCheckpointRetentionPolicy.SelectForDeletion(
+                files.Values.Select(f => (f.Name, f.LastWriteTimeUtc)), DateTime.UtcNow);
+            foreach (var name in delete)
+                if (files.TryGetValue(name, out var file)) file.Delete();
         }
         catch { }
     }
@@ -667,3 +880,16 @@ public sealed class StateStore
     public string RecoveryFolder => Path.Combine(_dir, "recovery");
     public string SettingsFolder => _dir;
 }
+
+public enum LayoutLoadOutcome
+{
+    NoLayout,
+    Primary,
+    StagedNewer,
+    Backup,
+    Staged,
+    UnsupportedFuture,
+    Unreadable
+}
+
+public sealed record PreparedLayoutSave(string Payload, long Sequence);

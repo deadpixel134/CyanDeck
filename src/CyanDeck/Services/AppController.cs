@@ -148,13 +148,17 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _safeMode = true;
             DiagnosticsLog.Info($"Automatically entering Safe Mode because configuration schema v{_store.UnsupportedStateVersion} is newer than supported v{StateSchema.Current}.");
         }
+        // v8.0.44: unreadable layout files => protected read-only Safe Mode, no default layout.
+        EnterLayoutLoadProtectionIfUnreadable();
+        RegisterBackupRecoveryCommands();
         _icons.Configure(_state.Settings.IconCacheMaxEntries, _state.Settings.ShowFilePreviews);
-        if (_state.Fences.Count == 0) CreateDefaultLayout();
+        if (_state.Fences.Count == 0 && !_layoutUnreadableProtection) CreateDefaultLayout();
         // Upgrade existing Windows-icon groups in memory, leaving other groups untouched.
         // The normal state checkpoint persists this additive schema-v35 change.
         SynchronizeSystemGroupRecycleBin();
         ResetDesktopFirstSeenGate();
-        _uncleanRecoveryPath = _store.BeginSession(_state);
+        // Protected start keeps the previous session baseline as a recovery source.
+        _uncleanRecoveryPath = _layoutUnreadableProtection ? null : _store.BeginSession(_state);
         if (!string.IsNullOrWhiteSpace(_uncleanRecoveryPath))
         {
             DiagnosticsLog.Info($"Detected an unclean previous session; recovery checkpoint={_uncleanRecoveryPath}");
@@ -178,6 +182,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _activeMonitorSignature = MonitorConfigurationService.GetSignature();
         _lastStableMonitorCount = MonitorConfigurationService.CaptureMonitors().Count;
         _state.CurrentPage = Math.Clamp(_state.CurrentPage, 0, GetMaxPage());
+        // v8.0.44: backup-loaded / unclean-session notices and update storage housekeeping.
+        ScheduleStartupLayoutNotices();
+        StartUpdateStorageMaintenance();
 
         if (runtimePlan.IsSafeMode)
         {
@@ -186,9 +193,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             CreateTray();
             ScheduleAutomaticUpdateCheck();
             startupTimer.Stop();
-            DiagnosticsLog.Info($"CyanDeck SAFE MODE; state v{_state.Version}; startup={startupTimer.ElapsedMilliseconds}ms. Desktop hooks, shell parenting, native-icon changes, watchers, and global hotkeys are disabled.");
+            DiagnosticsLog.Info($"CyanDeck SAFE MODE; state v{_state.Version}; startup={startupTimer.ElapsedMilliseconds}ms. Desktop mouse hooks, shell parenting, native-icon changes, and watchers are disabled (CyanDeck never registers global hotkeys).");
             _ = TryApplyStartupQuickHideNormalizationAsync();
-            _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(OpenSettingsWindow));
+            if (_layoutUnreadableProtection)
+                _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(OfferUnreadableLayoutRecovery));
+            else
+                _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(OpenSettingsWindow));
             return;
         }
 
@@ -224,6 +234,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         StartDesktopTouchPageHost();
         StartDesktopFolderPortalDropHost();
         StartLooseDesktopIconHost();
+        StartRecycleBinStateMonitor();
         StartForegroundEventSource();
         StartPeekCommandSurfaces();
         CreateTray();
@@ -619,11 +630,24 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void ReorganizeDesktop(bool forceRules = false)
     {
+        // A rename seen moments ago may still be a program's temp-file save in progress.
+        if (DeferReconcileForUnsettledRenames(forceRules)) return;
         var useRules = forceRules || _state.Settings.KeepRulesUpdatedAtAllTimes;
-        var roots = DesktopDirectoryService.GetRoots();
-        var paths = RuleEngine.EnumerateDesktopItems()
-            .Select(DesktopDirectoryService.Normalize)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A watched desktop folder that is briefly unreachable (network/USB/other drive after
+        // resume) is not "deleted": skip the pass instead of dropping every arranged icon.
+        var desktopSnapshot = CaptureDesktopReconcileSnapshot();
+        if (DesktopItemPreservationPolicy.ShouldSkipReconcile(forceRules,
+                _desktopRootShrinkGate.IsActivelyPending(DateTime.UtcNow), _desktopWatchers.GetRoots(), desktopSnapshot.Roots))
+        {
+            DiagnosticsLog.Info("Desktop reconcile skipped: a watched desktop folder is temporarily unavailable");
+            RetryDesktopReconcileAfterSkip();
+            return;
+        }
+        // Renames seen by the watcher are applied only now, when the snapshot proves them real.
+        ApplyPendingGroupedRenames(desktopSnapshot);
+        // Only folders that were actually read in this pass may prove that an item is gone.
+        var roots = desktopSnapshot.ReadableRoots;
+        var paths = desktopSnapshot.Paths;
         var collectionTabs = _state.Fences.SelectMany(f => f.Tabs).Where(t => t.Kind == DeckTabKind.Collection).ToArray();
         var changed = false;
 
@@ -632,10 +656,14 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             .GroupBy(i => DesktopDirectoryService.Normalize(i.Path), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var stale in looseByPath.Keys.Where(path =>
+        var staleLoosePaths = looseByPath.Keys.Where(path =>
                      !paths.Contains(path)
+                     && CanJudgeDesktopItemMissing(path, desktopSnapshot)
                      && (!looseByPath[path].PinnedToDesktop
-                         || (!File.Exists(path) && !Directory.Exists(path)))).ToArray())
+                         || (!File.Exists(path) && !Directory.Exists(path)))).ToArray();
+        SaveCheckpointBeforeMassDesktopRemoval(
+            staleLoosePaths.Length + CountStaleGroupedDesktopReferences(collectionTabs, roots, paths));
+        foreach (var stale in staleLoosePaths)
         {
             _state.LooseDesktopItems.Remove(looseByPath[stale]);
             looseByPath.Remove(stale);
@@ -703,6 +731,19 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (looseByPath.TryGetValue(path, out var pinnedLoose) && pinnedLoose.PinnedToDesktop)
                 continue;
 
+            // An item the user placed (or any grouped item while continuous rule maintenance is
+            // off) stays in its tab with its position until an explicit rules run.
+            if (DesktopItemPreservationPolicy.KeepsExistingGroupPlacement(
+                    forceRules, useRules, matches.Length > 0, matches.Any(m => m.Item.UserPlaced)))
+            {
+                if (looseByPath.Remove(path, out var placedLoose))
+                {
+                    _state.LooseDesktopItems.Remove(placedLoose);
+                    changed = true;
+                }
+                continue;
+            }
+
             if (!forceRules && _state.Settings.UseDefaultDesktopPlacement)
             {
                 if (isNewlyObserved)
@@ -765,7 +806,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             // otherwise turning continuous maintenance off silently disables auto-group rules.
             var includeRulesForPath = useRules || isNewlyObserved;
             var desired = RuleEngine.PickTab(_state, path, includeRules: includeRulesForPath);
-            if (desired is null) continue;
+            if (desired is null)
+            {
+                // No category/"기타" tab is left (for example after a group or tab was removed):
+                // keep the file visible as a loose desktop icon instead of showing it nowhere.
+                if (matches.Length == 0) changed |= EnsureLooseDesktopReference(path, matches, looseByPath);
+                continue;
+            }
 
             if (matches.Length == 0)
             {
@@ -994,7 +1041,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
 
         var tab = RuleEngine.PickTab(_state, full);
-        if (tab is null) return;
+        if (tab is null)
+        {
+            KeepUnplaceableDesktopItemVisible(full, persist);
+            return;
+        }
         var looseItem = FindLooseDesktopItem(full);
         if (looseItem is not null)
         {
@@ -1030,6 +1081,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_peek || !_windows.Contains(source)) return;
         if (TryMoveFenceAcrossPageEdge(source)) return;
+        FitMovedFenceIntoDominantMonitor(source);
         if (source.Model.RolledUp) return;
         var sourceRect = new System.Windows.Rect(source.Left, source.Top, source.ActualWidth, source.ActualHeight);
         var center = new System.Windows.Point(sourceRect.Left + sourceRect.Width / 2, sourceRect.Top + sourceRect.Height / 2);
@@ -1232,27 +1284,19 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             var replace = System.Windows.MessageBox.Show($"기존 템플릿 '{existing.Name}'을(를) 바꾸시겠습니까?", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (replace != MessageBoxResult.Yes) return;
-            _state.Templates.Remove(existing);
         }
+        // Ask before the 50-template limit removes the oldest templates; nothing changes on "아니요".
+        if (!ConfirmTemplateLimitEviction(source, existing)) return;
+        if (existing is not null) _state.Templates.Remove(existing);
         _state.Templates.Insert(0, FenceFactory.CreateTemplate(source.Model, name));
         if (_state.Templates.Count > 50) _state.Templates.RemoveRange(50, _state.Templates.Count - 50);
         Persist();
         RebuildTrayMenu();
     }
 
+    // Placed at a free spot on the monitor under the pointer (see CreateFenceFromTemplateAt).
     private void CreateFenceFromTemplate(Guid templateId)
-    {
-        if (!EnsureManagedCapability("Layout.CreateDeleteGroups", "템플릿에서 그룹 만들기")) return;
-        var template = _state.Templates.FirstOrDefault(t => t.Id == templateId);
-        if (template is null) return;
-        var wa = SystemParameters.WorkArea;
-        var offset = (_state.Fences.Count % 8) * 18;
-        var fence = FenceFactory.CreateFromTemplate(template, wa.Left + 90 + offset, wa.Top + 90 + offset, _state.CurrentPage);
-        _state.Fences.Add(fence);
-        CreateWindow(fence);
-        Persist();
-        RebuildTrayMenu();
-    }
+        => CreateFenceFromTemplateAt(templateId, Forms.Cursor.Position, null, fromTray: false);
 
 
     private void ImportDroppedIntoFence(FenceWindow window, string path)
@@ -1268,21 +1312,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         Persist();
     }
 
+    // A visible free spot on the monitor under the pointer instead of a fixed primary-monitor corner.
     private void CreateNewFence()
     {
         if (!EnsureManagedCapability("Layout.CreateDeleteGroups", "새 그룹 만들기")) return;
-        var wa = SystemParameters.WorkArea;
-        var fence = new DeckFence
-        {
-            Title = "새 그룹",
-            X = wa.Left + 100 + _windows.Count * 18,
-            Y = wa.Top + 100 + _windows.Count * 18,
-            PageIndex = _state.CurrentPage,
-            Tabs = [new DeckTab { Title = "항목" }]
-        };
-        _state.Fences.Add(fence);
-        CreateWindow(fence);
-        Persist();
+        CreateNewFenceAt(Forms.Cursor.Position, null, _state.CurrentPage);
     }
 
     private void OnDeleteFence(FenceWindow window)
@@ -1293,8 +1327,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             System.Windows.MessageBox.Show("그룹은 최소 하나 이상 남아 있어야 합니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        var removedTabs = window.Model.Tabs.ToList();
+        var checkpointSaved = SaveRecoveryCheckpointBeforeRemoval("before-delete-group");
         RemoveFenceWindow(window);
+        var rehomed = RehomeDesktopItemsFromRemovedTabs(removedTabs);
         Persist();
+        NotifyRemovalRecoverable("그룹을 삭제했습니다.", rehomed, checkpointSaved);
     }
 
     private void RefreshTab(Guid tabId)
@@ -1612,8 +1650,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void StartDesktopDoubleClickHook()
     {
-        _desktopDoubleClick = new DesktopDoubleClickHook(_dispatcher);
-        _desktopDoubleClick.DoubleClicked += () => ToggleQuickHide(QuickHideInvocationSource.DesktopDoubleClick);
+        // The predicate runs on the hook thread: plain settings/flag reads only.
+        _desktopDoubleClick = new DesktopDoubleClickHook(_dispatcher, IsDesktopDoubleClickQuickHideActive);
+        _desktopDoubleClick.DoubleClicked += HandleDesktopDoubleClick;
         _desktopDoubleClick.Start();
     }
 
@@ -2192,6 +2231,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 _state.Settings.EnableChameleon
                     ? Math.Clamp(_state.Settings.ChameleonIdleOpacity, 0.15, 1d)
                     : 1d));
+        _looseDesktopHost.AutoPlacementObstacles = GetLooseAutoPlacementObstacles;
         RefreshLooseDesktopIconHost();
     }
 
@@ -2426,6 +2466,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
 
         item.PinnedToDesktop = false;
+        item.UserPlaced = true; // the user flicked it into this group
         item.PositionX = null;
         item.PositionY = null;
         if (!tab.Items.Any(i => i.Id == item.Id))
@@ -2449,6 +2490,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (tab is null) continue;
             _state.LooseDesktopItems.Remove(item);
             item.PinnedToDesktop = false;
+            item.UserPlaced = false;
             item.PositionX = null;
             item.PositionY = null;
             if (!tab.Items.Any(i => string.Equals(DesktopDirectoryService.Normalize(i.Path), DesktopDirectoryService.Normalize(item.Path), StringComparison.OrdinalIgnoreCase)))
@@ -2467,9 +2509,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void RefreshDesktopWatchers(bool force = false, bool reconcile = true)
     {
         var roots = DesktopDirectoryService.GetRoots();
-        if (!force && _desktopWatchers.Matches(roots)) return;
+        // A watcher that failed (for example while a network desktop was briefly offline) is
+        // rebound once the same roots are reachable again.
+        if (!force && !_desktopWatcherRebindNeeded && _desktopWatchers.Matches(roots)) return;
 
         var previousRoots = _desktopWatchers.GetRoots();
+        if (!AcceptDesktopRootChange(previousRoots, roots)) return;
         if (!_desktopWatchers.Rebind(roots, dir =>
         {
             FileSystemWatcher? watcher = null;
@@ -2513,6 +2558,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                     _icons.Invalidate(e.OldFullPath);
                     _icons.Invalidate(e.FullPath);
                     _desktopFirstSeenGate?.RenameKnown(DesktopDirectoryService.Normalize(e.OldFullPath), DesktopDirectoryService.Normalize(e.FullPath));
+                    QueueGroupedDesktopRename(e.OldFullPath, e.FullPath);
                     RenameUngroupedDesktopMarker(e.OldFullPath, e.FullPath);
                     if (_state.Settings.AutoImportDesktop) ScheduleDesktopReconcile();
                 });
@@ -2523,6 +2569,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 watcher.Error += (_, e) => QueueIfCurrent(() =>
                 {
                     DiagnosticsLog.Error($"Desktop watcher overflow/error for {dir}", e.GetException());
+                    _desktopWatcherRebindNeeded = true;
                     RefreshDesktopWatchers(force: true, reconcile: true);
                 });
                 // DesktopWatcherLifetime enables the entire staged watcher set
@@ -2543,6 +2590,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             // The old watchers are still active; the next periodic refresh retries.
             return;
         }
+        _desktopWatcherRebindNeeded = false;
 
         if (previousRoots.Length > 0 && !new HashSet<string>(previousRoots, StringComparer.OrdinalIgnoreCase).SetEquals(roots))
         {
@@ -2565,6 +2613,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void MigrateDesktopRootReferences(IReadOnlyList<string> oldRoots, IReadOnlyList<string> newRoots)
     {
+        // Each old folder is probed once per migration (an offline UNC path can block per probe).
+        var oldRootReadable = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        SaveCheckpointBeforeDesktopRootMigration(oldRoots, newRoots, oldRootReadable);
         var changed = false;
         foreach (var tab in _state.Fences.SelectMany(f => f.Tabs).Where(t => t.Kind == DeckTabKind.Collection))
         {
@@ -2584,8 +2635,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                     item.Path = DesktopDirectoryService.Normalize(replacement);
                     changed = true;
                 }
-                else
+                else if (IsDesktopFolderReadable(oldRoot, oldRootReadable))
                 {
+                    // Only a readable old folder proves the file is really gone.
                     tab.Items.RemoveAt(i);
                     changed = true;
                 }
@@ -2606,7 +2658,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 item.Path = DesktopDirectoryService.Normalize(replacement);
                 changed = true;
             }
-            else
+            else if (IsDesktopFolderReadable(oldRoot, oldRootReadable))
             {
                 _state.LooseDesktopItems.Remove(item);
                 changed = true;
@@ -2706,7 +2758,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 }
             }
 
-            if (_state.Settings.TrackDesktopLocationChanges)
+            // Desktop folder changes are judged only after a display transition has settled. A failed
+            // watcher is also retried here when location tracking is off.
+            if ((_state.Settings.TrackDesktopLocationChanges || _desktopWatcherRebindNeeded) && !displayTransitionInProgress)
             {
                 try { RefreshDesktopWatchers(); } catch (Exception ex) { DiagnosticsLog.Error("Desktop directory refresh failed", ex); }
             }
@@ -3231,17 +3285,28 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void SaveLayoutSnapshot()
     {
-        var snapshot = BuildLayoutSnapshot(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), automatic: false);
+        // v8.0.44: ask for a name (default: current time) and confirm the save.
+        var name = TextPrompt.Show(null!, "현재 레이아웃 저장", "스냅샷 이름",
+            LayoutSnapshotNamePolicy.BuildManualDefaultName(DateTime.Now));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var snapshot = BuildLayoutSnapshot(name, automatic: false);
         _state.Snapshots.Insert(0, snapshot);
         PruneSnapshots();
         Persist();
         RebuildTrayMenu();
         _ = CaptureSnapshotScreenPreviewAsync(snapshot, SnapshotScreenPreviewCaptureReason.ManualSnapshot);
+        _trayController?.ShowBalloonTip(4000, "레이아웃 스냅샷 저장",
+            $"'{name}' 스냅샷을 저장했습니다. 트레이 → 그룹 및 화면 → 레이아웃 스냅샷에서 복원할 수 있습니다.", Forms.ToolTipIcon.Info);
     }
 
+    // v8.0.44: reason is the Korean action label (LayoutSnapshotNamePolicy). Undo checkpoints
+    // keep their own small retention bucket and never evict the user's own snapshots.
     private void SaveUndoLayoutSnapshot(string reason)
     {
-        _state.Snapshots.Insert(0, BuildLayoutSnapshot($"{reason} {DateTime.Now:yyyy-MM-dd HH:mm:ss}", automatic: false));
+        var snapshot = BuildLayoutSnapshot(LayoutSnapshotNamePolicy.BuildUndoName(reason, DateTime.Now), automatic: false);
+        snapshot.IsUndoCheckpoint = true;
+        snapshot.UndoAction = reason;
+        _state.Snapshots.Insert(0, snapshot);
         PruneSnapshots();
     }
 
@@ -3333,7 +3398,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var plan = MonitorGroupRecoveryPlanner.Plan(rectangle, groups, _state.Settings.GroupSnapGap);
             var windows = _windows.ToDictionary(window => window.Model.Id);
             previous = CapturePlacements();
-            SaveUndoLayoutSnapshot("Before recover all groups to monitor");
+            SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.RecoverAllGroups);
             foreach (var placement in plan.Placements)
             {
                 var window = windows[placement.Id];
@@ -3392,7 +3457,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.MoveResizeGroups", "그룹 왼쪽 맞춤")) return;
         var groups = ArrangeCandidatesByMonitor().Where(g => g.Count >= 2).ToList();
         if (groups.Count == 0) return;
-        SaveUndoLayoutSnapshot("Before align-left");
+        SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.AlignLeft);
         foreach (var windows in groups)
         {
             var x = windows.Min(w => w.Left);
@@ -3406,7 +3471,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.MoveResizeGroups", "그룹 위쪽 맞춤")) return;
         var groups = ArrangeCandidatesByMonitor().Where(g => g.Count >= 2).ToList();
         if (groups.Count == 0) return;
-        SaveUndoLayoutSnapshot("Before align-top");
+        SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.AlignTop);
         foreach (var windows in groups)
         {
             var y = windows.Min(w => w.Top);
@@ -3420,7 +3485,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.MoveResizeGroups", "가로 간격 균등 배치")) return;
         var groups = ArrangeCandidatesByMonitor().Select(g => g.OrderBy(w => w.Left).ToList()).Where(g => g.Count >= 3).ToList();
         if (groups.Count == 0) return;
-        SaveUndoLayoutSnapshot("Before horizontal-distribute");
+        SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.DistributeHorizontally);
         foreach (var windows in groups)
         {
             var left = windows.First().Left;
@@ -3439,7 +3504,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.MoveResizeGroups", "세로 간격 균등 배치")) return;
         var groups = ArrangeCandidatesByMonitor().Select(g => g.OrderBy(w => w.Top).ToList()).Where(g => g.Count >= 3).ToList();
         if (groups.Count == 0) return;
-        SaveUndoLayoutSnapshot("Before vertical-distribute");
+        SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.DistributeVertically);
         foreach (var windows in groups)
         {
             var top = windows.First().Top;
@@ -3458,9 +3523,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!EnsureManagedCapability("Layout.MoveResizeGroups", "각 모니터 안에 그룹 정리")) return;
         var windows = ArrangeCandidates();
         if (windows.Count < 2) return;
-        SaveUndoLayoutSnapshot("Before pack-groups");
         var monitors = MonitorConfigurationService.CaptureMonitors();
         if (monitors.Count == 0) return;
+        // v8.0.44: save the undo checkpoint only once the arrangement will actually run.
+        SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.PackGroups);
         var gap = Math.Max(4, _state.Settings.GroupSnapGap);
         var grouped = windows.GroupBy(w =>
         {
@@ -3506,7 +3572,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             return false;
         }
 
-        var snapshot = BuildLayoutSnapshot($"Automatic {today:yyyy-MM-dd}", automatic: true);
+        var snapshot = BuildLayoutSnapshot(LayoutSnapshotNamePolicy.BuildAutomaticName(today), automatic: true);
         _state.Snapshots.Insert(0, snapshot);
         PruneSnapshots();
         DiagnosticsLog.Info($"Created automatic layout backup for {today:yyyy-MM-dd}");
@@ -3519,10 +3585,14 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var manualLimit = Math.Clamp(_state.Settings.MaxLayoutSnapshots, 1, 100);
         var automaticLimit = Math.Clamp(_state.Settings.AutomaticSnapshotRetentionDays, 1, 30);
         var keep = new HashSet<Guid>();
-        foreach (var snapshot in _state.Snapshots.Where(s => !s.IsAutomatic).OrderByDescending(s => s.CreatedUtc).Take(manualLimit)) keep.Add(snapshot.Id);
+        // v8.0.44: undo checkpoints (align/distribute/pack/restore) use their own bucket.
+        foreach (var snapshot in _state.Snapshots.Where(s => !s.IsAutomatic && !IsUndoSnapshot(s)).OrderByDescending(s => s.CreatedUtc).Take(manualLimit)) keep.Add(snapshot.Id);
         foreach (var snapshot in _state.Snapshots.Where(s => s.IsAutomatic).OrderByDescending(s => s.CreatedUtc).Take(automaticLimit)) keep.Add(snapshot.Id);
+        foreach (var snapshot in _state.Snapshots.Where(s => !s.IsAutomatic && IsUndoSnapshot(s)).OrderByDescending(s => s.CreatedUtc).Take(LayoutSnapshotNamePolicy.UndoRetention)) keep.Add(snapshot.Id);
         _state.Snapshots.RemoveAll(s => !keep.Contains(s.Id));
         _state.Snapshots = _state.Snapshots.OrderByDescending(s => s.CreatedUtc).ToList();
+        // After an import, previews stay until restart so "before import" can still restore them.
+        if (_snapshotPreviewPruneSuspended) return;
         try { _snapshotScreenPreviews?.PruneToSnapshotIds(_state.Snapshots.Select(s => s.Id.ToString("D"))); } catch { }
     }
 
@@ -3551,7 +3621,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (!EnsureManagedCapability("Layout.RestoreSnapshots", "레이아웃 스냅샷 복원")) return;
         var current = BuildLayoutSnapshot("Current layout", automatic: false);
-        if (CountLayoutDifferences(snapshot, current) > 0) SaveUndoLayoutSnapshot("Before snapshot restore");
+        if (CountLayoutDifferences(snapshot, current) > 0) SaveUndoLayoutSnapshot(LayoutSnapshotNamePolicy.SnapshotRestore);
         _state.CurrentPage = Math.Clamp(snapshot.CurrentPage, 0, Math.Max(GetMaxPage(), snapshot.Fences.Count == 0 ? 0 : snapshot.Fences.Max(p => p.PageIndex)));
         ApplyPlacements(snapshot.Fences);
         ApplyItemPlacements(snapshot.Items);
@@ -3735,13 +3805,17 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var previous = CapturePlacements();
         try
         {
-            var checkpoint = _store.SaveRecoveryCheckpoint(_state,
+            // v8.0.44: when the saved placements equal the current model there is nothing to
+            // undo, so no recovery checkpoint is created (windows are still re-applied).
+            var unchanged = !HasPlacementDifferences(previous, selected);
+            var checkpoint = unchanged ? "" : _store.SaveRecoveryCheckpoint(_state,
                 "before-monitor-profile-restore-" + Guid.NewGuid().ToString("N"));
-            if (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint) ||
-                new FileInfo(checkpoint).Length == 0)
+            if (!unchanged && (string.IsNullOrWhiteSpace(checkpoint) || !File.Exists(checkpoint) ||
+                new FileInfo(checkpoint).Length == 0))
                 throw new IOException("모니터 배치 복구 체크포인트를 안전하게 저장하지 못했습니다.");
             ApplyPlacements(selected);
-            DiagnosticsLog.Info($"Restored {selected.Length} saved monitor placements ({context}); checkpoint={Path.GetFileName(checkpoint)}");
+            var checkpointName = unchanged ? "none (unchanged)" : Path.GetFileName(checkpoint);
+            DiagnosticsLog.Info($"Restored {selected.Length} saved monitor placements ({context}); checkpoint={checkpointName}");
             return true;
         }
         catch (Exception ex)
@@ -3991,11 +4065,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private bool TryMoveFenceAcrossPageEdge(FenceWindow source)
     {
-        if (!IsManagedCapabilityAllowed("Layout.MoveResizeGroups")) return false;
-        if (!_state.Settings.EnableEdgePageGestures) return false;
-        var direction = source.GetPageEdgeDirection();
-        if (direction == 0) return false;
-        if (direction < 0 && source.Model.PageIndex <= 0) return false;
+        // Decided by the pointer that released the group (outer edge / allowed seam, same rules
+        // as the pointer page gesture) after a short dwell there, never by where edge snapping
+        // or a seam-straddling group left the window. Capability and setting checks are inside.
+        var direction = ResolveFenceDropPageDirection(source);
+        if (!source.TakePageEdgeDropDwell(direction)) return false;
         var targetPage = Math.Max(0, source.Model.PageIndex + direction);
         source.Model.PageIndex = targetPage;
         source.MoveFromPageEdge(direction);
@@ -4140,6 +4214,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         try
         {
             _calendar ??= new CalendarModule(_host, _state.Settings, () => Persist(), ownsShellRecovery: !_desktopRuntimeStarted);
+            _calendar.ManagedCapabilityAllowed = IsManagedCapabilityAllowed;
             _calendar.Start();
         }
         catch (Exception ex)
@@ -4214,11 +4289,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _trayController?.Dispose();
         _trayController = new TrayIconController(
             PopulateTrayMenu,
-            () =>
-            {
-                if (_safeMode || !_state.Settings.EnableCyanDeck) QueueOpenSettingsWindow();
-                else ToggleQuickHide(QuickHideInvocationSource.Tray);
-            },
+            HandleTrayDoubleClick,
             visible => _trayMenuVisible = visible);
         _trayController.NativeMenuClosed += () =>
         {
@@ -4227,6 +4298,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, show);
         };
         UpdateTrayText();
+        ScheduleWhatsNewNotice();
         // The updater can fail after replacing only some managed files. Offer a
         // durable, user-approved restoration on the next successful app launch.
         if (UpdateService.HasPendingRecovery())
@@ -4340,6 +4412,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
             menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
                 QueueTrayDialog(OpenGettingStartedGuide));
+            AddReleaseNotesTrayItem(menu);
             menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
             menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
             menu.Items.Add("종료", null, (_, _) => _dispatcher.Invoke(Exit));
@@ -4350,6 +4423,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_safeMode)
         {
             menu.Items.Add(new Forms.ToolStripMenuItem("안전 모드 활성화 — 바탕화면 통합 비활성") { Enabled = false });
+            // v8.0.44: protected start after unreadable layout files.
+            if (_layoutUnreadableProtection)
+                menu.Items.Add("레이아웃 파일 복구…", null, (_, _) => QueueTrayDialog(OfferUnreadableLayoutRecovery));
             menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
             menu.Items.Add(new Forms.ToolStripMenuItem("시작 가이드 다시 보기… (일반 모드에서 사용)") { Enabled = false });
             menu.Items.Add("설정 검사 / 복구", null, (_, _) => _dispatcher.Invoke(ValidateAndRepairConfiguration));
@@ -4363,37 +4439,20 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             CompactTrayMenu(menu);
             return;
         }
-        var newGroupMenuItem = menu.Items.Add("새 그룹", null, (_, _) => _dispatcher.Invoke(CreateNewFence));
+        // Where the pointer was when the tray menu opened: new groups go to that monitor.
+        var trayCursor = Forms.Cursor.Position;
+        var newGroupMenuItem = menu.Items.Add("새 그룹", null, (_, _) => _dispatcher.Invoke(() => CreateNewFenceFromTray(trayCursor)));
         newGroupMenuItem.Tag = "group.new";
         newGroupMenuItem.Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups");
+        var itemSearchMenuItem = menu.Items.Add("항목 찾기…", null, (_, _) => QueueTrayDialog(OpenGlobalItemSearch));
+        itemSearchMenuItem.Tag = "search.items";
         menu.Items.Add("휴지통 위치 초기화", null,
             (_, _) => _dispatcher.Invoke(ResetStandaloneRecycleBinPosition));
         var systemGroupMenuItem = menu.Items.Add("Windows 기본 아이콘 그룹 추가", null,
             (_, _) => _dispatcher.Invoke(AddSystemIconGroup));
         systemGroupMenuItem.Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups");
-        if (_state.Templates.Count > 0)
-        {
-            var templates = new Forms.ToolStripMenuItem("템플릿에서 새 그룹 만들기")
-            {
-                Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups")
-            };
-            foreach (var template in _state.Templates.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
-            {
-                var local = template;
-                templates.DropDownItems.Add(local.Name, null, (_, _) => _dispatcher.Invoke(() => CreateFenceFromTemplate(local.Id)));
-            }
-            templates.DropDownItems.Add(new Forms.ToolStripSeparator());
-            var deleteTemplatesItem = templates.DropDownItems.Add("모든 템플릿 삭제", null, (_, _) => _dispatcher.Invoke(() =>
-            {
-                if (!EnsureManagedCapability("Templates.Edit", "모든 템플릿 삭제")) return;
-                if (System.Windows.MessageBox.Show("저장된 그룹 템플릿을 모두 삭제하시겠습니까?", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-                _state.Templates.Clear();
-                Persist();
-                RebuildTrayMenu();
-            }));
-            deleteTemplatesItem.Enabled = IsManagedCapabilityAllowed("Templates.Edit");
-            menu.Items.Add(templates);
-        }
+        // Per-template create / rename / delete; not disabled as a whole by the group-creation policy.
+        if (_state.Templates.Count > 0) menu.Items.Add(BuildTrayTemplateMenu(trayCursor));
         menu.Items.Add("바탕화면 분류 규칙 다시 적용", null, (_, _) => _dispatcher.Invoke(ApplyRulesNow));
         var pages = new Forms.ToolStripMenuItem($"바탕화면 페이지 (페이지 {_state.CurrentPage + 1})");
         for (var page = 0; page <= GetMaxPage(); page++)
@@ -4408,6 +4467,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             pages.DropDownItems.Add(item);
         }
         pages.Tag = "desktop.pages";
+        AddTrayPageCommands(pages, trayCursor);
         menu.Items.Add(pages);
 
         var arrange = new Forms.ToolStripMenuItem("현재 페이지 정렬")
@@ -4419,13 +4479,15 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         arrange.DropDownItems.Add("가로 간격 균등 배치", null, (_, _) => _dispatcher.Invoke(DistributeCurrentPageHorizontally));
         arrange.DropDownItems.Add("세로 간격 균등 배치", null, (_, _) => _dispatcher.Invoke(DistributeCurrentPageVertically));
         arrange.DropDownItems.Add("각 모니터 안에 그룹 정리", null, (_, _) => _dispatcher.Invoke(PackCurrentPage));
-        menu.Items.Add(arrange);
-        var monitorRecovery = menu.Items.Add("이 모니터로 그룹 전부 옮기기", null, (_, _) =>
+        // v8.0.44: one-step undo of the last arrange/restore (its own undo checkpoint).
+        if (DescribeLatestUndoCommand() is { } undoLabel)
         {
-            var monitorName = Forms.Screen.FromPoint(Forms.Cursor.Position).DeviceName;
-            _dispatcher.BeginInvoke(new Action(() => RecoverAllGroupsToMonitor(monitorName)));
-        });
-        monitorRecovery.Enabled = IsManagedCapabilityAllowed("Layout.MoveResizeGroups") && _state.Fences.Count > 0;
+            arrange.DropDownItems.Add(new Forms.ToolStripSeparator());
+            arrange.DropDownItems.Add(undoLabel, null, (_, _) => QueueTrayDialog(UndoLastLayoutChange));
+        }
+        menu.Items.Add(arrange);
+        // The tray sits on one monitor: with two or more monitors each one is offered by number.
+        AddTrayMoveAllGroupsCommand(menu);
         if (Forms.Screen.AllScreens.Length >= 2)
         {
             var swapItem = menu.Items.Add("화면 내용 교환…", null, (_, _) => _dispatcher.Invoke(OpenMonitorContentSwapDialog));
@@ -4433,16 +4495,17 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
 
         var snapshots = new Forms.ToolStripMenuItem("레이아웃 스냅샷") { Tag = "group.snapshots" };
-        snapshots.DropDownItems.Add("현재 레이아웃 저장", null, (_, _) => _dispatcher.Invoke(SaveLayoutSnapshot));
+        snapshots.DropDownItems.Add("현재 레이아웃 저장…", null, (_, _) => QueueTrayDialog(SaveLayoutSnapshot));
         snapshots.DropDownItems.Add("스냅샷 미리보기 / 관리…", null, (_, _) => _dispatcher.Invoke(OpenSnapshotGallery));
         snapshots.DropDownItems.Add("자동 레이아웃 실행…", null, (_, _) => _dispatcher.Invoke(PerformAutomaticLayout));
         if (_state.Snapshots.Count > 0)
         {
             snapshots.DropDownItems.Add(new Forms.ToolStripSeparator());
-            foreach (var snapshot in _state.Snapshots.Take(12))
+            // v8.0.44: undo checkpoints stay out of this list (undo command and gallery keep them).
+            foreach (var snapshot in _state.Snapshots.Where(s => !IsUndoSnapshot(s)).Take(12))
             {
                 var local = snapshot;
-                var restoreSnapshotItem = snapshots.DropDownItems.Add(local.IsAutomatic ? $"[자동] {local.Name}" : local.Name, null, (_, _) => _dispatcher.Invoke(() => RestoreLayoutSnapshot(local)));
+                var restoreSnapshotItem = snapshots.DropDownItems.Add(DescribeSnapshotForMenu(local), null, (_, _) => _dispatcher.Invoke(() => RestoreLayoutSnapshot(local)));
                 restoreSnapshotItem.Enabled = IsManagedCapabilityAllowed("Layout.RestoreSnapshots");
             }
             snapshots.DropDownItems.Add(new Forms.ToolStripSeparator());
@@ -4476,9 +4539,15 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var recovery = new Forms.ToolStripMenuItem("복구 체크포인트");
         try
         {
-            var recoveryFiles = Directory.Exists(_store.RecoveryFolder)
-                ? new DirectoryInfo(_store.RecoveryFolder).GetFiles("*.json").OrderByDescending(f => f.LastWriteTimeUtc).Take(10).ToArray()
+            var allRecoveryFiles = Directory.Exists(_store.RecoveryFolder)
+                ? new DirectoryInfo(_store.RecoveryFolder).GetFiles("*.json").OrderByDescending(f => f.LastWriteTimeUtc).ToArray()
                 : Array.Empty<FileInfo>();
+            // v8.0.44: automatic monitor checkpoints cannot crowd the other kinds out of the menu.
+            static bool IsMonitorCheckpoint(FileInfo f) => RecoveryCheckpointRetentionPolicy.Classify(
+                Path.GetFileNameWithoutExtension(f.Name)) == RecoveryCheckpointBucket.MonitorAutomatic;
+            var recoveryFiles = allRecoveryFiles.Where(f => !IsMonitorCheckpoint(f)).Take(10)
+                .Concat(allRecoveryFiles.Where(IsMonitorCheckpoint).Take(2))
+                .OrderByDescending(f => f.LastWriteTimeUtc).ToArray();
             if (recoveryFiles.Length == 0) recovery.Enabled = false;
             foreach (var file in recoveryFiles)
             {
@@ -4523,13 +4592,16 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
         menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
             QueueTrayDialog(OpenGettingStartedGuide));
+        AddInputGuideTrayItem(menu);
         menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
         menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
         menu.Items.Add("진단 묶음 만들기…", null, (_, _) => _dispatcher.Invoke(CreateDiagnosticBundle));
         menu.Items.Add("업데이트 확인…", null, (_, _) => _dispatcher.BeginInvoke(new Action(() => _ = CheckForUpdatesInteractiveAsync())));
         if (UpdateService.GetLatestRollbackDirectory() is not null)
-            menu.Items.Add("마지막 앱 업데이트 되돌리기…", null, (_, _) => _dispatcher.Invoke(RollbackLastUpdate));
-        menu.Items.Add("바탕화면 항목 지금 다시 검색", null, (_, _) => _dispatcher.Invoke(() => { RefreshDesktopWatchers(force: true, reconcile: false); ReorganizeDesktop(); }));
+            // v8.0.44: after a rollback the same command reinstalls the held version.
+            menu.Items.Add(UpdateRollbackHold.DescribeRollbackCommand(DataRootPaths.ActiveLocal, RunningAppVersion), null,
+                (_, _) => _dispatcher.Invoke(RollbackLastUpdate)).Tag = "recovery.app-rollback";
+        menu.Items.Add("바탕화면 항목 지금 다시 검색", null, (_, _) => _dispatcher.Invoke(RescanDesktopFromTray));
         menu.Items.Add("자동 분류 규칙 지금 적용", null, (_, _) => _dispatcher.Invoke(ApplyRulesNow));
         menu.Items.Add("설정 검사 / 복구", null, (_, _) => _dispatcher.Invoke(ValidateAndRepairConfiguration));
         menu.Items.Add("바탕화면 연결 / 레이아웃 복구", null, (_, _) => _dispatcher.Invoke(RepairDesktopAttachment));
@@ -4624,6 +4696,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_trayController is null) return;
         var status = _desktopDisplay.IsActive ? "바탕화면 보기" : _quickHidden ? "숨김" : _peek ? "Peek" : $"페이지 {_state.CurrentPage + 1}";
         _trayController.SetText($"CyanDeck - {status}");
+        _trayController.SetQuickHiddenAppearance(_quickHidden);
     }
 
     // Opening a modal WPF dialog directly inside a WinForms ToolStrip click
@@ -4855,6 +4928,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void ApplyRulesNow()
     {
         if (_safeMode) return;
+        // The explicit rules run is one of the two ways to hand user-placed icons back to automation.
+        ClearUserPlacedMarkersForRulesRun();
         ReorganizeDesktop(forceRules: true);
     }
 
@@ -4899,6 +4974,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             TogglePeek,
             () =>
             {
+                // Same switch as the tray command: "바탕화면 보기 사용" off disables it here too.
+                if (!_state.Settings.EnableDesktopDisplay) return;
                 if (_peek) SetPeek(false);
                 _desktopDisplay.Toggle();
                 UpdateTrayText();
@@ -4999,6 +5076,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void ExportConfiguration()
     {
+        // v8.0.44: the in-memory state is empty while unreadable layout files are protected.
+        if (RefuseExportWhileLayoutUnreadable()) return;
         try
         {
             var dialog = new SaveFileDialog
@@ -5011,7 +5090,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             };
             if (dialog.ShowDialog() != true) return;
             CaptureMonitorProfile();
+            // StateStore.Export writes a temporary file, verifies it and only then replaces.
             _store.Export(_state, dialog.FileName);
+            var calendarEvents = ExportCalendarCompanion(dialog.FileName);
+            DiagnosticsLog.Info("Configuration backup exported and verified.");
+            ShowExportCompleted(dialog.FileName, calendarEvents);
         }
         catch (Exception ex)
         {
@@ -5032,13 +5115,29 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 CheckFileExists = true
             };
             if (dialog.ShowDialog() != true) return false;
-            if (System.Windows.MessageBox.Show("현재 CyanDeck 레이아웃과 설정을 이 백업으로 바꾸시겠습니까?", "CyanDeck",
-                    MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
+            // v8.0.44: read and validate the file first, then show what will change.
+            var imported = ReadImportCandidate(dialog.FileName);
+            if (imported is null) return false;
+            // Current snapshots are merged (and retention applied) before the summary, so the
+            // counts shown are exactly what remains.
+            var snapshotMerge = MergeCurrentSnapshotsInto(imported);
+            if (!ConfirmImportWithSummary(imported, snapshotMerge)) return false;
 
             _store.SaveRecoveryCheckpoint(_state, "before-import");
-            var imported = _store.Import(dialog.FileName);
+            // Previews are not pruned this session, so "before import" can still restore them.
+            _snapshotPreviewPruneSuspended = true;
+            var restartRequired = _layoutUnreadableProtection;
             _compatibilityReadOnly = false;
+            _layoutUnreadableProtection = false;
             ReplaceState(imported);
+            if (restartRequired)
+            {
+                PersistNow(force: true, bypassDisplayTransition: true, requireDurableSave: true);
+                ShowImportCompleted(restartRequired: true);
+                Restart(false);
+                return true;
+            }
+            ShowImportCompleted(restartRequired: false);
             return true;
         }
         catch (Exception ex)
@@ -5335,7 +5434,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             "이 컴퓨터에 저장된 CyanDeck 사용자 데이터를 모두 삭제하시겠습니까?\n\n" +
             "그룹/설정, 로컬 일정, Google 로그인 토큰/선택, 백업·스냅샷·로그를 삭제합니다.\n" +
             "Google 서버 일정, Windows 바탕화면 원본 파일과 설치된 프로그램은 삭제하지 않습니다.\n\n" +
-            "자동 백업 없이 영구 삭제합니다. 필요한 자료는 먼저 다른 폴더에 내보내세요.",
+            "자동 백업 없이 영구 삭제합니다. 필요하면 먼저 설정의 '레이아웃 및 설정 내보내기'(로컬 일정도 함께 저장)나\n" +
+            "캘린더 설정 → '일정 백업' → '로컬 일정 내보내기'로 다른 폴더에 백업하세요.",
             "CyanDeck — 모든 로컬 데이터 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning)
             != MessageBoxResult.Yes) return false;
         var owner = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
@@ -5436,7 +5536,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 DefaultExt = ".zip"
             };
             if (dialog.ShowDialog() != true) return;
-            DiagnosticBundleService.Create(dialog.FileName, _state, _icons.GetStats(), _safeMode, _managedPolicy?.GetDiagnosticSummary(), _quickHideStartupStatus, _quickHideStartupShowReason);
+            DiagnosticBundleService.Create(dialog.FileName, _state, _icons.GetStats(), _safeMode, _managedPolicy?.GetDiagnosticSummary(), _quickHideStartupStatus, _quickHideStartupShowReason,
+                layoutLoadOutcome: _store.LastLoadOutcome.ToString());
             DiagnosticsLog.Info($"Diagnostic bundle created: {dialog.FileName}");
             System.Windows.MessageBox.Show("진단 번들을 만들었습니다. 로그와 환경 요약은 포함하지만 레이아웃 JSON과 바탕화면 항목 경로는 포함하지 않습니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -5473,7 +5574,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _state.Settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Persist();
             var channelSource = UpdateService.ResolveManifestSource(_state.Settings.UpdateManifestSource, _state.Settings.EnableBetaUpdateChannel);
-            var check = await UpdateService.CheckAsync(channelSource, _state.Settings.RequireSignedUpdateManifests, _state.Settings.UpdatePublicKeyPath);
+            var check = await UpdateService.CheckAsync(channelSource, _state.Settings.UpdatePublicKeyPath);
             DiagnosticsLog.Info($"Update check completed: channel={(_state.Settings.EnableBetaUpdateChannel ? "beta" : "stable")}, current={check.CurrentVersion}, latest={check.LatestVersion}, available={check.UpdateAvailable}, signatureVerified={check.SignatureVerified}");
             if (!check.UpdateAvailable)
             {
@@ -5491,6 +5592,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 }
                 // Background installation requires all existing recovery safeguards.
                 if (_safeMode || _compatibilityReadOnly || UpdateService.HasPendingRecovery()) return;
+                // v8.0.44: never auto-reinstall a version the user rolled back from.
+                if (IsAutomaticInstallHeld(check)) return;
                 var verifiedPackage = await UpdateService.StagePackageAsync(check);
                 _store.SaveRecoveryCheckpoint(_state, $"before-github-auto-update-{check.LatestVersion}");
                 if (!UpdateService.TryLaunchInstall(verifiedPackage, check.Manifest.Sha256, Environment.ProcessId, relaunch: true))
@@ -5513,6 +5616,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             var verification = "업데이트 매니페스트 RSA-PSS 서명과 패키지 SHA-256을 검증했습니다.";
             if (System.Windows.MessageBox.Show($"{verification}\n\n지금 CyanDeck {check.LatestVersion}을(를) 설치하시겠습니까? CyanDeck이 다시 시작됩니다.", "CyanDeck 업데이트 준비 완료", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
+            // An explicit manual install also ends any rollback hold.
+            UpdateRollbackHold.Clear(DataRootPaths.ActiveLocal);
             if (!UpdateService.TryLaunchInstall(staged, check.Manifest.Sha256, Environment.ProcessId, relaunch: true))
                 throw new InvalidOperationException("검증된 업데이트 설치 프로그램을 시작하지 못했습니다.");
             Exit();
@@ -5539,9 +5644,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 System.Windows.MessageBox.Show("되돌릴 수 있는 이전 프로그램 버전이 없습니다.", "CyanDeck 버전 되돌리기", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            if (System.Windows.MessageBox.Show("마지막 CyanDeck 업데이트 전에 저장한 프로그램 파일로 되돌리시겠습니까? %APPDATA%의 레이아웃과 설정은 교체되지 않습니다.", "CyanDeck 버전 되돌리기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            // v8.0.44: after a rollback the same command reinstalls the held version (undo).
+            var undoRollback = IsRollbackUndoPending();
+            if (System.Windows.MessageBox.Show(BuildRollbackConfirmation(undoRollback), "CyanDeck 버전 되돌리기", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
             _store.SaveRecoveryCheckpoint(_state, "before-app-rollback");
+            // The rolled-back version must not be reinstalled by the next start-time update.
+            ApplyRollbackHoldBeforeLaunch(undoRollback);
             if (!UpdateService.TryLaunchRollback(Environment.ProcessId, relaunch: true))
                 throw new InvalidOperationException("사용 가능한 되돌리기 패키지가 없습니다.");
             Exit();
@@ -5674,6 +5783,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_disposed || _compatibilityReadOnly) return;
         _persistDirty = true;
+        _persistChangeGeneration++; // An in-flight background save must not acknowledge this change.
         _persistTimer ??= new DispatcherTimer(DispatcherPriority.Background, _dispatcher);
         if (_persistStorageRetryCount > 0 && _persistTimer.IsEnabled)
             return; // Preserve the pending backoff deadline during frequent UI changes.
@@ -5687,24 +5797,16 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void PersistTimer_Tick(object? sender, EventArgs e)
     {
         _persistTimer?.Stop();
-        try
-        {
-            PersistNow();
-        }
-        catch (IOException ex)
-        {
-            DeferPersistAfterFileError(ex);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            DeferPersistAfterFileError(ex);
-        }
+        // v8.0.44: auto-save serializes here and writes/replaces/retries on a background
+        // thread, so a locked layout.json no longer freezes the UI and mouse hooks.
+        PersistInBackground();
     }
 
     private void DeferPersistAfterFileError(Exception ex)
     {
         if (_disposed || _compatibilityReadOnly) return;
         _persistDirty = true; // Never acknowledge a save that did not succeed.
+        _persistChangeGeneration++; // ...not even through a background save completing later.
         _persistStorageRetryCount = Math.Min(_persistStorageRetryCount + 1, 6);
         if (_persistStorageRetryCount is 1 or 3 or 6)
             DiagnosticsLog.Warn($"Layout auto-save deferred: {ex.GetType().Name}, HRESULT 0x{ex.HResult:X8}; retry in {GetPersistDelay().TotalSeconds:0}s. Current layout remains in memory.");
@@ -5734,6 +5836,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_compatibilityReadOnly) return;
         if (!force && !_persistDirty) return;
+        // A background save already in flight must not acknowledge whatever this call saves (or fails to save).
+        _persistChangeGeneration++;
         if (!bypassDisplayTransition && _displayTransition?.DeferLayoutSaveIfTransitioning() == true)
         {
             _persistDirty = true;
@@ -5874,6 +5978,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _exitDuringDisplayTransition = _displayTransition?.IsStableForUserLayoutAction == false;
         _displayTransition?.Dispose();
         _displayTransition = null;
+        StopRecycleBinStateMonitor();
         _looseDesktopHost?.Dispose();
         _looseDesktopHost = null;
         _touchPageHost?.Dispose();
@@ -5915,7 +6020,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             // Only two small local bookkeeping updates; absolutely no forced
             // layout serialization or shell/window disposal under PC shutdown.
-            _store.EndSession();
+            // A protected start keeps the previous session's marker (see Dispose).
+            if (!_layoutUnreadableProtection) _store.EndSession();
             StartupHealthService.MarkCleanExit();
         }
         // If there were uncommitted changes, leave session.active and its
@@ -5951,7 +6057,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
         if (!_abnormalTermination && shutdownSaveSucceeded)
         {
-            _store.EndSession();
+            // A protected start skipped BeginSession: the previous session's marker and baseline
+            // stay as the recovery source for the next start.
+            if (!_layoutUnreadableProtection) _store.EndSession();
             StartupHealthService.MarkCleanExit();
         }
         _disposed = true;
@@ -5972,6 +6080,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _desktopDisplay.Dispose();
         _desktopDoubleClick?.Dispose();
         _pageGesture?.Dispose();
+        StopRecycleBinStateMonitor();
         _looseDesktopHost?.Dispose();
         _touchPageHost?.Dispose();
         _folderPortalDropHost?.Dispose();

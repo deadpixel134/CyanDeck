@@ -110,4 +110,48 @@ public sealed class CalendarEventAppearanceStore
             throw;
         }
     }
+
+    // Imported event colors are written in ONE checkpoint instead of one file write per event.
+    public void SetMany(IReadOnlyDictionary<Guid, CalendarEventAppearance> styles)
+    {
+        ArgumentNullException.ThrowIfNull(styles);
+        if (IsReadOnly) throw new IOException("일정 표시 설정이 읽기 전용입니다. 원본 파일을 확인하세요.");
+        var snapshot = new Dictionary<string, CalendarEventAppearance>(_styles, StringComparer.Ordinal);
+        foreach (var pair in styles)
+        {
+            var style = pair.Value;
+            if (pair.Key == Guid.Empty || style is null
+                || !IsValid(style.BackgroundColor) || !IsValid(style.TextColor))
+                throw new ArgumentException("일정 색상은 #RRGGBB 형식이어야 합니다.");
+            var key = pair.Key.ToString("N");
+            if (style.BackgroundColor is null && style.TextColor is null) snapshot.Remove(key);
+            else snapshot[key] = new CalendarEventAppearance(
+                style.BackgroundColor?.ToUpperInvariant(), style.TextColor?.ToUpperInvariant());
+        }
+        var parent = Path.GetDirectoryName(_path)
+            ?? throw new IOException("일정 표시 설정 저장 위치가 올바르지 않습니다.");
+        Directory.CreateDirectory(parent);
+        var temp = _path + ".tmp";
+        try
+        {
+            var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write,
+                FileShare.None, 16 * 1024, FileOptions.WriteThrough))
+            using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
+            {
+                writer.Write(json);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+            if (File.Exists(_path))
+                File.Replace(temp, _path, _path + ".bak", ignoreMetadataErrors: true);
+            else File.Move(temp, _path);
+            _styles = snapshot;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Could not save imported event appearance; old settings retained", ex);
+            throw;
+        }
+    }
 }

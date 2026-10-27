@@ -24,7 +24,25 @@ public sealed class CalendarEvent
     public bool RemoteReadOnly { get; set; }
     // Explicit opt-out of Google upload, independent of Google calendar selection.
     public bool LocalOnly { get; set; }
+    // Why Google refused the last upload of this event (shown in the ⚠ menu). Null when absent.
+    public string? SyncError { get; set; }
+    // Repeat rule (RFC 5545 RRULE subset without the "RRULE:" prefix) for a
+    // CyanDeck-created series. Absent in older files = not recurring.
+    public string? Recurrence { get; set; }
+    // Occurrence dates removed from a local series ("이 일정만" edit/delete).
+    public List<DateTime>? RecurrenceExceptions { get; set; }
+    // Google series id of a pulled instance (singleEvents). An empty string
+    // marks an instance-style id that was checked and is not recurring.
+    public string? RecurringEventId { get; set; }
+    // A pending "모든 반복 일정" change (or delete when Deleted) of a Google
+    // series, sent to the series event instead of this instance.
+    public bool SeriesEditPending { get; set; }
+    public DateTimeOffset? SeriesBaseStartAt { get; set; }
+    // Read-only because another organizer owns the recurring series (not a
+    // missing calendar permission, special event type or lock). Absent = false.
+    public bool RemoteOrganizerOnly { get; set; }
 
+    [JsonIgnore] public bool IsRecurringInstance => !string.IsNullOrEmpty(RecurringEventId);
     [JsonIgnore] public bool IsAllDay => !StartAt.HasValue;
     [JsonIgnore] public DateTime EffectiveEndDate =>
         EndAt is { } end ? end.ToLocalTime().AddTicks(-1).Date : (EndDate?.Date ?? Date.Date);
@@ -39,9 +57,10 @@ public sealed class CalendarEventDraft
     public string CalendarId { get; init; } = "primary";
     public bool LocalOnly { get; init; }
     public string Text { get; init; } = "";
+    public string? Recurrence { get; init; }
 }
 
-public sealed class CalendarEventStore
+public sealed partial class CalendarEventStore
 {
     private readonly string _path;
     public List<CalendarEvent> Events { get; private set; } = [];
@@ -116,7 +135,8 @@ public sealed class CalendarEventStore
         => UpsertBatch(new CalendarEventDraft
         {
             StartDate = date.Date, EndDate = date.Date, Text = title,
-            CalendarId = existing?.CalendarId ?? "primary", LocalOnly = existing?.LocalOnly == true
+            CalendarId = existing?.CalendarId ?? "primary", LocalOnly = existing?.LocalOnly == true,
+            Recurrence = existing?.Recurrence
         }, existing);
 
     public const string LocalCalendarId = "cyandeck:local";
@@ -140,6 +160,7 @@ public sealed class CalendarEventStore
         if (existing is not null && !string.IsNullOrEmpty(existing.RemoteId)
             && !string.Equals(existing.CalendarId ?? "primary", draft.CalendarId, StringComparison.Ordinal))
             throw new InvalidOperationException("연결된 Google 일정의 캘린더 이동은 지원하지 않습니다. 기존 캘린더에 저장하세요.");
+        ValidateRecurrenceDraft(draft, existing);
 
         var titles = ParseLines(draft.Text);
         if (titles.Length == 0) throw new ArgumentException("일정 제목을 하나 이상 입력하세요.");
@@ -171,6 +192,8 @@ public sealed class CalendarEventStore
             ev.Deleted = false;
             ev.Dirty = !draft.LocalOnly;
             ev.Conflict = false;
+            ev.SyncError = null;
+            ApplyRecurrenceDraft(ev, draft, updated == 0 ? existing : null);
             updated++;
         }
         SaveSnapshot(staged);
@@ -191,6 +214,7 @@ public sealed class CalendarEventStore
             tombstone.Deleted = true;
             tombstone.Dirty = true;
             tombstone.Conflict = false;
+            tombstone.SyncError = null;
             staged[index] = tombstone;
         }
         SaveSnapshot(staged);
@@ -204,7 +228,13 @@ public sealed class CalendarEventStore
         CalendarId = source.CalendarId, RemoteId = source.RemoteId,
         RemoteCreatePending = source.RemoteCreatePending, RemoteETag = source.RemoteETag,
         Dirty = source.Dirty, Deleted = source.Deleted, Conflict = source.Conflict,
-        RemoteReadOnly = source.RemoteReadOnly, LocalOnly = source.LocalOnly
+        RemoteReadOnly = source.RemoteReadOnly, LocalOnly = source.LocalOnly,
+        SyncError = source.SyncError,
+        Recurrence = source.Recurrence,
+        RecurrenceExceptions = source.RecurrenceExceptions is null ? null : new List<DateTime>(source.RecurrenceExceptions),
+        RecurringEventId = source.RecurringEventId,
+        SeriesEditPending = source.SeriesEditPending, SeriesBaseStartAt = source.SeriesBaseStartAt,
+        RemoteOrganizerOnly = source.RemoteOrganizerOnly
     };
 
     // Publish imported Google pages only after their durable checkpoint succeeds.

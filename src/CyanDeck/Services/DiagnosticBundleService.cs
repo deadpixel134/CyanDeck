@@ -14,13 +14,13 @@ namespace CyanDeck.Services;
 
 public static class DiagnosticBundleService
 {
-    public static void Create(string destinationPath, DeckState state, IconCacheStats? iconCacheStats = null, bool safeMode = false, ManagedPolicyDiagnosticSummary? managedPolicy = null, QuickHideStartupApplyStatus? quickHideStartupStatus = null, QuickHideShowReason? quickHideStartupShowReason = null)
+    public static void Create(string destinationPath, DeckState state, IconCacheStats? iconCacheStats = null, bool safeMode = false, ManagedPolicyDiagnosticSummary? managedPolicy = null, QuickHideStartupApplyStatus? quickHideStartupStatus = null, QuickHideShowReason? quickHideStartupShowReason = null, string? layoutLoadOutcome = null)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "CyanDeck", "diagnostics-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
         try
         {
-            File.WriteAllText(Path.Combine(tempRoot, "summary.txt"), BuildSummary(state, iconCacheStats, safeMode, managedPolicy, quickHideStartupStatus, quickHideStartupShowReason), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(tempRoot, "summary.txt"), BuildSummary(state, iconCacheStats, safeMode, managedPolicy, quickHideStartupStatus, quickHideStartupShowReason, layoutLoadOutcome), Encoding.UTF8);
             var logsDir = Path.Combine(tempRoot, "logs");
             Directory.CreateDirectory(logsDir);
             if (Directory.Exists(DiagnosticsLog.LogFolder))
@@ -36,6 +36,15 @@ public static class DiagnosticBundleService
                     catch { }
                 }
             }
+            // v8.0.44: the independent installer logs its failures under %LOCALAPPDATA%.
+            // Same redaction and bounded tail as every other log; links are never followed.
+            try
+            {
+                var updateLog = UpdateFailureDiagnostics.LogPath(DataRootPaths.ActiveLocal);
+                if (File.Exists(updateLog) && (File.GetAttributes(updateLog) & FileAttributes.ReparsePoint) == 0)
+                    WriteRedactedLog(updateLog, Path.Combine(logsDir, "update-installer.log"));
+            }
+            catch { }
 
             var parent = Path.GetDirectoryName(destinationPath);
             if (!string.IsNullOrWhiteSpace(parent)) Directory.CreateDirectory(parent);
@@ -120,7 +129,7 @@ public static class DiagnosticBundleService
         return body;
     }
 
-    private static string BuildSummary(DeckState state, IconCacheStats? iconCacheStats, bool safeMode, ManagedPolicyDiagnosticSummary? managedPolicy, QuickHideStartupApplyStatus? quickHideStartupStatus, QuickHideShowReason? quickHideStartupShowReason)
+    private static string BuildSummary(DeckState state, IconCacheStats? iconCacheStats, bool safeMode, ManagedPolicyDiagnosticSummary? managedPolicy, QuickHideStartupApplyStatus? quickHideStartupStatus, QuickHideShowReason? quickHideStartupShowReason, string? layoutLoadOutcome = null)
     {
         var sb = new StringBuilder();
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
@@ -151,7 +160,7 @@ public static class DiagnosticBundleService
             .OrderBy(g => g.Key)
             .Select(g => $"{g.Key + 1}:{g.Count()}");
         sb.AppendLine($"Group page distribution: {string.Join(", ", pageDistribution)}");
-        sb.AppendLine($"Desktop page inputs: edge={state.Settings.EnableEdgePageGestures}, interior-seam={state.Settings.AllowInteriorMonitorSeamPageNavigation}, touch-two-finger={state.Settings.EnableTouchPageGestures}, touch-icon-flick={state.Settings.EnableTouchIconFlick}, keyboard={state.Settings.EnablePageKeyboardNavigation}, alt-wheel={state.Settings.EnablePageAltMouseWheel}, middle-drag={state.Settings.EnablePageMiddleDrag}, both-buttons-drag={state.Settings.EnablePageBothButtonsDrag}");
+        sb.AppendLine($"Desktop page inputs: edge={state.Settings.EnableEdgePageGestures}, interior-seam={state.Settings.AllowInteriorMonitorSeamPageNavigation}, touch-two-finger={state.Settings.EnableTouchPageGestures}, touch-icon-flick={state.Settings.EnableTouchIconFlick}, keyboard-page-commands={state.Settings.EnablePageKeyboardNavigation}, alt-wheel={state.Settings.EnablePageAltMouseWheel}, middle-drag={state.Settings.EnablePageMiddleDrag}, both-buttons-drag={state.Settings.EnablePageBothButtonsDrag}");
         sb.AppendLine($"Page switch behavior: unhide={state.Settings.UnhideWhenSwitchingPages}, animate={state.Settings.AnimatePageTransitions}, enhanced-easing={state.Settings.EnhancedDesktopPageEasing}, easing-profile={state.Settings.DesktopPageEasingProfile}, duration-ms={state.Settings.PageTransitionDurationMs}, system-animation={WpfDesktopPageTransitionAnimationFactory.AreSystemAnimationsAllowed()}, bounce={state.Settings.BouncePageTransitions}");
         sb.AppendLine($"Managed system icons: standalone-recycle={state.Settings.ShowStandaloneRecycleBin}, group-recycle={state.Settings.ShowRecycleBinInSystemGroup}, native-icons-hidden={state.Settings.HideNativeDesktopIcons}");
         sb.AppendLine($"Groups: {state.Fences.Count}");
@@ -179,6 +188,8 @@ public static class DiagnosticBundleService
         if (iconCacheStats is IconCacheStats stats)
             sb.AppendLine($"Icon cache live stats: count={stats.Count}, capacity={stats.Capacity}, hits={stats.Hits}, misses={stats.Misses}, evictions={stats.Evictions}");
         sb.AppendLine($"Quick-hide: enabled={state.Settings.EnableQuickHide}, mode={state.Settings.QuickHideMode}, always-show-at-startup={state.Settings.QuickHideAlwaysShowIconsAtStartup}");
+        // v8.0.44: no global hotkeys or keyboard hook exist; keyboard use is via single-instance command shortcuts.
+        sb.AppendLine($"Input commands: desktop-double-click={state.Settings.EnableDesktopDoubleClickQuickHide}, tray-double-click={state.Settings.TrayDoubleClickAction}, global-hotkeys=none, keyboard-hook=none, hot-corner-px={state.Settings.PeekHotCornerHitThicknessPx}");
         sb.AppendLine($"Automation: auto-import={state.Settings.AutoImportDesktop}, keep-rules-updated={state.Settings.KeepRulesUpdatedAtAllTimes}");
         sb.AppendLine($"Default desktop placement: enabled={state.Settings.UseDefaultDesktopPlacement}, kind={state.Settings.DefaultDesktopPlacementKind}, group-id-set={!string.IsNullOrWhiteSpace(state.Settings.DefaultDesktopPlacementGroupId)}, tab-id-set={!string.IsNullOrWhiteSpace(state.Settings.DefaultDesktopPlacementTabId)}, activate-tab={state.Settings.ActivateDefaultDestinationTab}");
         sb.AppendLine($"Peek taskbar button: enabled={state.Settings.PeekTaskbarButtonEnabled}, custom-icon={(!string.IsNullOrWhiteSpace(state.Settings.PeekTaskbarCustomIconPath))}");
@@ -190,8 +201,11 @@ public static class DiagnosticBundleService
         sb.AppendLine($"Track desktop folder redirection: {state.Settings.TrackDesktopLocationChanges}");
         var startupHealth = StartupHealthService.GetSnapshot(state.Settings.CrashLoopWindowMinutes, state.Settings.CrashLoopThreshold);
         sb.AppendLine($"Crash-loop protection: enabled={state.Settings.EnableCrashLoopProtection}, threshold={state.Settings.CrashLoopThreshold}, window={state.Settings.CrashLoopWindowMinutes} min, recent-unclean={startupHealth.RecentUncleanStarts}");
-        sb.AppendLine($"Update checks: automatic={state.Settings.EnableAutomaticUpdateChecks}, source-configured={!string.IsNullOrWhiteSpace(UpdateService.ResolveManifestSource(state.Settings.UpdateManifestSource))}, require-signed=true (enforced), trusted-key-configured={!string.IsNullOrWhiteSpace(UpdateService.ResolvePublicKeyPath(state.Settings.UpdatePublicKeyPath))}, last-check={state.Settings.LastUpdateCheckUtc:O}");
+        sb.AppendLine($"Update checks: automatic={state.Settings.EnableAutomaticUpdateChecks}, source-configured={!string.IsNullOrWhiteSpace(UpdateService.ResolveManifestSource(state.Settings.UpdateManifestSource, state.Settings.EnableBetaUpdateChannel))}, require-signed=true (enforced), trusted-key-configured={!string.IsNullOrWhiteSpace(UpdateService.ResolvePublicKeyPath(state.Settings.UpdatePublicKeyPath))}, last-check={state.Settings.LastUpdateCheckUtc:O}");
         sb.AppendLine($"Update recovery: pending={UpdateService.HasPendingRecovery()} (application files only; user data excluded)");
+        AppendUpdateState(sb, state);
+        var loadOutcome = string.IsNullOrWhiteSpace(layoutLoadOutcome) ? "unknown" : layoutLoadOutcome;
+        sb.AppendLine($"Layout loaded from: {loadOutcome}");
         sb.AppendLine($"Resolved desktop roots: {DesktopDirectoryService.GetRoots().Count}");
         sb.AppendLine();
         sb.AppendLine("Monitors:");
@@ -202,5 +216,29 @@ public static class DiagnosticBundleService
         sb.AppendLine();
         sb.AppendLine("Privacy: this bundle does not include CyanDeck layout JSON or desktop item paths.");
         return sb.ToString();
+    }
+
+    // v8.0.44: update channel, automatic install, recent failed packages, rollback availability
+    // and hold, and update backup storage. Counts and flags only; no paths are written.
+    private static void AppendUpdateState(StringBuilder sb, DeckState state)
+    {
+        var channel = state.Settings.EnableBetaUpdateChannel ? "beta"
+            : string.IsNullOrWhiteSpace(state.Settings.UpdateManifestSource) ? "stable" : "custom";
+        sb.AppendLine($"Update channel: {channel}, auto-install={state.Settings.InstallUpdatesAutomatically}, auto-check={state.Settings.EnableAutomaticUpdateChecks}");
+        try
+        {
+            var failures = UpdateFailureDiagnostics.Inspect(DataRootPaths.ActiveLocal, DateTime.UtcNow);
+            var rollbackAvailable = !string.IsNullOrWhiteSpace(UpdateService.GetLatestRollbackDirectory());
+            var held = UpdateRollbackHold.ReadHeldVersion(DataRootPaths.ActiveLocal);
+            var heldText = held is null ? "none" : UpdateRollbackHold.Format(held);
+            var usage = UpdateStorageMaintenance.Measure(DataRootPaths.ActiveLocal);
+            sb.AppendLine($"Update failures: recent-failed-packages={failures.RecentFailedPackages}, installer-log={failures.HasLog}");
+            sb.AppendLine($"Update rollback: available={rollbackAvailable}, auto-install-hold={heldText}");
+            sb.AppendLine($"Update storage: rollback-snapshots={usage.RollbackSnapshots}, staged-packages={usage.StagedPackages}, total-mb={usage.TotalBytes / (1024 * 1024)}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            sb.AppendLine("Update state: unavailable");
+        }
     }
 }

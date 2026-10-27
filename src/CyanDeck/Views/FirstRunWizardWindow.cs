@@ -132,6 +132,9 @@ public sealed class FirstRunWizardWindow : Window
                 v => _settings.HideNativeDesktopIcons = v);
             Check("기존 바탕화면 항목 자동 분류", _settings.AutoImportDesktop,
                 v => _settings.AutoImportDesktop = v);
+            Check("빈 바탕화면 더블클릭으로 그룹과 아이콘 빠른 숨김", _settings.EnableDesktopDoubleClickQuickHide,
+                v => _settings.EnableDesktopDoubleClickQuickHide = v);
+            _page.Children.Add(Hint("빠른 숨김 중에는 빈 바탕화면이나 트레이 아이콘을 다시 더블클릭하면 그대로 다시 표시됩니다."));
             _page.Children.Add(Hint("기본 그룹: 앱, 작업, 미디어, Windows 기본 아이콘. 트레이 메뉴에서 언제든 기본 아이콘을 복구할 수 있습니다."));
         }
         else if (_step == 2)
@@ -188,6 +191,12 @@ public sealed class FirstRunWizardWindow : Window
             Check("베타 업데이트도 받기 (선택)", _settings.EnableBetaUpdateChannel,
                 v => _settings.EnableBetaUpdateChannel = v);
             _page.Children.Add(Hint("기본 사용법: 그룹 드래그 이동 · 캘린더 더블클릭 편집 · 일정 1초 길게 눌러 이동 · 트레이 아이콘에서 설정/복구."));
+            if (_settings.EnableCyanDeck)
+            {
+                var doubleClickTip = _settings.EnableDesktopDoubleClickQuickHide ? " · 빈 곳 더블클릭으로 빠른 숨김" : "";
+                _page.Children.Add(Hint("바탕화면: 빈 곳에 사각형을 그려 새 그룹 만들기 · 탐색기 폴더를 Alt를 누른 채 놓아 Folder Portal 만들기 · 화면 끝에서 안쪽으로 끌거나 Alt+휠로 페이지 이동" + doubleClickTip + "."));
+                Button("단축키·제스처 안내 보기", () => InputGuideWindow.ShowGuide(this));
+            }
             _page.Children.Add(Hint(_firstRun
                 ? "설정을 저장한 다음 그룹과 캘린더가 나타납니다. 첫 실행 후에는 트레이 → 도구 및 도움말 → 시작 가이드 다시 보기에서 다시 열 수 있습니다."
                 : "변경 적용 후에도 현재 캘린더 일정과 Google 서버 데이터는 삭제되지 않습니다."));

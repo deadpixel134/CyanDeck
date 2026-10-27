@@ -14,14 +14,22 @@ namespace CyanDeck.Services;
 /// by DesktopHost as WorkerW/Progman -> SHELLDLL_DefView -> SysListView32 (FolderView); class names
 /// are never accepted on their own in this hook.
 /// </summary>
-internal sealed class DesktopPageGestureHook : IDisposable
+internal sealed class DesktopPageGestureHook : IDisposable, ILowLevelMouseHookClient
 {
     private readonly Dispatcher _dispatcher;
     private readonly NativeMethods.LowLevelMouseProc _proc;
     private DeckSettings _settings;
+    // Both delegates run on the dedicated hook thread and only read plain AppController state.
     private readonly Func<NativeMethods.POINT, int?>? _resolveEdgeDirection;
     private readonly Func<bool>? _canCreateGroups;
     private readonly DesktopCreationGestureGate _creationGate = new();
+    // v8.0.44: gesture state is owned by CyanDeck's dedicated input thread (LowLevelMouseHookThread);
+    // UI-thread calls (cancel, dispose) are marshalled there instead of racing the callback.
+    private LowLevelMouseHookThread? _hookThread;
+    private bool _started;
+    private volatile bool _disposed;
+    private long _callbackCount;
+    private bool _pendingAltDragReset;
     private IntPtr _hook;
     private int _hookFaulted;
     private bool _inHookCallback;
@@ -59,12 +67,38 @@ internal sealed class DesktopPageGestureHook : IDisposable
 
     internal void Start()
     {
-        if (_hook != IntPtr.Zero) return;
+        if (_started || _disposed) return;
+        _started = true;
+        if (LowLevelMouseHookThread.TryGetShared(out var thread))
+        {
+            _hookThread = thread;
+            if (!thread.Invoke(InstallHook))
+                DiagnosticsLog.Warn("Desktop gesture hook install was delayed; the hook watchdog retries it.");
+            thread.Register(this);
+            return;
+        }
+
+        // Fallback only when the dedicated thread cannot start: previous UI-thread hook.
+        InstallHook();
+    }
+
+    private void InstallHook()
+    {
+        if (_hook != IntPtr.Zero || _disposed) return;
         _hook = NativeMethods.SetWindowsHookExMouse(NativeMethods.WH_MOUSE_LL, _proc, NativeMethods.GetModuleHandle(null), 0);
+        if (_hook == IntPtr.Zero) DiagnosticsLog.Warn("Desktop gesture mouse hook could not be installed.");
+    }
+
+    private void UninstallHook()
+    {
+        if (_hook == IntPtr.Zero) return;
+        NativeMethods.UnhookWindowsHookEx(_hook);
+        _hook = IntPtr.Zero;
     }
 
     private IntPtr Callback(int nCode, IntPtr wParam, IntPtr lParam)
     {
+        _callbackCount++;
         if (System.Threading.Volatile.Read(ref _hookFaulted) != 0)
             return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
         _inHookCallback = true;
@@ -164,7 +198,7 @@ internal sealed class DesktopPageGestureHook : IDisposable
         {
             if (System.Threading.Interlocked.Exchange(ref _hookFaulted, 1) == 0)
             {
-                try { _dispatcher.BeginInvoke(new Action(() => { Dispose(); DiagnosticsLog.Warn("Desktop gesture hook disabled after callback error; input passed to Windows."); })); }
+                try { PostDisposal(() => { Dispose(); DiagnosticsLog.Warn("Desktop gesture hook disabled after callback error; input passed to Windows."); }); }
                 catch { /* Fail open without blocking any mouse input. */ }
             }
             return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -183,9 +217,19 @@ internal sealed class DesktopPageGestureHook : IDisposable
         Dispatch(() => AltDragSurfaceInteractiveChanged?.Invoke(interactive));
     }
 
+    private void PostDisposal(Action action)
+    {
+        if (_hookThread is { } thread) thread.Post(action);
+        else _dispatcher.BeginInvoke(action);
+    }
+
     private void TryBeginCreation(DesktopCreationMouseButton button, NativeMethods.POINT point)
     {
         if (_creationGate.IsActive) return;
+        // Cheap checks first: the desktop hit test can talk to Explorer (up to 40 ms with
+        // visible native icons), so skip it for buttons or states that can never arm.
+        if (!CreationMouseButtonPolicy.Allows(ResolveCreationMode(), button) || _canCreateGroups?.Invoke() != true)
+            return;
         var isBlankDesktop = IsBlankDesktopPoint(point);
         var context = new CreationGestureContext(
             HostCanCreateGroups: _canCreateGroups?.Invoke() == true,
@@ -255,14 +299,16 @@ internal sealed class DesktopPageGestureHook : IDisposable
         if (wasPromoted) RaiseCreationCancelled();
     }
 
+    private CreationMouseButtonMode ResolveCreationMode() => _settings.CreateGroupMouseButtonMode switch
+    {
+        DeckCreationMouseButtonMode.LeftOnly => CreationMouseButtonMode.LeftOnly,
+        DeckCreationMouseButtonMode.Either => CreationMouseButtonMode.Either,
+        _ => CreationMouseButtonMode.RightOnly,
+    };
+
     private CreationMouseButtonOptions GetCreationOptions(NativeMethods.POINT point)
     {
-        var mode = _settings.CreateGroupMouseButtonMode switch
-        {
-            DeckCreationMouseButtonMode.LeftOnly => CreationMouseButtonMode.LeftOnly,
-            DeckCreationMouseButtonMode.Either => CreationMouseButtonMode.Either,
-            _ => CreationMouseButtonMode.RightOnly,
-        };
+        var mode = ResolveCreationMode();
         var dip = WpfCreationGestureAdapter.WithSystemDragThresholds(mode);
         var scale = ResolveDpiScale(point);
         return new CreationMouseButtonOptions(
@@ -293,7 +339,7 @@ internal sealed class DesktopPageGestureHook : IDisposable
     {
         try
         {
-            if (!DesktopHost.TryLocateDesktopShell(out var parent, out var defView, out var listView)) return;
+            if (!DesktopShellHandleCache.TryLocate(out var parent, out var defView, out var listView)) return;
             var hit = NativeMethods.WindowFromPoint(point);
             if (!IsExplorerDesktopHit(hit, parent, defView, listView)) return;
 
@@ -351,6 +397,17 @@ internal sealed class DesktopPageGestureHook : IDisposable
 
     internal void CancelTracking()
     {
+        // Called from the UI thread during display transitions; gesture state belongs to the hook thread.
+        if (_hookThread is { } thread && !thread.IsCurrentThread)
+        {
+            thread.Post(CancelTrackingCore);
+            return;
+        }
+        CancelTrackingCore();
+    }
+
+    private void CancelTrackingCore()
+    {
         StopTracking();
         var wasPromoted = _creationGate.IsPromoted;
         if (_creationGate.CancelToHost() != CreationGestureReleaseDecision.NoActiveGesture && wasPromoted)
@@ -379,7 +436,7 @@ internal sealed class DesktopPageGestureHook : IDisposable
 
     private static bool IsCyanDeckSurface(NativeMethods.POINT point)
     {
-        if (!DesktopHost.TryLocateDesktopShell(out var parent, out var defView, out var listView))
+        if (!DesktopShellHandleCache.TryLocate(out var parent, out var defView, out var listView))
             return IsCyanDeckProcessPoint(point);
 
         var hwnd = NativeMethods.WindowFromPoint(point);
@@ -396,7 +453,7 @@ internal sealed class DesktopPageGestureHook : IDisposable
 
     private static bool IsBlankDesktopPoint(NativeMethods.POINT point)
     {
-        if (!DesktopHost.TryLocateDesktopShell(out var parent, out var defView, out var listView))
+        if (!DesktopShellHandleCache.TryLocate(out var parent, out var defView, out var listView))
             return false;
 
         var hwnd = NativeMethods.WindowFromPoint(point);
@@ -454,7 +511,7 @@ internal sealed class DesktopPageGestureHook : IDisposable
             // LVM_HITTEST is >= WM_USER and carries an LVHITTESTINFO pointer. User32 does not
             // marshal such pointers across processes, so allocate the structure inside Explorer
             // and send only that remote address. Fail closed if Explorer is unavailable or busy.
-            if (!DesktopHost.TryLocateDesktopShell(out _, out _, out var desktopListView) || hwnd != desktopListView)
+            if (!DesktopShellHandleCache.TryLocate(out _, out _, out var desktopListView) || hwnd != desktopListView)
                 return false;
 
             var client = screenPoint;
@@ -517,14 +574,54 @@ internal sealed class DesktopPageGestureHook : IDisposable
 
     public void Dispose()
     {
-        CancelTracking();
+        _disposed = true;
+        var thread = _hookThread;
+        if (thread is not null && !thread.IsCurrentThread)
+        {
+            thread.Unregister(this);
+            if (!thread.Invoke(DisposeOnHookThread))
+                DiagnosticsLog.Warn("Desktop gesture hook could not be removed on its input thread.");
+        }
+        else
+        {
+            thread?.Unregister(this);
+            DisposeOnHookThread();
+        }
+
+        // Raised after the hook is gone; inline when Dispose runs on the UI thread.
+        if (_pendingAltDragReset)
+        {
+            _pendingAltDragReset = false;
+            Dispatch(() => AltDragSurfaceInteractiveChanged?.Invoke(false));
+        }
+    }
+
+    private void DisposeOnHookThread()
+    {
+        CancelTrackingCore();
         if (_altDragSurfaceInteractive)
         {
             _altDragSurfaceInteractive = false;
-            Dispatch(() => AltDragSurfaceInteractiveChanged?.Invoke(false));
+            _pendingAltDragReset = true;
         }
-        if (_hook == IntPtr.Zero) return;
-        NativeMethods.UnhookWindowsHookEx(_hook);
-        _hook = IntPtr.Zero;
+        UninstallHook();
+    }
+
+    string ILowLevelMouseHookClient.HookName => "desktop-gestures";
+    bool ILowLevelMouseHookClient.WantsHook => _started && !_disposed && System.Threading.Volatile.Read(ref _hookFaulted) == 0;
+    bool ILowLevelMouseHookClient.HasHookHandle => _hook != IntPtr.Zero;
+    long ILowLevelMouseHookClient.CallbackCount => _callbackCount;
+
+    void ILowLevelMouseHookClient.ReinstallHookOnHookThread()
+    {
+        // Windows removed the hook mid-gesture: give the gesture back to Explorer first.
+        // Button-up events may have been missed while the hook was gone.
+        CancelTrackingCore();
+        _leftDown = false;
+        _rightDown = false;
+        _middleDown = false;
+        UpdateAltDragSurfaceState();
+        UninstallHook();
+        InstallHook();
     }
 }

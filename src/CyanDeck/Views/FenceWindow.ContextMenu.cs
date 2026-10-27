@@ -36,6 +36,8 @@ public partial class FenceWindow
         var canCreateDelete = CapabilityAllowed("Layout.CreateDeleteGroups");
 
         menu.Items.Add(WithGesture(MakeItem("검색…", ShowSearch), "Ctrl+F"));
+        menu.Items.Add(WithGesture(MakeItem("모든 그룹에서 찾기…", () => GlobalSearchRequested?.Invoke()), "Ctrl+Shift+F"));
+        AddPasteMenuItem(menu);
         var renameGroupItem = MakeItem("그룹 이름 바꾸기…", RenameGroup);
         renameGroupItem.IsEnabled = canEditGroups;
         menu.Items.Add(renameGroupItem);
@@ -60,6 +62,15 @@ public partial class FenceWindow
         var newFenceItem = MakeItem("새 그룹 만들기", () => NewFenceRequested?.Invoke());
         newFenceItem.IsEnabled = canCreateDelete;
         menu.Items.Add(newFenceItem);
+        menu.Items.Add(BuildSendToPageMenu());
+        // v8.0.44: same one-step undo as the tray "현재 페이지 정렬" submenu (shown only when an
+        // align/distribute/pack/restore undo checkpoint exists).
+        if (LatestLayoutUndoLabelProvider?.Invoke() is { } undoLabel)
+        {
+            var undoItem = MakeItem(undoLabel, () => LayoutUndoRequested?.Invoke());
+            undoItem.IsEnabled = CapabilityAllowed("Layout.MoveResizeGroups");
+            menu.Items.Add(undoItem);
+        }
         menu.Items.Add(BuildGroupToolsMenu(canCreateDelete));
         menu.Items.Add(MakeItem("CyanDeck 설정…", () => SettingsRequested?.Invoke()));
 
@@ -80,6 +91,7 @@ public partial class FenceWindow
             var label = local.Kind == DeckTabKind.FolderPortal ? $"{local.Title}  (폴더 포털)" : local.Title;
             tabsMenu.Items.Add(MakeCheckItem(label, ReferenceEquals(local, SelectedTab), () => SelectTab(local)));
         }
+        AnnotateTabShortcutGestures(tabsMenu);
         tabsMenu.Items.Add(new Separator());
         var addTabItem = MakeItem("새 탭 추가", AddCollectionTab);
         addTabItem.IsEnabled = canEditGroups;
@@ -102,7 +114,8 @@ public partial class FenceWindow
             tabsMenu.Items.Add(moveRight);
             tabsMenu.Items.Add(MakeItem("현재 탭을 새 그룹으로 분리", DetachCurrentTab));
             tabsMenu.Items.Add(new Separator());
-            var removeTabItem = MakeItem("현재 탭 제거", RemoveCurrentTab);
+            var removeTabItem = MakeItem("현재 탭 제거…", RemoveCurrentTab);
+            removeTabItem.Tag = MenuDangerTag; // asks first, then re-places desktop files
             removeTabItem.IsEnabled = canEditGroups;
             tabsMenu.Items.Add(removeTabItem);
         }
@@ -179,6 +192,9 @@ public partial class FenceWindow
     {
         var sortMenu = new MenuItem { Header = "정렬" };
         var tab = SelectedTab;
+        // Folder Portal items are read from disk on every refresh: they have no open count,
+        // and their "added" time is the file's creation time.
+        var portalSort = tab?.Kind == DeckTabKind.FolderPortal;
         foreach (var mode in Enum.GetValues<DeckSortMode>())
         {
             var local = mode;
@@ -187,16 +203,19 @@ public partial class FenceWindow
                 DeckSortMode.Name => "이름",
                 DeckSortMode.Type => "형식",
                 DeckSortMode.Modified => "수정한 날짜",
-                DeckSortMode.Added => "추가한 날짜",
+                DeckSortMode.Added => portalSort ? "만든 날짜" : "추가한 날짜",
                 DeckSortMode.Size => "크기",
-                _ => "열기 횟수"
+                _ => portalSort ? "열기 횟수 (폴더 포털에서는 사용할 수 없음)" : "열기 횟수"
             };
             // Re-selecting the active key still flips the direction, as before.
-            sortMenu.Items.Add(MakeCheckItem(label, tab?.Sort == mode, () => ApplyGroupSort(t =>
+            // A newly chosen "열기 횟수" starts with the most-opened items first.
+            var sortItem = MakeCheckItem(label, tab?.Sort == mode, () => ApplyGroupSort(t =>
             {
                 if (t.Sort == local) t.SortDescending = !t.SortDescending;
-                else { t.Sort = local; t.SortDescending = false; }
-            })));
+                else { t.Sort = local; t.SortDescending = local == DeckSortMode.OpenCount; }
+            }));
+            if (portalSort && mode == DeckSortMode.OpenCount) sortItem.IsEnabled = false;
+            sortMenu.Items.Add(sortItem);
         }
         sortMenu.Items.Add(new Separator());
         sortMenu.Items.Add(MakeCheckItem("오름차순", tab is { SortDescending: false }, () => ApplyGroupSort(t => t.SortDescending = false)));
@@ -254,6 +273,7 @@ public partial class FenceWindow
             (64, "크게 (64)"), (88, "매우 크게 (88)"), (128, "최대 (128)")
         };
         var iconSizeMenu = new MenuItem { Header = "아이콘 크기" };
+        iconSizeMenu.ToolTip = "그룹 위에서 Ctrl+마우스 휠로도 바꿀 수 있습니다.";
         foreach (var (size, label) in presets)
         {
             var localSize = size;
@@ -458,12 +478,7 @@ public partial class FenceWindow
             }
             behavior.Items.Add(rollup);
         }
-        behavior.Items.Add(new Separator());
-        behavior.Items.Add(new MenuItem
-        {
-            Header = Model.ShowOnAllPages ? "표시 위치: 모든 바탕화면 페이지" : $"표시 위치: 바탕화면 페이지 {Model.PageIndex + 1}",
-            IsEnabled = false
-        });
+        // The current page is shown and changed in the top-level "다른 페이지로 보내기" submenu.
         return behavior;
     }
 
@@ -497,11 +512,13 @@ public partial class FenceWindow
         groupTools.Items.Add(saveTemplateItem);
         if (_templates.Count > 0)
         {
-            var fromTemplate = new MenuItem { Header = "템플릿으로 새 그룹 만들기", IsEnabled = canCreateDelete };
+            // Each template has create / rename / delete. The list itself stays open when group
+            // creation is locked by policy so templates can still be renamed or deleted.
+            var fromTemplate = new MenuItem { Header = "저장한 템플릿" };
             foreach (var template in _templates.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
             {
                 var localTemplate = template;
-                fromTemplate.Items.Add(MakeItem(localTemplate.Name, () => CreateFromTemplateRequested?.Invoke(localTemplate.Id)));
+                fromTemplate.Items.Add(BuildTemplateEntryMenu(localTemplate, canCreateDelete));
             }
             groupTools.Items.Add(fromTemplate);
         }
@@ -536,7 +553,7 @@ public partial class FenceWindow
     {
         var name = string.IsNullOrWhiteSpace(Model.Title) ? "이 그룹" : $"'{Model.Title}' 그룹";
         var answer = System.Windows.MessageBox.Show(this,
-            $"{name}을(를) 삭제하시겠습니까?\n\n그룹과 그 안의 탭, 모양 설정이 삭제됩니다. 바탕화면의 실제 파일과 폴더는 삭제되지 않습니다.",
+            $"{name}을(를) 삭제하시겠습니까?\n\n그룹과 그 안의 탭, 모양 설정이 삭제됩니다. 바탕화면의 실제 파일과 폴더는 삭제되지 않습니다.\n그룹 안의 바탕화면 항목은 다른 탭이나 그룹 밖 바탕화면 아이콘으로 다시 배치됩니다.",
             "그룹 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer == MessageBoxResult.Yes) DeleteRequested?.Invoke(this);
     }

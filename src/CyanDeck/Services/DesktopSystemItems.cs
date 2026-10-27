@@ -73,5 +73,6 @@ internal static class DesktopSystemItems
             throw new ArgumentException("지원하지 않는 Windows 시스템 아이콘입니다.", nameof(path));
         var argument = IsRecycleBinPath(path) ? RecycleBinExplorerArgument : path.Trim();
         Process.Start(new ProcessStartInfo("explorer.exe", argument) { UseShellExecute = true });
+        ShortcutLaunchService.NotifyLaunched();
     }
 }

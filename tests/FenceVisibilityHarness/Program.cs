@@ -307,6 +307,93 @@ foreach (var (id, label, expected) in trayCases)
         throw new Exception($"Tray policy mismatch: {id ?? "(legacy)"} / {label} -> {expected}");
 Console.WriteLine($"PASS: {trayCases.Length} tray routes including safe-mode, calendar-only, fallback and settings de-duplication");
 
+// v8.0.44 group/page operations (GroupPageOperationsTests.cs).
+GroupPageOperationsTests.Run();
+// v8.0.44 input discoverability: keyboard-free command shortcuts, double-click
+// choices, the one-time hint, the what's-new notice and the mouse-hook watchdog.
+if (TrayMenuRoutingPolicy.Route("help.input-guide", "단축키·제스처 안내…") != TrayMenuSection.Tools)
+    throw new Exception("Input guide tray item must be routed to Tools");
+if (TrayMenuRoutingPolicy.Route("help.release-notes", "새 기능 보기 (v8.0.43)…") != TrayMenuSection.Tools)
+    throw new Exception("Release notes tray item must be routed to Tools");
+foreach (var info in ExternalDesktopCommandCatalog.All)
+{
+    if (!ExternalDesktopCommandCatalog.TryParseArguments(new[] { "--safe-mode", info.Argument.ToUpperInvariant() }, out var parsedArgument) ||
+        parsedArgument != info.Command)
+        throw new Exception($"Command argument not parsed: {info.Argument}");
+    if (!ExternalDesktopCommandCatalog.TryParsePipeCommand(info.PipeCommand, out var parsedPipe) || parsedPipe != info.Command)
+        throw new Exception($"Pipe command not parsed: {info.PipeCommand}");
+    if (!info.ShortcutFileName.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ||
+        info.ShortcutFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        throw new Exception($"Invalid command shortcut file name: {info.ShortcutFileName}");
+}
+if (ExternalDesktopCommandCatalog.All.Select(i => i.PipeCommand).Distinct().Count() != ExternalDesktopCommandCatalog.All.Count ||
+    ExternalDesktopCommandCatalog.All.Select(i => i.ShortcutFileName).Distinct().Count() != ExternalDesktopCommandCatalog.All.Count)
+    throw new Exception("Command pipe names and shortcut file names must be unique");
+if (ExternalDesktopCommandCatalog.TryParsePipeCommand("activate", out _) ||
+    ExternalDesktopCommandCatalog.TryParsePipeCommand(null, out _) ||
+    ExternalDesktopCommandCatalog.TryParseArguments(new[] { "--safe-mode", "--ignore-crash-loop" }, out _))
+    throw new Exception("Unrelated launch commands must not become desktop commands");
+if (ExternalDesktopCommandCatalog.Get(ExternalDesktopCommand.PeekToggle).Argument != "--peek-toggle")
+    throw new Exception("Peek shortcut must keep the existing --peek-toggle argument");
+
+var trayDoubleClickCases = new (CyanDeck.Models.DeckTrayDoubleClickAction Action, bool Safe, bool Deck, bool Hidden, TrayDoubleClickCommand Expected)[]
+{
+    (CyanDeck.Models.DeckTrayDoubleClickAction.QuickHide, false, true, false, TrayDoubleClickCommand.ToggleQuickHide),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.QuickHide, true, true, false, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.QuickHide, false, false, false, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.OpenSettings, false, true, false, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.OpenSettings, false, true, true, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.None, false, true, false, TrayDoubleClickCommand.None),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.None, false, true, true, TrayDoubleClickCommand.ToggleQuickHide),
+    ((CyanDeck.Models.DeckTrayDoubleClickAction)99, false, true, false, TrayDoubleClickCommand.ToggleQuickHide),
+};
+foreach (var x in trayDoubleClickCases)
+    if (InputHintPolicy.ResolveTrayDoubleClick(x.Action, x.Safe, x.Deck, x.Hidden) != x.Expected)
+        throw new Exception($"Tray double-click mismatch: {x}");
+if (!InputHintPolicy.ShouldHandleDesktopDoubleClick(true, true, false) ||
+    InputHintPolicy.ShouldHandleDesktopDoubleClick(false, true, false) ||
+    !InputHintPolicy.ShouldHandleDesktopDoubleClick(false, true, true) ||
+    InputHintPolicy.ShouldHandleDesktopDoubleClick(true, false, false))
+    throw new Exception("Desktop double-click switch must stop hiding but always allow restoring");
+if (!InputHintPolicy.ShouldShowQuickHideHint(true, true, false) ||
+    InputHintPolicy.ShouldShowQuickHideHint(true, false, false) ||
+    InputHintPolicy.ShouldShowQuickHideHint(true, true, true) ||
+    InputHintPolicy.ShouldShowQuickHideHint(false, true, false))
+    throw new Exception("Quick-hide hint must appear once, only after a double-click hid the desktop");
+var noticeVersion = new Version(8, 0, 43, 0);
+if (!InputHintPolicy.ShouldShowWhatsNew("", noticeVersion) ||
+    !InputHintPolicy.ShouldShowWhatsNew(null, noticeVersion) ||
+    !InputHintPolicy.ShouldShowWhatsNew("8.0.42", noticeVersion) ||
+    !InputHintPolicy.ShouldShowWhatsNew("not-a-version", noticeVersion) ||
+    InputHintPolicy.ShouldShowWhatsNew("8.0.43", noticeVersion) ||
+    InputHintPolicy.ShouldShowWhatsNew("8.0.44", noticeVersion))
+    throw new Exception("What's-new notice must show once per newer version");
+if (InputHintPolicy.NormalizeVersion(noticeVersion) != "8.0.43" ||
+    InputHintPolicy.NormalizeVersion(new Version(8, 1)) != "8.1.0" ||
+    !InputHintPolicy.ReleaseNotesUrl(noticeVersion).EndsWith("/releases/tag/v8.0.43", StringComparison.Ordinal))
+    throw new Exception("Release notes version formatting changed");
+
+var longAgo = MouseHookWatchdogPolicy.MinimumReinstallIntervalMs * 10;
+var watchdogCases = new (bool Moved, bool Observed, int Strikes, long SinceReinstall, bool HasHandle, int ExpectedStrikes, bool ExpectedReinstall)[]
+{
+    (true, false, 0, longAgo, true, 1, false),   // first silent interval: suspicious only
+    (true, false, 1, longAgo, true, 0, true),    // second silent interval: reinstall
+    (true, false, 1, 1000, true, 2, false),      // rate limited
+    (true, true, 1, longAgo, true, 0, false),    // callbacks seen: healthy
+    (false, false, 1, longAgo, true, 1, false),  // cursor idle: no evidence
+    (false, false, 0, longAgo, false, 0, true),  // install failed earlier: retry
+    (false, false, 0, 1000, false, 0, false),    // retry rate limited
+};
+foreach (var x in watchdogCases)
+{
+    var decision = MouseHookWatchdogPolicy.Evaluate(x.Moved, x.Observed, x.Strikes, x.SinceReinstall, x.HasHandle);
+    if (decision.Strikes != x.ExpectedStrikes || decision.Reinstall != x.ExpectedReinstall)
+        throw new Exception($"Mouse hook watchdog mismatch: {x} -> {decision}");
+}
+if (InputGuideContent.Sections.Count < 4 || InputGuideContent.Sections.Any(s => s.Rows.Count == 0))
+    throw new Exception("Input guide must list every section with at least one row");
+Console.WriteLine($"PASS: {ExternalDesktopCommandCatalog.All.Count} command shortcuts, {trayDoubleClickCases.Length} tray double-click cases, {watchdogCases.Length} hook watchdog cases and input hints");
+
 
 // Unified tray recovery must be safe under monitor transitions, have no
 // actions in Safe Mode, and work in calendar-only configurations. This is a
@@ -420,6 +507,84 @@ if (!WindowsFileNamePolicy.GetProblem("..")!.Contains("예약"))
     throw new Exception("'..' must explain that it is a reserved location name.");
 Console.WriteLine("PASS: 18 Windows file name rename checks");
 
+// Icon/group preservation: user-placed items stay, unreachable desktop folders are not "deleted".
+var preservationCases = 0;
+foreach (var forceRules in new[] { false, true })
+foreach (var useRules in new[] { false, true })
+foreach (var grouped in new[] { false, true })
+foreach (var userPlaced in new[] { false, true })
+{
+    var expected = grouped && !forceRules && (userPlaced || !useRules);
+    if (DesktopItemPreservationPolicy.KeepsExistingGroupPlacement(forceRules, useRules, grouped, userPlaced) != expected)
+        throw new Exception($"Group placement keep mismatch: force={forceRules} rules={useRules} grouped={grouped} placed={userPlaced}");
+    preservationCases++;
+}
+var renameNow = new DateTime(2026, 10, 27, 12, 0, 0, DateTimeKind.Utc);
+if (DesktopItemPreservationPolicy.ShouldPinRenamedItem(renameNow.AddSeconds(-30), renameNow) ||
+    !DesktopItemPreservationPolicy.ShouldPinRenamedItem(renameNow.AddMinutes(-5), renameNow) ||
+    DesktopItemPreservationPolicy.ShouldPinRenamedItem(DateTime.MaxValue, renameNow))
+    throw new Exception("Renamed item pin age mismatch.");
+if (DesktopItemPreservationPolicy.NeedsCheckpointBeforeRemoval(9) || !DesktopItemPreservationPolicy.NeedsCheckpointBeforeRemoval(10))
+    throw new Exception("Mass removal checkpoint threshold mismatch.");
+if (DesktopItemPreservationPolicy.CanJudgeMissing(false, false) || DesktopItemPreservationPolicy.CanJudgeMissing(true, true) ||
+    !DesktopItemPreservationPolicy.CanJudgeMissing(true, false))
+    throw new Exception("Missing-item judgement mismatch.");
+preservationCases += 6;
+
+string[] netDesktop = [@"\\nas\home\Desktop", @"C:\Users\Public\Desktop"];
+string[] publicOnly = [@"C:\Users\Public\Desktop"];
+string[] redirected = [@"D:\Desktop", @"C:\Users\Public\Desktop"];
+if (!DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, publicOnly) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, redirected) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, netDesktop) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink(Array.Empty<string>(), publicOnly) ||
+    !DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, Array.Empty<string>()) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink([@"C:\USERS\PUBLIC\DESKTOP"], publicOnly) ||
+    !DesktopItemPreservationPolicy.ShouldSkipReconcile(false, true, netDesktop, publicOnly) ||
+    DesktopItemPreservationPolicy.ShouldSkipReconcile(false, true, publicOnly, netDesktop))
+    throw new Exception("Desktop root shrink detection mismatch.");
+// An explicit rules run, or a gate nobody feeds any more, never blocks the reconcile.
+if (DesktopItemPreservationPolicy.ShouldSkipReconcile(true, true, netDesktop, publicOnly) ||
+    DesktopItemPreservationPolicy.ShouldSkipReconcile(false, false, netDesktop, publicOnly))
+    throw new Exception("Reconcile skip must be limited to automatic passes while the shrink gate is active.");
+// Temp-file saves (report.docx -> ~WRL0001.tmp, then report.docx is back) must not retarget.
+if (!DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: false, newPathPresent: true) ||
+    DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: true, newPathPresent: true) ||
+    DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: true, newPathPresent: false) ||
+    DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: false, newPathPresent: false))
+    throw new Exception("Grouped rename must apply only when the old name is gone and the new name exists.");
+if (!DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(10, DateTime.MinValue, renameNow) ||
+    DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(9, DateTime.MinValue, renameNow) ||
+    DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(50, renameNow.AddMinutes(-30), renameNow) ||
+    !DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(50, renameNow.AddMinutes(-61), renameNow) ||
+    !DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(50, renameNow.AddMinutes(5), renameNow))
+    throw new Exception("Desktop cleanup checkpoint throttle mismatch.");
+preservationCases += 13;
+
+var shrinkGate = new DesktopRootShrinkGate();
+var t0 = renameNow;
+if (!shrinkGate.ShouldAccept(netDesktop, redirected, t0)) throw new Exception("A replaced desktop root must be accepted at once.");
+if (shrinkGate.ShouldAccept(netDesktop, publicOnly, t0) || !shrinkGate.IsPending ||
+    shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(4)) ||
+    shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(8)))
+    throw new Exception("A brief desktop disconnect must not be accepted.");
+if (!shrinkGate.IsActivelyPending(t0.AddSeconds(10)) || shrinkGate.IsActivelyPending(t0.AddSeconds(30)))
+    throw new Exception("An unfed shrink gate must stop counting as actively pending.");
+// The folder came back for a while (no observations), then vanished again: counting restarts.
+if (shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(40)) ||
+    shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(44)))
+    throw new Exception("A gap between observations must restart the shrink gate.");
+var accepted = false;
+for (var s = 48; s <= 64 && !accepted; s += 4)
+    accepted = shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(s));
+if (!accepted || shrinkGate.IsPending) throw new Exception("A desktop folder missing for 20+ seconds must eventually be accepted.");
+if (shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(100)))
+    throw new Exception("A new disconnect after acceptance must start counting again.");
+if (!shrinkGate.ShouldAccept(publicOnly, publicOnly, t0.AddSeconds(104)) || shrinkGate.IsPending)
+    throw new Exception("Matching roots must reset the shrink gate.");
+preservationCases += 7;
+Console.WriteLine($"PASS: {preservationCases} icon/group preservation policy checks");
+
 var checkpointCases = new (string File, string Expected)[]
 {
     ("before-import-20261027-101500", "백업 가져오기 전"),
@@ -427,6 +592,8 @@ var checkpointCases = new (string File, string Expected)[]
     ("before-monitor-profile-restore-0123456789abcdef0123456789abcdef-20261027-101500", "모니터 배치를 복원하기 전"),
     ("before-github-auto-update-8-0-36-20261027-101500", "자동 업데이트 설치 전 (v8.0.36)"),
     ("before-update-20261027-101500", "업데이트 설치 전"),
+    ("before-desktop-cleanup-20261027-101500", "바탕화면 항목 정리 전"),
+    ("Before-swapping-screen-contents-20261027-101500", "화면 내용 교환 전"),
     ("before-importer-20261027-101500", "before-importer"),
     ("custom-0123456789abcdef0123456789abcdef-20261027-101500", "custom"),
     ("", "복구 지점")
@@ -446,3 +613,117 @@ foreach (var empty in new[] { null, "", "   " })
     if (ShellPropertiesLauncher.TryShow(empty, out var emptyError) || string.IsNullOrEmpty(emptyError))
         throw new Exception("Empty properties target must fail with a reason.");
 Console.WriteLine("PASS: 6 properties target checks");
+
+// v70: opening many group items is confirmed (or capped with a notice), never silently cut.
+var v70OpenCases = new (int Total, bool Confirm, int Threshold, BatchOpenDecision Decision, int Open)[]
+{
+    (5, true, 20, BatchOpenDecision.OpenAll, 5),
+    (12, false, 20, BatchOpenDecision.OpenAll, 12),
+    (13, false, 20, BatchOpenDecision.OpenFirstAndNotify, 12),
+    (13, true, 20, BatchOpenDecision.OpenAll, 13),
+    (25, true, 20, BatchOpenDecision.ConfirmThenOpenAll, 25),
+    (13, true, 1, BatchOpenDecision.ConfirmThenOpenAll, 13),
+    (10, true, 5, BatchOpenDecision.ConfirmThenOpenAll, 10),
+    (10, false, 5, BatchOpenDecision.OpenAll, 10),
+    (-3, true, 20, BatchOpenDecision.OpenAll, 0),
+};
+foreach (var v70Case in v70OpenCases)
+{
+    var v70Plan = BatchOpenPolicy.Plan(v70Case.Total, v70Case.Confirm, v70Case.Threshold);
+    if (v70Plan.Decision != v70Case.Decision || v70Plan.OpenCount != v70Case.Open || v70Plan.TotalCount != Math.Max(0, v70Case.Total))
+        throw new Exception($"Batch open mismatch: total={v70Case.Total} confirm={v70Case.Confirm} threshold={v70Case.Threshold} -> {v70Plan}");
+}
+Console.WriteLine($"PASS: {v70OpenCases.Length} batch open checks");
+
+// v70: Folder Portal change bursts refresh after a quiet period, but at most 2 s after the first change.
+var v70T = new DateTime(2026, 10, 27, 12, 0, 0, DateTimeKind.Utc);
+if (FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T, v70T) != TimeSpan.FromMilliseconds(400) ||
+    FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T.AddMilliseconds(1900), v70T.AddMilliseconds(1900)) != TimeSpan.FromMilliseconds(100) ||
+    FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T.AddSeconds(3), v70T.AddSeconds(3)) != TimeSpan.Zero ||
+    FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T, v70T.AddSeconds(10)) != TimeSpan.Zero)
+    throw new Exception("Folder Portal refresh coalescing mismatch.");
+Console.WriteLine("PASS: 4 Folder Portal refresh coalescing checks");
+
+// v70: automatic loose icon slots are DPI-scaled and skip occupied cells (icons and groups).
+var v70Area = new System.Drawing.Rectangle(0, 0, 3840, 2160);
+var v70None = Array.Empty<System.Drawing.Rectangle>();
+var v70First = LooseDesktopAutoPlacementPlanner.FindSlot(v70Area, 2d, v70None, 0);
+if (v70First != new System.Drawing.Point(24, 24))
+    throw new Exception($"First 200% slot mismatch: {v70First}");
+var v70Second = LooseDesktopAutoPlacementPlanner.FindSlot(v70Area, 2d,
+    new[] { new System.Drawing.Rectangle(24, 24, 176, 208) }, 1);
+if (v70Second != new System.Drawing.Point(24, 24 + 324))
+    throw new Exception($"Second 200% slot mismatch: {v70Second}");
+var v70Gap = LooseDesktopAutoPlacementPlanner.FindSlot(new System.Drawing.Rectangle(0, 0, 1920, 1080), 1d,
+    new[] { new System.Drawing.Rectangle(12, 12, 88, 104), new System.Drawing.Rectangle(12, 12 + 162 * 2, 88, 104) }, 2);
+if (v70Gap != new System.Drawing.Point(12, 12 + 162))
+    throw new Exception($"Gap slot was not reused: {v70Gap}");
+var v70Group = LooseDesktopAutoPlacementPlanner.FindSlot(new System.Drawing.Rectangle(0, 0, 1920, 1080), 1d,
+    new[] { new System.Drawing.Rectangle(0, 0, 130, 1080) }, 0);
+if (v70Group != new System.Drawing.Point(12 + 136, 12))
+    throw new Exception($"Group window was not avoided: {v70Group}");
+var v70Tiny = new System.Drawing.Rectangle(0, 0, 200, 200);
+var v70Full = LooseDesktopAutoPlacementPlanner.FindSlot(v70Tiny, 1d, new[] { v70Tiny }, 5);
+if (v70Full != new System.Drawing.Point(12, 12))
+    throw new Exception($"Full-grid fallback mismatch: {v70Full}");
+if (LooseDesktopAutoPlacementPlanner.NormalizeScale(double.NaN) != 1d ||
+    LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.ItemWidthDip, 1.75) != 154)
+    throw new Exception("Loose icon DPI scaling mismatch.");
+Console.WriteLine("PASS: 6 loose icon auto-placement checks");
+// v8.0.44: recovery checkpoints are retained per kind, so frequent automatic monitor
+// checkpoints keep only 5 and never push out pre-update/pre-import/unclean-session ones.
+if (RecoveryCheckpointRetentionPolicy.Classify("before-monitor-profile-restore-0123456789abcdef0123456789abcdef-20261027-101500") != RecoveryCheckpointBucket.MonitorAutomatic ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-auto-monitor-reduction-0123456789abcdef0123456789abcdef-20261027-101500") != RecoveryCheckpointBucket.MonitorAutomatic ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-import-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("unclean-session-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-update-8-0-42-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-delete-group-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-remove-tab-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-desktop-cleanup-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-importer-20261027-101500") != RecoveryCheckpointBucket.Other)
+    throw new Exception("Recovery checkpoint retention bucket mismatch.");
+var retentionNow = new DateTime(2026, 10, 27, 12, 0, 0, DateTimeKind.Utc);
+var retentionFiles = new List<(string Name, DateTime LastWriteUtc)>();
+for (var i = 0; i < 30; i++)
+    retentionFiles.Add(($"before-monitor-profile-restore-{i:D32}-20261027-1000{i:D2}.json", retentionNow.AddMinutes(-i)));
+retentionFiles.Add(("before-update-8-0-42-20261001-101500.json", retentionNow.AddDays(-26)));
+retentionFiles.Add(("before-import-20260801-101500.json", retentionNow.AddDays(-87)));
+retentionFiles.Add(("unclean-session-20260701-101500.json", retentionNow.AddDays(-118)));
+var retentionDeleted = RecoveryCheckpointRetentionPolicy.SelectForDeletion(retentionFiles, retentionNow);
+if (retentionDeleted.Count != 25 || retentionDeleted.Any(n => !n.StartsWith("before-monitor-profile-restore-", StringComparison.Ordinal)))
+    throw new Exception("Monitor checkpoints must keep 5 and never evict pre-update/pre-import/unclean-session checkpoints.");
+var oldImportant = Enumerable.Range(0, 25).Select(i => ($"before-update-{i}-20260101-101500.json", retentionNow.AddDays(-40 - i))).ToList();
+if (RecoveryCheckpointRetentionPolicy.SelectForDeletion(oldImportant, retentionNow).Count != 5)
+    throw new Exception("Important checkpoints older than 30 days must keep the newest 20.");
+var recentImportant = Enumerable.Range(0, 25).Select(i => ($"before-import-{i}-20261001-101500.json", retentionNow.AddDays(-i))).ToList();
+if (RecoveryCheckpointRetentionPolicy.SelectForDeletion(recentImportant, retentionNow).Count != 0)
+    throw new Exception("Important checkpoints from the last 30 days must be kept.");
+if (RecoveryCheckpointLabelPolicy.Describe("unclean-session-20261027-101500") != "비정상 종료된 세션 시작 시점")
+    throw new Exception("Unclean-session checkpoint must have a Korean label.");
+Console.WriteLine("PASS: per-kind recovery checkpoint retention and unclean-session label");
+
+// v8.0.44: undo snapshots have Korean names and their own retention bucket; legacy names
+// are recognized only in their exact machine-generated form.
+var namedAt = new DateTime(2026, 10, 27, 14, 3, 0);
+if (LayoutSnapshotNamePolicy.BuildUndoName(LayoutSnapshotNamePolicy.AlignLeft, namedAt) != "왼쪽 맞춤 전 · 10월 27일 14:03" ||
+    LayoutSnapshotNamePolicy.BuildAutomaticName(namedAt) != "자동 · 10월 27일" ||
+    LayoutSnapshotNamePolicy.BuildManualDefaultName(namedAt) != "레이아웃 2026-10-27 14:03" ||
+    LayoutSnapshotNamePolicy.Display("Before align-left 2026-10-27 14:03:00", false, namedAt) != "왼쪽 맞춤 전 · 10월 27일 14:03" ||
+    LayoutSnapshotNamePolicy.Display("Automatic 2026-10-27", true, namedAt) != "자동 · 10월 27일" ||
+    LayoutSnapshotNamePolicy.Display("업무용 배치", false, namedAt) != "업무용 배치")
+    throw new Exception("Layout snapshot Korean naming mismatch.");
+if (!LayoutSnapshotNamePolicy.IsUndoCheckpoint(false, false, "Before pack-groups 2026-10-27 14:03:00") ||
+    !LayoutSnapshotNamePolicy.IsUndoCheckpoint(true, false, "아무 이름") ||
+    LayoutSnapshotNamePolicy.IsUndoCheckpoint(false, false, "Before align-left (업무용)") ||
+    LayoutSnapshotNamePolicy.IsUndoCheckpoint(false, true, "Before align-left 2026-10-27 14:03:00") ||
+    LayoutSnapshotNamePolicy.LegacyUndoAction("Before snapshot restore 2026-10-27 14:03:00") != LayoutSnapshotNamePolicy.SnapshotRestore ||
+    LayoutSnapshotNamePolicy.UndoRetention != 5)
+    throw new Exception("Undo snapshot classification mismatch.");
+// The undo command shows the date when the checkpoint is not from today.
+if (LayoutSnapshotNamePolicy.BuildUndoCommandLabel(LayoutSnapshotNamePolicy.AlignLeft, namedAt, namedAt.AddHours(2)) != "마지막 배치 변경 되돌리기 (왼쪽 맞춤, 14:03)" ||
+    LayoutSnapshotNamePolicy.BuildUndoCommandLabel(LayoutSnapshotNamePolicy.SnapshotRestore, namedAt, namedAt.AddDays(3)) != "마지막 배치 변경 되돌리기 (스냅샷 복원, 10월 27일 14:03)")
+    throw new Exception("Undo command label must show the date for an earlier day.");
+if (TrayMenuRoutingPolicy.Route("recovery.app-rollback", "되돌리기 취소 (v8.0.43 다시 설치)…") != TrayMenuSection.Recovery ||
+    TrayMenuRoutingPolicy.Route("recovery.app-rollback", "마지막 앱 업데이트 되돌리기…") != TrayMenuSection.Recovery)
+    throw new Exception("App rollback / rollback undo must route to the recovery menu.");
+Console.WriteLine("PASS: Korean snapshot names and separate undo snapshot bucket");

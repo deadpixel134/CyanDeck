@@ -41,7 +41,8 @@ public sealed partial class AppController
         window.ModelChanged += Persist;
         window.DisplayTransitionMessage += OnFenceDisplayTransitionMessage;
         window.DeleteRequested += OnDeleteFence;
-        window.NewFenceRequested += CreateNewFence;
+        // A group menu creates the new group on that group's monitor and page, at a free spot.
+        window.NewFenceRequested += () => CreateNewFenceNear(window);
         window.SettingsRequested += OpenSettingsWindow;
         window.AutomationRulesChanged += () =>
         {
@@ -49,14 +50,16 @@ public sealed partial class AppController
             else Persist();
         };
         window.SourcePathDropped += path => ImportDroppedIntoFence(window, path);
+        WireItemPreservationEvents(window);
         window.ItemsDetachToDesktopRequested += OnItemsDetachToDesktopRequested;
         window.MoveCompleted += OnFenceMoveCompleted;
         window.TabTransferRequested += OnTabTransferRequested;
         window.TabDetachRequested += OnTabDetachRequested;
         window.DuplicateRequested += DuplicateFence;
         window.SaveTemplateRequested += SaveFenceTemplate;
-        window.CreateFromTemplateRequested += CreateFenceFromTemplate;
+        window.CreateFromTemplateRequested += templateId => CreateFenceFromTemplateNear(templateId, window);
         window.VisibilitySettingsChanged += UpdateWindowVisibility;
+        WireGroupPageOperations(window);
         // Attach at SourceInitialized, before WPF Show(), to avoid exposing a
         // transient taskbar button and an app-level Z-order promotion.
         window.SourceInitialized += (_, _) => _host.Attach(window);

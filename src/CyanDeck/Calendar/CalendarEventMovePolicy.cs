@@ -19,7 +19,9 @@ public static class CalendarEventMovePolicy
                 : end?.Date ?? source.EffectiveEndDate.AddDays(dayDelta),
             StartAt = start, EndAt = end,
             Text = source.Title, CalendarId = source.CalendarId ?? "primary",
-            LocalOnly = source.LocalOnly
+            LocalOnly = source.LocalOnly,
+            // Moving never drops a local repeat rule.
+            Recurrence = source.Recurrence
         };
     }
 

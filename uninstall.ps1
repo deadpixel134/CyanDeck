@@ -84,6 +84,29 @@ foreach ($shortcut in @($startMenuShortcut, $desktopShortcut)) {
   }
 }
 
+# Optional command shortcuts created from CyanDeck ("CyanDeck Shortcuts" Start menu
+# folder). Remove only links that target the installed CyanDeck.exe; keep anything
+# else and leave a junctioned folder alone. The folder is removed only when empty.
+$commandShortcutDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\CyanDeck Shortcuts'
+if (Test-Path -LiteralPath $commandShortcutDir -PathType Container) {
+  $commandDirInfo = Get-Item -LiteralPath $commandShortcutDir -Force
+  if (($commandDirInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+    $expectedCommandExe = [IO.Path]::GetFullPath((Join-Path $installDir 'CyanDeck.exe'))
+    foreach ($commandLink in @(Get-ChildItem -LiteralPath $commandShortcutDir -Filter '*.lnk' -File -Force)) {
+      try {
+        $link = $wsh.CreateShortcut($commandLink.FullName)
+        if (-not [string]::IsNullOrWhiteSpace($link.TargetPath) -and
+            [string]::Equals([IO.Path]::GetFullPath($link.TargetPath), $expectedCommandExe, [StringComparison]::OrdinalIgnoreCase)) {
+          Remove-Item -LiteralPath $commandLink.FullName -Force -ErrorAction Stop
+        }
+      } catch { Write-Warning "Command shortcut was not removed: $($commandLink.FullName) ($($_.Exception.Message))" }
+    }
+    if (@(Get-ChildItem -LiteralPath $commandShortcutDir -Force).Count -eq 0) {
+      Remove-Item -LiteralPath $commandShortcutDir -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 $runValue = (Get-ItemProperty -Path $runKey -Name 'CyanDeck' -ErrorAction SilentlyContinue).CyanDeck
 if (-not [string]::IsNullOrWhiteSpace($runValue) -and
     $runValue.Trim('"') -ieq (Join-Path $installDir 'CyanDeck.exe')) {

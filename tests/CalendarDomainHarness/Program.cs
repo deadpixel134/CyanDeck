@@ -328,6 +328,38 @@ foreach (var rowCount in new[] { 3, 5, 6, 8 })
         $"today belongs to centered week for {rowCount}-row rolling viewport");
 }
 
+// Day rollover: the next check lands just after local midnight, never more than an hour away.
+Assert.That(CalendarTodayRefreshPolicy.DelayUntilNextCheck(new DateTime(2026, 10, 20, 23, 50, 0))
+    == TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(2), "rollover check is armed just after midnight");
+Assert.That(CalendarTodayRefreshPolicy.DelayUntilNextCheck(new DateTime(2026, 10, 20, 9, 0, 0))
+    == CalendarTodayRefreshPolicy.MaximumCheckInterval, "rollover check re-runs at least hourly");
+Assert.That(CalendarTodayRefreshPolicy.DelayUntilNextCheck(new DateTime(2026, 10, 20, 23, 59, 59, 999))
+    >= TimeSpan.FromSeconds(1), "rollover check delay is never zero");
+var oldToday = new DateTime(2026, 10, 24);
+Assert.That(CalendarTodayRefreshPolicy.ShouldFollowToday(oldToday, "Rolling", 6, oldToday),
+    "rolling view centred on yesterday follows the new today");
+Assert.That(!CalendarTodayRefreshPolicy.ShouldFollowToday(
+    CalendarViewportPolicy.Navigate(oldToday, "Rolling", 6, 1), "Rolling", 6, oldToday),
+    "rolling view paged away from today keeps the chosen period");
+Assert.That(CalendarTodayRefreshPolicy.ShouldFollowToday(new DateTime(2026, 10, 1), "Month", 6, new DateTime(2026, 10, 31)),
+    "month view showing the old today follows into the next month");
+Assert.That(!CalendarTodayRefreshPolicy.ShouldFollowToday(new DateTime(2026, 12, 1), "Month", 6, new DateTime(2026, 10, 31)),
+    "month view browsing another month is not moved");
+
+// The window stays opaque; the slider value is the final background opacity over its range.
+Assert.That(CalendarOpacityPolicy.WindowOpacity == 1.0, "calendar window (text and events) is fully opaque");
+Assert.That(CalendarOpacityPolicy.BackgroundOpacity(true, 1.0, 0.38) == 1.0
+    && CalendarOpacityPolicy.BackgroundOpacity(true, 0.95, 0.38) == 0.95,
+    "in-use background opacity reaches 100% and changes above 86%");
+Assert.That(CalendarOpacityPolicy.BackgroundOpacity(false, 0.86, 0.38) == 0.38,
+    "idle background uses the idle slider value directly");
+Assert.That(CalendarOpacityPolicy.BackgroundOpacity(true, double.NaN, 0.38) == 0.86
+    && CalendarOpacityPolicy.BackgroundOpacity(false, 0.86, 0.01) == 0.15,
+    "invalid or out-of-range background values fall back or clamp");
+Assert.That(CalendarOpacityPolicy.TodayBackgroundOpacity(0.2) == 0.6
+    && CalendarOpacityPolicy.TodayBackgroundOpacity(0.9) == 0.9,
+    "today's cell keeps a readable minimum background");
+
 
 
 Assert.That(CalendarWeekSizingPolicy.MinHeightPerWeek(650, 24, 6) >
@@ -1208,6 +1240,477 @@ try
         "recovered style must not silently create replacement primary");
 }
 finally { Directory.Delete(appearanceScratch, recursive: true); }
+
+// v68: one rejected Google event must not stall the whole sync; sign-in expiry is
+// recognised; prompt upload never opens a login; disconnect clears remote identity;
+// local-only events can be backed up and imported without duplicating Google events.
+{
+    const string v68OrganizerOnly = "{\"error\":{\"errors\":[{\"domain\":\"calendar\",\"reason\":\"forbiddenForNonOrganizer\",\"message\":\"x\"}],\"code\":403,\"message\":\"x\"}}";
+    const string v68ScopeMissing = "{\"error\":{\"code\":403,\"message\":\"x\",\"status\":\"PERMISSION_DENIED\",\"details\":[{\"reason\":\"ACCESS_TOKEN_SCOPE_INSUFFICIENT\"}]}}";
+    Assert.That(GoogleSyncFailurePolicy.IsEventRejection(403, v68OrganizerOnly) &&
+        GoogleSyncFailurePolicy.DescribeRejection(403, v68OrganizerOnly) ==
+            GoogleSyncFailurePolicy.RejectionPrefix + GoogleSyncFailurePolicy.OrganizerOnlyDetail,
+        "organizer-only 403 rejects just that event with a Korean reason");
+    Assert.That(!GoogleSyncFailurePolicy.IsEventRejection(403, v68ScopeMissing),
+        "account-wide 403 (missing scope) still stops the whole sync");
+    Assert.That(!GoogleSyncFailurePolicy.IsPermanentEventRejection(500) &&
+        !GoogleSyncFailurePolicy.IsPermanentEventRejection(401) &&
+        !GoogleSyncFailurePolicy.IsPermanentEventRejection(429) &&
+        GoogleSyncFailurePolicy.IsPermanentEventRejection(400) &&
+        GoogleSyncFailurePolicy.IsPermanentEventRejection(404),
+        "network, server, sign-in and quota errors are not per-event rejections");
+    Assert.That(GoogleSyncFailurePolicy.DescribeRejection(404, "not json").Contains("찾을 수 없습니다"),
+        "unparseable 404 still gets a readable reason");
+    Assert.That(GoogleSyncFailurePolicy.IsReauthorizationRequired(400,
+            "{\"error\":\"invalid_grant\",\"error_description\":\"Token has been expired or revoked.\"}") &&
+        !GoogleSyncFailurePolicy.IsReauthorizationRequired(500, "{\"error\":\"invalid_grant\"}") &&
+        !GoogleSyncFailurePolicy.IsReauthorizationRequired(400, "{\"error\":\"invalid_client\"}"),
+        "only an explicit invalid_grant requires signing in again");
+
+    static bool V68Invited(string json, string calendarId)
+    {
+        using var document = JsonDocument.Parse(json);
+        return GoogleSyncFailurePolicy.IsInvitedAttendeeCopy(document.RootElement, calendarId);
+    }
+    Assert.That(V68Invited("{\"organizer\":{\"email\":\"boss@example.com\"},\"attendees\":[{\"email\":\"me@example.com\",\"self\":true}]}", "me@example.com"),
+        "a meeting organized by someone else is read-only from download");
+    Assert.That(!V68Invited("{\"guestsCanModify\":true,\"organizer\":{\"email\":\"boss@example.com\"},\"attendees\":[{\"self\":true}]}", "me@example.com") &&
+        !V68Invited("{\"organizer\":{\"email\":\"me@example.com\",\"self\":true},\"attendees\":[{\"self\":true}]}", "me@example.com") &&
+        !V68Invited("{\"organizer\":{\"email\":\"team@group.calendar.google.com\"},\"attendees\":[{\"self\":true}]}", "team@group.calendar.google.com") &&
+        !V68Invited("{\"organizer\":{\"email\":\"boss@example.com\"}}", "me@example.com"),
+        "own events, guest-editable meetings and shared-calendar events stay editable");
+
+    Assert.That(CalendarPromptSyncPolicy.Decide(true, true, false, false, false, false) == CalendarPromptSyncDecision.Run &&
+        CalendarPromptSyncPolicy.Decide(false, true, false, false, false, false) == CalendarPromptSyncDecision.Skip &&
+        CalendarPromptSyncPolicy.Decide(true, false, false, false, false, false) == CalendarPromptSyncDecision.Skip &&
+        CalendarPromptSyncPolicy.Decide(true, true, false, true, false, false) == CalendarPromptSyncDecision.RetryLater &&
+        CalendarPromptSyncPolicy.Decide(true, true, false, false, true, false) == CalendarPromptSyncDecision.RetryLater &&
+        CalendarPromptSyncPolicy.Decide(true, true, false, false, false, true) == CalendarPromptSyncDecision.RetryLater,
+        "prompt upload runs only with a silent token and waits for edits, drags and running syncs");
+
+    var v68Nine = new DateTime(2026, 3, 2, 9, 0, 0);
+    var v68Pending = new CalendarEvent { Title = "회의", Date = v68Nine.Date, EndDate = v68Nine.Date,
+        StartAt = new DateTimeOffset(v68Nine, TimeZoneInfo.Local.GetUtcOffset(v68Nine)),
+        EndAt = new DateTimeOffset(v68Nine.AddMinutes(90), TimeZoneInfo.Local.GetUtcOffset(v68Nine.AddMinutes(90))),
+        CalendarId = "primary", Dirty = true };
+    var v68Tooltip = CalendarEventStatusText.Tooltip(v68Pending, "내 캘린더");
+    Assert.That(CalendarEventStatusText.BarPrefix(v68Pending) == CalendarEventStatusText.PendingMarker &&
+        v68Tooltip.Contains("09:00~10:30") && v68Tooltip.Contains("내 캘린더 · Google 업로드 대기"),
+        "pending upload is marked on the bar and the tooltip shows time, calendar and state");
+    Assert.That(CalendarEventStatusText.BarPrefix(v68Pending, googleConnected: false) == "" &&
+        CalendarEventStatusText.SyncState(v68Pending, googleConnected: false) == "로컬 (Google 연결 전)",
+        "events saved before any Google connection show no upload marker");
+    var v68DeletedLinked = new CalendarEvent { Title = "삭제", RemoteId = "g4", RemoteETag = "e4",
+        Dirty = true, Deleted = true, CalendarId = "primary" };
+    Assert.That(CalendarPromptSyncPolicy.HasPendingUploads(new[] { v68DeletedLinked }) &&
+        CalendarEventStatusText.BarPrefix(v68DeletedLinked) == "" &&
+        !CalendarPromptSyncPolicy.HasPendingUploads(new[] { new CalendarEvent { Title = "x", LocalOnly = true, Dirty = true } }),
+        "a deleted Google event counts as upload work for the prompt sync");
+    var v68Rejected = new CalendarEvent { Title = "초대", Conflict = true, Dirty = true, RemoteId = "r1",
+        SyncError = GoogleSyncFailurePolicy.RejectionPrefix + GoogleSyncFailurePolicy.OrganizerOnlyDetail };
+    var v68LocalOnly = new CalendarEvent { Title = "개인", LocalOnly = true, Dirty = false,
+        CalendarId = CalendarEventStore.LocalCalendarId };
+    Assert.That(CalendarEventStatusText.BarPrefix(v68Rejected) == CalendarEventStatusText.ConflictMarker &&
+        CalendarEventStatusText.SyncState(v68Rejected).Contains(GoogleSyncFailurePolicy.OrganizerOnlyDetail) &&
+        CalendarEventStatusText.BarPrefix(v68LocalOnly) == "" &&
+        CalendarEventStatusText.SyncState(v68LocalOnly) == "로컬 전용",
+        "conflict shows its reason and local-only events show no upload marker");
+
+    var v68Events = new List<CalendarEvent>
+    {
+        v68LocalOnly,
+        new() { Title = "clean google", RemoteId = "g1", RemoteETag = "e1", Dirty = false, CalendarId = "me@example.com" },
+        new() { Title = "unsent edit", RemoteId = "g2", RemoteETag = "e2", Dirty = true, CalendarId = "me@example.com",
+            RecurringEventId = "series1", SeriesEditPending = true, SeriesBaseStartAt = DateTimeOffset.UtcNow, RemoteOrganizerOnly = true },
+        new() { Title = "pending create", RemoteId = "ddabc", RemoteCreatePending = true, Dirty = true, CalendarId = "me@example.com" },
+        new() { Title = "never uploaded", Dirty = true, CalendarId = "me@example.com" },
+        new() { Title = "pending delete", RemoteId = "g3", RemoteETag = "e3", Dirty = true, Deleted = true, CalendarId = "me@example.com" }
+    };
+    Assert.That(GoogleDisconnectPolicy.CountUnsentChanges(v68Events) == 3 &&
+        GoogleDisconnectPolicy.CountDownloadedCopies(v68Events) == 1,
+        "disconnect warning counts unsent changes and downloaded copies");
+    var v68Disconnect = GoogleDisconnectPolicy.Apply(v68Events);
+    Assert.That(v68Disconnect.Removed == 2 && v68Disconnect.ConvertedToLocal == 3 && v68Disconnect.KeptLocal == 1 &&
+        v68Events.Count == 4 &&
+        v68Events.All(e => e.LocalOnly && e.RemoteId is null && e.RemoteETag is null && !e.RemoteCreatePending && !e.Dirty &&
+            e.CalendarId == CalendarEventStore.LocalCalendarId &&
+            e.RecurringEventId is null && !e.SeriesEditPending && e.SeriesBaseStartAt is null && !e.RemoteOrganizerOnly),
+        "disconnect leaves no event that could be pushed to a different account");
+
+    var v68Credentials = new VerifiedCredentialCheckpoint<string>();
+    v68Credentials.LoadVerified("old");
+    v68Credentials.Stage("candidate");
+    v68Credentials.Clear();
+    Assert.That(v68Credentials.Active is null && !v68Credentials.IsPending,
+        "disconnect forgets verified and candidate credentials");
+
+    var v68Scratch = Path.Combine(Path.GetTempPath(), "cyandeck-v68-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(v68Scratch);
+    try
+    {
+        var v68PrefsPath = Path.Combine(v68Scratch, "calendar-preferences.json");
+        var v68Prefs = new CalendarPreferencesStore(v68PrefsPath);
+        v68Prefs.UpdateCatalog([new GoogleCalendarSource { Id = "me@example.com", Name = "Me", AccessRole = "owner", IsPrimary = true }]);
+        v68Prefs.UpdateSyncToken("me@example.com", "sync-1");
+        v68Prefs.SetHolidayVisibility(KoreanHolidayCalendars.GoogleId, true);
+        v68Prefs.ClearGoogleAccount();
+        var v68Reopened = new CalendarPreferencesStore(v68PrefsPath).Data;
+        Assert.That(v68Reopened.Catalog.Count == 0 && v68Reopened.SyncTokens.Count == 0 &&
+            v68Reopened.SelectedCalendarIds is null && v68Reopened.TargetCalendarId is null &&
+            v68Reopened.ShowGoogleKoreanHolidays,
+            "disconnect clears account catalog, tokens and selection but keeps holiday choices");
+
+        var v68StorePath = Path.Combine(v68Scratch, "calendar-events.json");
+        var v68Store = new CalendarEventStore(v68StorePath);
+        var v68Local = new CalendarEvent { Title = "로컬 일정", Date = new DateTime(2026, 5, 1), EndDate = new DateTime(2026, 5, 2),
+            LocalOnly = true, Dirty = false, CalendarId = CalendarEventStore.LocalCalendarId };
+        var v68Linked = new CalendarEvent { Title = "구글 일정", Date = new DateTime(2026, 5, 3), RemoteId = "g9",
+            RemoteETag = "e9", Dirty = false, CalendarId = "me@example.com", SyncError = "Google이 수정을 거부함: test" };
+        v68Store.CommitSnapshot([v68Local, v68Linked]);
+        Assert.That(new CalendarEventStore(v68StorePath).Events.Single(e => e.RemoteId == "g9").SyncError == "Google이 수정을 거부함: test" &&
+            v68Store.CreateSnapshot().Single(e => e.RemoteId == "g9").SyncError == "Google이 수정을 거부함: test",
+            "rejection reason survives restart and snapshot copies");
+
+        var v68BackupPath = Path.Combine(v68Scratch, "backup.json");
+        var v68Styles = new CalendarEventAppearanceStore(Path.Combine(v68Scratch, "calendar-event-appearance.json"));
+        v68Styles.Set(v68Local.Id, "#26B7A9", null);
+        Assert.That(CalendarEventBackup.Export(v68Store.Events, v68Styles.Get, v68BackupPath) == 1,
+            "only local events are exported");
+        var v68Backup = CalendarEventBackup.Read(v68BackupPath);
+        Assert.That(v68Backup.Events.Single().Title == "로컬 일정" &&
+            v68Backup.Appearance[v68Local.Id.ToString("N")].BackgroundColor == "#26B7A9",
+            "backup keeps the event and its color");
+        Assert.That(CalendarEventBackup.PlanImport(v68Store.Events, v68Backup) is { Added.Count: 0, SkippedDuplicates: 1 },
+            "importing into the same calendar adds no duplicate");
+
+        var v68Fresh = new CalendarEventStore(Path.Combine(v68Scratch, "fresh-events.json"));
+        v68Backup.Events.Add(new CalendarEvent { Title = "구글 사본", RemoteId = "g10", Dirty = false });
+        var v68Plan = CalendarEventBackup.PlanImport(v68Fresh.Events, v68Backup);
+        Assert.That(v68Plan.Added.Count == 1 && v68Plan.SkippedLinked == 1 &&
+            v68Plan.Added[0] is { LocalOnly: true, Dirty: false, RemoteId: null } &&
+            v68Plan.Added[0].CalendarId == CalendarEventStore.LocalCalendarId &&
+            v68Plan.Appearance[v68Plan.Added[0].Id].BackgroundColor == "#26B7A9",
+            "imported events become local-only, Google copies are skipped and colors follow");
+        var v68FreshStyles = new CalendarEventAppearanceStore(Path.Combine(v68Scratch, "fresh-appearance.json"));
+        v68FreshStyles.SetMany(v68Plan.Appearance);
+        Assert.That(new CalendarEventAppearanceStore(Path.Combine(v68Scratch, "fresh-appearance.json"))
+                .Get(v68Plan.Added[0].Id).BackgroundColor == "#26B7A9",
+            "imported colors are saved in one checkpoint");
+
+        // A local repeating series keeps its rule and removed occurrences through export/import.
+        var v68Series = new CalendarEvent { Title = "반복 로컬", Date = new DateTime(2026, 6, 1), LocalOnly = true, Dirty = false,
+            CalendarId = CalendarEventStore.LocalCalendarId, Recurrence = "FREQ=DAILY;COUNT=5",
+            RecurrenceExceptions = [new DateTime(2026, 6, 3)] };
+        var v68SeriesPath = Path.Combine(v68Scratch, "series-backup.json");
+        Assert.That(CalendarEventBackup.Export(new[] { v68Series }, _ => new CalendarEventAppearance(), v68SeriesPath) == 1,
+            "a local series is exported");
+        var v68SeriesPlan = CalendarEventBackup.PlanImport(new List<CalendarEvent>(), CalendarEventBackup.Read(v68SeriesPath));
+        Assert.That(v68SeriesPlan.Added.Single() is { Recurrence: "FREQ=DAILY;COUNT=5" } seriesCopy &&
+            seriesCopy.RecurrenceExceptions?.SequenceEqual(new[] { new DateTime(2026, 6, 3) }) == true,
+            "export/import keeps the repeat rule and the removed occurrences");
+        var v68OneOff = new CalendarEvent { Title = "반복 로컬", Date = new DateTime(2026, 6, 1), LocalOnly = true, Dirty = false,
+            CalendarId = CalendarEventStore.LocalCalendarId };
+        Assert.That(CalendarEventBackup.PlanImport(new List<CalendarEvent> { v68OneOff }, CalendarEventBackup.Read(v68SeriesPath)).Added.Count == 1,
+            "a series is not skipped as a duplicate of a one-off event on its first date");
+
+        var v68NotBackup = Path.Combine(v68Scratch, "layout-export.json");
+        File.WriteAllText(v68NotBackup, "{\"Settings\":{},\"Fences\":[]}");
+        var v68Rejects = false;
+        try { CalendarEventBackup.Read(v68NotBackup); }
+        catch (InvalidDataException) { v68Rejects = true; }
+        Assert.That(v68Rejects, "a layout export is not mistaken for a calendar backup");
+        Assert.That(CalendarEventBackup.CompanionPathFor(Path.Combine(v68Scratch, "CyanDeck-backup-1.json"))
+                == Path.Combine(v68Scratch, "CyanDeck-backup-1.calendar-events.json"),
+            "layout export companion file sits next to the export");
+
+        var v68Unconfirmed = new CalendarEvent { Title = "올리지 못한 일정", Date = new DateTime(2026, 5, 5),
+            RemoteId = "dd" + Guid.NewGuid().ToString("N"), RemoteCreatePending = true, Dirty = true, CalendarId = "me@example.com" };
+        var v68UnconfirmedPath = Path.Combine(v68Scratch, "unconfirmed.json");
+        Assert.That(CalendarEventBackup.IsLocalEvent(v68Unconfirmed) &&
+            CalendarEventBackup.Export(new[] { v68Unconfirmed }, _ => new CalendarEventAppearance(), v68UnconfirmedPath) == 1 &&
+            CalendarEventBackup.Read(v68UnconfirmedPath).Events.Single().RemoteId is null,
+            "a create Google never confirmed is backed up as a local event");
+
+        var v68LayoutPath = Path.Combine(v68Scratch, "CyanDeck-backup-2.json");
+        var v68CompanionPath = CalendarEventBackup.CompanionPathFor(v68LayoutPath);
+        CalendarEventBackup.Export(new[] { v68Local }, _ => new CalendarEventAppearance(), v68CompanionPath);
+        Assert.That(CalendarEventBackup.ExportCompanion(new[] { v68Linked }, v68LayoutPath) == 0 &&
+            CalendarEventBackup.Read(v68CompanionPath).Events.Count == 0,
+            "an older companion is emptied when the new export has no local events");
+    }
+    finally { Directory.Delete(v68Scratch, recursive: true); }
+}
+
+// v73: repeat rules (RRULE subset), local occurrence expansion, Google series
+// helpers and editor start/end linking. All pure; no Google request is made.
+{
+    Assert.That(CalendarRecurrenceRule.TryParse("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261231", out var recWeekly)
+        && recWeekly.ToString() == "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261231"
+        && recWeekly.Describe() == "2주마다 (월, 수) · 2026.12.31까지",
+        "weekly rule round-trips and is described in Korean");
+    Assert.That(CalendarRecurrenceRule.TryParse("RRULE:FREQ=DAILY;COUNT=3", out var recDaily) && recDaily.Count == 3
+        && !CalendarRecurrenceRule.TryParse("FREQ=MONTHLY;BYMONTHDAY=1", out _)
+        && !CalendarRecurrenceRule.TryParse("FREQ=DAILY;COUNT=3;UNTIL=20261231", out _)
+        && !CalendarRecurrenceRule.TryParse("FREQ=DAILY;BYDAY=MO", out _)
+        && !CalendarRecurrenceRule.TryParse(null, out _),
+        "unsupported or contradictory rules are rejected");
+    var recStart = new DateTime(2026, 10, 5); // Monday
+    var recDailyMaster = new CalendarEvent { Date = recStart, Title = "daily", Recurrence = "FREQ=DAILY;COUNT=3" };
+    Assert.That(CalendarRecurrenceExpander.OccurrenceDates(recDailyMaster, recDaily, new DateTime(2026, 10, 1),
+            new DateTime(2026, 11, 1)).SequenceEqual(new[] { recStart, recStart.AddDays(1), recStart.AddDays(2) }),
+        "daily COUNT stops after the counted occurrences");
+    var recWeeklyMaster = new CalendarEvent { Date = recStart, Title = "weekly", Recurrence = "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE" };
+    var recWeeklyDates = CalendarRecurrenceExpander.Expand(recWeeklyMaster, new DateTime(2026, 10, 1), new DateTime(2026, 10, 22))
+        .Select(o => o.OccurrenceDate).ToArray();
+    Assert.That(recWeeklyDates.SequenceEqual(new[] { recStart, recStart.AddDays(2), recStart.AddDays(14), recStart.AddDays(16) }),
+        "weekly BYDAY with INTERVAL skips the in-between week");
+    var recMonthly = new CalendarEvent { Date = new DateTime(2026, 1, 31), Title = "pay", Recurrence = "FREQ=MONTHLY;COUNT=4" };
+    Assert.That(CalendarRecurrenceExpander.Expand(recMonthly, new DateTime(2026, 1, 1), new DateTime(2027, 1, 1))
+            .Select(o => o.OccurrenceDate).SequenceEqual(new[] { new DateTime(2026, 1, 31), new DateTime(2026, 3, 31),
+                new DateTime(2026, 5, 31), new DateTime(2026, 7, 31) }),
+        "monthly on the 31st skips shorter months like RFC 5545");
+    var recLeap = new CalendarEvent { Date = new DateTime(2024, 2, 29), Title = "leap", Recurrence = "FREQ=YEARLY" };
+    Assert.That(CalendarRecurrenceExpander.Expand(recLeap, new DateTime(2024, 1, 1), new DateTime(2029, 1, 1))
+            .Select(o => o.OccurrenceDate).SequenceEqual(new[] { new DateTime(2024, 2, 29), new DateTime(2028, 2, 29) }),
+        "yearly Feb 29 occurs only in leap years");
+    var recExcluded = new CalendarEvent { Date = recStart, Title = "skip", Recurrence = "FREQ=DAILY;COUNT=5",
+        RecurrenceExceptions = [recStart.AddDays(1)] };
+    Assert.That(CalendarRecurrenceExpander.Expand(recExcluded, recStart, recStart.AddDays(30))
+            .Select(o => o.OccurrenceDate).SequenceEqual(new[] { recStart, recStart.AddDays(2), recStart.AddDays(3), recStart.AddDays(4) }),
+        "an excluded date is skipped and still counts toward COUNT");
+    var recZone = TimeZoneInfo.CreateCustomTimeZone("RecurrenceKST", TimeSpan.FromHours(9), "KST", "KST");
+    var recTimed = new CalendarEvent { Date = recStart, Title = "standup", Recurrence = "FREQ=WEEKLY;BYDAY=MO,WE",
+        StartAt = new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.FromHours(9)),
+        EndAt = new DateTimeOffset(2026, 10, 5, 9, 30, 0, TimeSpan.FromHours(9)) };
+    var recTimedSecond = CalendarRecurrenceExpander.Expand(recTimed, recStart, recStart.AddDays(7), recZone)[1];
+    Assert.That(recTimedSecond.Event.StartAt == new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.FromHours(9))
+        && recTimedSecond.Event.EndAt - recTimedSecond.Event.StartAt == TimeSpan.FromMinutes(30)
+        && recTimedSecond.Event.Id == recTimed.Id && ReferenceEquals(recTimedSecond.Master, recTimed)
+        && recTimedSecond.Event.Recurrence == recTimed.Recurrence,
+        "timed occurrences keep wall-clock time, length and the master id");
+    var recSpan = new CalendarEvent { Date = recStart, EndDate = recStart.AddDays(1), Title = "trip", Recurrence = "FREQ=WEEKLY" };
+    Assert.That(CalendarRecurrenceExpander.Expand(recSpan, recStart.AddDays(1), recStart.AddDays(2))
+            .Select(o => o.OccurrenceDate).SequenceEqual(new[] { recStart }),
+        "a multi-day occurrence that started before the range is still shown");
+    var recUploaded = new CalendarEvent { Date = recStart, Title = "up", Recurrence = "FREQ=DAILY", RemoteId = "series1", Dirty = false };
+    var recInstance = new CalendarEvent { Date = recStart, Title = "up", RemoteId = "series1_20261005", RecurringEventId = "series1", Dirty = false };
+    var recSnapshot = new List<CalendarEvent> { recUploaded, recInstance };
+    Assert.That(CalendarRecurrenceExpander.IsReplacedByGoogleInstances(recUploaded, recSnapshot)
+        && CalendarRecurrenceExpander.RemoveReplacedMasters(recSnapshot) == 1
+        && recSnapshot.Count == 1 && ReferenceEquals(recSnapshot[0], recInstance),
+        "an uploaded local series is replaced by Google instances, never shown twice");
+    var recAllDay = new CalendarEvent { Date = recStart, Title = "gym", Recurrence = "FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130",
+        RecurrenceExceptions = [new DateTime(2026, 10, 12)] };
+    Assert.That(GoogleRecurrencePayload.Lines(recAllDay, recZone, "Asia/Seoul").SequenceEqual(new[]
+        { "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130", "EXDATE;VALUE=DATE:20261012" }),
+        "all-day series uploads RRULE and date EXDATE");
+    var recTimedUpload = new CalendarEvent { Date = recStart, Title = "standup", Recurrence = "FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130",
+        StartAt = recTimed.StartAt, EndAt = recTimed.EndAt, RecurrenceExceptions = [new DateTime(2026, 10, 12)] };
+    Assert.That(GoogleRecurrencePayload.Lines(recTimedUpload, recZone, "Asia/Seoul").SequenceEqual(new[]
+        { "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130T145959Z", "EXDATE;TZID=Asia/Seoul:20261012T090000" }),
+        "timed series uses a UTC UNTIL at the end of the local day and a TZID EXDATE");
+    Assert.That(GoogleRecurrencePayload.ResolveIanaTimeZone(recZone) == "Etc/GMT-9",
+        "unknown zone ids fall back to a fixed-offset IANA zone");
+
+    using var recOwner = JsonDocument.Parse("{\"id\":\"s_1\",\"recurringEventId\":\"s\",\"organizer\":{\"email\":\"me\",\"self\":true}}");
+    using var recGuest = JsonDocument.Parse("{\"id\":\"s_2\",\"recurringEventId\":\"s\",\"organizer\":{\"email\":\"boss\"}}");
+    using var recGuestsModify = JsonDocument.Parse("{\"id\":\"s_3\",\"recurringEventId\":\"s\",\"guestsCanModify\":true,\"organizer\":{\"email\":\"boss\"}}");
+    using var recSingle = JsonDocument.Parse("{\"id\":\"plain\",\"organizer\":{\"email\":\"boss\"}}");
+    using var recMasterItem = JsonDocument.Parse("{\"id\":\"m\",\"recurrence\":[\"RRULE:FREQ=DAILY\"]}");
+    Assert.That(!GoogleRecurringEditPolicy.IsReadOnlyRecurring(recOwner.RootElement)
+        && GoogleRecurringEditPolicy.IsReadOnlyRecurring(recGuest.RootElement)
+        && !GoogleRecurringEditPolicy.IsReadOnlyRecurring(recGuestsModify.RootElement)
+        && !GoogleRecurringEditPolicy.IsReadOnlyRecurring(recSingle.RootElement)
+        && GoogleRecurringEditPolicy.IsReadOnlyRecurring(recMasterItem.RootElement),
+        "only the organizer copy or guestsCanModify makes a Google instance editable");
+    Assert.That(GoogleRecurringEditPolicy.StoredRecurringEventId(recOwner.RootElement, "s_1") == "s"
+        && GoogleRecurringEditPolicy.StoredRecurringEventId(recSingle.RootElement, "plain_x") == ""
+        && GoogleRecurringEditPolicy.StoredRecurringEventId(recSingle.RootElement, "plain") is null,
+        "series id is stored; instance-style ids are marked as checked");
+    Assert.That(GoogleRecurringEditPolicy.NeedsRecurrenceRefresh(new CalendarEvent { RemoteId = "a_20261005", RemoteReadOnly = true })
+        && !GoogleRecurringEditPolicy.NeedsRecurrenceRefresh(new CalendarEvent { RemoteId = "a_20261005", RemoteReadOnly = true, RecurringEventId = "" })
+        && !GoogleRecurringEditPolicy.NeedsRecurrenceRefresh(new CalendarEvent { RemoteId = "plain", RemoteReadOnly = true }),
+        "old read-only instances trigger exactly one full refresh");
+    var (recSeriesStart, recSeriesEnd) = GoogleRecurringEditPolicy.ShiftSeriesTimes(
+        new DateTimeOffset(2026, 9, 7, 9, 0, 0, TimeSpan.FromHours(9)),
+        new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.FromHours(9)),
+        new DateTimeOffset(2026, 10, 5, 10, 30, 0, TimeSpan.FromHours(9)),
+        new DateTimeOffset(2026, 10, 5, 11, 0, 0, TimeSpan.FromHours(9)));
+    Assert.That(recSeriesStart == new DateTimeOffset(2026, 9, 7, 10, 30, 0, TimeSpan.FromHours(9))
+        && recSeriesEnd == new DateTimeOffset(2026, 9, 7, 11, 0, 0, TimeSpan.FromHours(9)),
+        "a whole-series time change shifts the series start and keeps the edited length");
+    using var recBirthday = JsonDocument.Parse("{\"id\":\"b_1\",\"recurringEventId\":\"b\",\"eventType\":\"birthday\",\"organizer\":{\"email\":\"x\"}}");
+    Assert.That(GoogleRecurringEditPolicy.IsOrganizerOnly(recGuest.RootElement, true)
+        && !GoogleRecurringEditPolicy.IsOrganizerOnly(recGuest.RootElement, false)
+        && !GoogleRecurringEditPolicy.IsOrganizerOnly(recOwner.RootElement, true)
+        && !GoogleRecurringEditPolicy.IsOrganizerOnly(recBirthday.RootElement, true),
+        "the organizer message is used only when the organizer rule is the cause");
+    var recLocalId = Guid.NewGuid();
+    Assert.That(CalendarRecurrenceExpander.SeriesLocalId("dd" + recLocalId.ToString("N")) == recLocalId
+        && CalendarRecurrenceExpander.SeriesLocalId("abc") is null && CalendarRecurrenceExpander.SeriesLocalId(null) is null,
+        "Google instances of an uploaded series find the local series id for its colour");
+    CalendarRecurrenceRule.TryParse("FREQ=WEEKLY;BYDAY=WE", out var recWe);
+    CalendarRecurrenceRule.TryParse("FREQ=WEEKLY;BYDAY=TH", out var recTh);
+    CalendarRecurrenceRule.TryParse("FREQ=WEEKLY;BYDAY=MO,WE,TH", out var recMoWeTh);
+    var recMoveBlocked = false;
+    try { CalendarRecurrenceExpander.ResolveSeriesStart(recStart, 1, recMoWeTh); }
+    catch (InvalidOperationException) { recMoveBlocked = true; }
+    Assert.That(CalendarRecurrenceExpander.ResolveSeriesStart(recStart, 0, recWe) == recStart.AddDays(2)
+        && CalendarRecurrenceExpander.ResolveSeriesStart(recStart, 3, recTh) == recStart.AddDays(3)
+        && CalendarRecurrenceExpander.ResolveSeriesStart(recStart, 2, recDaily) == recStart.AddDays(2)
+        && CalendarRecurrenceExpander.ResolveSeriesStart(recStart, 2, null) == recStart.AddDays(2)
+        && recMoveBlocked,
+        "whole-series date moves stay valid for weekly rules or are refused with a reason");
+    var recShiftMaster = new CalendarEvent { Date = recStart, Recurrence = "FREQ=WEEKLY;BYDAY=MO,WE" };
+    Assert.That(CalendarEventStore.RecurrenceExceptionShiftDays(
+            new CalendarEventDraft { StartDate = recStart.AddDays(7), Recurrence = "FREQ=WEEKLY;BYDAY=MO,WE" }, recShiftMaster) == 7
+        && CalendarEventStore.RecurrenceExceptionShiftDays(
+            new CalendarEventDraft { StartDate = recStart.AddDays(2), Recurrence = "FREQ=WEEKLY;BYDAY=WE" }, recShiftMaster) == 0
+        && CalendarEventStore.RecurrenceExceptionShiftDays(
+            new CalendarEventDraft { StartDate = recStart.AddDays(3), Recurrence = "FREQ=WEEKLY;BYDAY=TH" },
+            new CalendarEvent { Date = recStart, Recurrence = "FREQ=WEEKLY;BYDAY=MO" }) == 3,
+        "skipped dates move only when the whole weekly pattern is translated");
+
+    // C5 editor linking.
+    var recDay = new DateTime(2026, 10, 5);
+    Assert.That(CalendarEditorTimePolicy.ShiftEnd(recDay.AddHours(9), recDay.AddHours(10), recDay.AddHours(14)) == recDay.AddHours(15)
+        && CalendarEditorTimePolicy.ShiftEnd(recDay.AddHours(9), recDay.AddHours(9), recDay.AddHours(14)) == recDay.AddHours(15)
+        && CalendarEditorTimePolicy.ShiftEnd(recDay.AddHours(22), recDay.AddHours(23), recDay.AddHours(23).AddMinutes(30))
+            == recDay.AddDays(1).AddMinutes(30),
+        "moving the start keeps the length (one hour when the old length was invalid)");
+    Assert.That(CalendarEditorTimePolicy.ResolveTimedEnd(recDay, TimeSpan.FromHours(23), recDay, TimeSpan.FromHours(1)) == recDay.AddDays(1).AddHours(1)
+        && CalendarEditorTimePolicy.ResolveTimedEnd(recDay, TimeSpan.FromHours(9), recDay, TimeSpan.FromHours(10)) == recDay.AddHours(10)
+        && CalendarEditorTimePolicy.EndHint(recDay, TimeSpan.FromHours(23), recDay, TimeSpan.FromHours(1)) == "다음 날 01:00에 끝남"
+        && CalendarEditorTimePolicy.EndHint(recDay, TimeSpan.FromHours(9), recDay, TimeSpan.FromHours(10)) is null
+        && CalendarEditorTimePolicy.EndHint(recDay, TimeSpan.FromHours(9), recDay, TimeSpan.FromHours(9)) is not null,
+        "an end before the start on the same day means the next day");
+    Assert.That(CalendarEditorTimePolicy.TryParseTime("1430", out var recT1) && recT1 == new TimeSpan(14, 30, 0)
+        && CalendarEditorTimePolicy.TryParseTime("14:30", out var recT2) && recT2 == recT1
+        && CalendarEditorTimePolicy.TryParseTime("930", out var recT3) && recT3 == new TimeSpan(9, 30, 0)
+        && CalendarEditorTimePolicy.TryParseTime("9", out var recT4) && recT4 == new TimeSpan(9, 0, 0)
+        && !CalendarEditorTimePolicy.TryParseTime("2460", out _) && !CalendarEditorTimePolicy.TryParseTime("abc", out _)
+        && !CalendarEditorTimePolicy.TryParseTime("", out _),
+        "typed times accept 1430 / 14:30 / 930 / 9 and reject invalid text");
+    Assert.That(CalendarEditorTimePolicy.MinuteChoices(10).Count == 12
+        && CalendarEditorTimePolicy.MinuteChoices(7).Count == 13 && CalendarEditorTimePolicy.MinuteChoices(7)[2] == 7,
+        "minute list uses 5-minute steps and keeps an existing odd minute");
+
+    var recScratch = Path.Combine(Path.GetTempPath(), "cyandeck-recurrence-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(recScratch);
+    try
+    {
+        var recPath = Path.Combine(recScratch, "events.json");
+        File.WriteAllText(recPath, "[{\"Id\":\"" + Guid.NewGuid() + "\",\"Date\":\"2026-10-05T00:00:00\",\"Title\":\"old\",\"Dirty\":false}]");
+        var recLegacy = new CalendarEventStore(recPath).Events.Single();
+        Assert.That(recLegacy.Recurrence is null && recLegacy.RecurrenceExceptions is null
+            && recLegacy.RecurringEventId is null && !recLegacy.SeriesEditPending && recLegacy.SeriesBaseStartAt is null,
+            "older calendar files load with no recurrence");
+        File.Delete(recPath);
+        var recStore = new CalendarEventStore(recPath);
+        recStore.UpsertBatch(new CalendarEventDraft { StartDate = recStart, EndDate = recStart, LocalOnly = true,
+            Text = "class", Recurrence = "FREQ=WEEKLY;BYDAY=MO,WE" });
+        var recMaster = recStore.Events.Single();
+        Assert.That(new CalendarEventStore(recPath).Events.Single().Recurrence == "FREQ=WEEKLY;BYDAY=MO,WE",
+            "a repeat rule is saved with the event");
+        var recDetached = recStore.SaveOccurrenceException(recMaster, recStart.AddDays(2), new CalendarEventDraft
+        {
+            StartDate = recStart.AddDays(3), EndDate = recStart.AddDays(3), LocalOnly = true, Text = "class moved"
+        });
+        var recAfter = new CalendarEventStore(recPath);
+        var recSavedMaster = recAfter.Events.Single(e => e.Recurrence is not null);
+        Assert.That(recDetached == 1 && recAfter.Events.Count == 2
+            && recSavedMaster.RecurrenceExceptions!.SequenceEqual(new[] { recStart.AddDays(2) })
+            && recAfter.Events.Single(e => e.Recurrence is null).Title == "class moved",
+            "this-occurrence edit skips the date and stores an independent event");
+        var recCopy = recAfter.CreateSnapshot().Single(e => e.Id == recSavedMaster.Id);
+        Assert.That(recCopy.Recurrence == recSavedMaster.Recurrence
+            && recCopy.RecurrenceExceptions!.SequenceEqual(recSavedMaster.RecurrenceExceptions!)
+            && !ReferenceEquals(recCopy.RecurrenceExceptions, recSavedMaster.RecurrenceExceptions),
+            "snapshots deep-copy recurrence fields");
+        recAfter.UpsertBatch(new CalendarEventDraft { StartDate = recStart.AddDays(7), EndDate = recStart.AddDays(7),
+            LocalOnly = true, Text = "class", Recurrence = "FREQ=WEEKLY;BYDAY=MO,WE" }, recSavedMaster);
+        Assert.That(recAfter.Events.Single(e => e.Recurrence is not null).RecurrenceExceptions!
+                .SequenceEqual(new[] { recStart.AddDays(9) }),
+            "moving a whole series moves its skipped dates");
+        var recBadRule = false;
+        try { recAfter.UpsertBatch(new CalendarEventDraft { StartDate = recStart, EndDate = recStart, LocalOnly = true,
+            Text = "x", Recurrence = "FREQ=HOURLY" }); }
+        catch (ArgumentException) { recBadRule = true; }
+        var recBadDay = false;
+        try { recAfter.UpsertBatch(new CalendarEventDraft { StartDate = recStart, EndDate = recStart, LocalOnly = true,
+            Text = "x", Recurrence = "FREQ=WEEKLY;BYDAY=TU" }); }
+        catch (ArgumentException) { recBadDay = true; }
+        Assert.That(recBadRule && recBadDay && recAfter.Events.Count == 2,
+            "invalid rules and weekdays that miss the start are rejected without changes");
+
+        var recInstanceEvent = new CalendarEvent { Date = recStart, EndDate = recStart, Title = "sync",
+            StartAt = recTimed.StartAt, EndAt = recTimed.EndAt, CalendarId = "primary",
+            RemoteId = "series2_20261005T000000Z", RemoteETag = "\"1\"", RecurringEventId = "series2", Dirty = false };
+        var recOtherInstance = new CalendarEvent { Date = recStart.AddDays(7), Title = "sync", CalendarId = "primary",
+            RemoteId = "series2_20261012T000000Z", RemoteETag = "\"1\"", RecurringEventId = "series2", Dirty = false };
+        var recLinkedSingle = new CalendarEvent { Date = recStart, Title = "linked", CalendarId = "primary",
+            RemoteId = "single1", RemoteETag = "\"1\"", Dirty = false };
+        recAfter.CommitSnapshot([recInstanceEvent, recOtherInstance, recLinkedSingle]);
+        var recLiveInstance = recAfter.Events[0];
+        var recNoRecurringOnLinked = false;
+        try { recAfter.UpsertBatch(new CalendarEventDraft { StartDate = recStart, EndDate = recStart, CalendarId = "primary",
+            Text = "linked", Recurrence = "FREQ=DAILY" }, recAfter.Events[2]); }
+        catch (InvalidOperationException) { recNoRecurringOnLinked = true; }
+        Assert.That(recNoRecurringOnLinked, "a Google-linked single event cannot silently become a series");
+        recAfter.UpsertSeriesChange(recLiveInstance, new CalendarEventDraft
+        {
+            StartDate = recStart, EndDate = recStart, CalendarId = "primary", Text = "sync renamed",
+            StartAt = new DateTimeOffset(2026, 10, 5, 10, 0, 0, TimeSpan.FromHours(9)),
+            EndAt = new DateTimeOffset(2026, 10, 5, 10, 45, 0, TimeSpan.FromHours(9))
+        });
+        var recPending = new CalendarEventStore(recPath).Events[0];
+        Assert.That(recPending.SeriesEditPending && recPending.Dirty && recPending.Title == "sync renamed"
+            && recPending.SeriesBaseStartAt == recTimed.StartAt,
+            "whole-series change is queued with the original instance start");
+        var recDateChangeBlocked = false;
+        try { recAfter.UpsertSeriesChange(recAfter.Events[0], new CalendarEventDraft { StartDate = recStart.AddDays(1),
+            EndDate = recStart.AddDays(1), CalendarId = "primary", Text = "x",
+            StartAt = new DateTimeOffset(2026, 10, 6, 10, 0, 0, TimeSpan.FromHours(9)),
+            EndAt = new DateTimeOffset(2026, 10, 6, 11, 0, 0, TimeSpan.FromHours(9)) }); }
+        catch (InvalidOperationException) { recDateChangeBlocked = true; }
+        Assert.That(recDateChangeBlocked, "whole-series change keeps the dates");
+        recAfter.DeleteSeries(recAfter.Events[0]);
+        Assert.That(recAfter.Events[0].Deleted && recAfter.Events[0].SeriesEditPending
+            && CalendarRecurrenceExpander.IsHiddenBySeriesDelete(recAfter.Events[1], recAfter.Events)
+            && !CalendarRecurrenceExpander.IsHiddenBySeriesDelete(recAfter.Events[2], recAfter.Events),
+            "a queued series delete hides the other instances of that series only");
+        var recConflictSnapshot = recAfter.CreateSnapshot();
+        recConflictSnapshot[0].Conflict = true;
+        Assert.That(!CalendarRecurrenceExpander.IsHiddenBySeriesDelete(recConflictSnapshot[1], recConflictSnapshot)
+            && CalendarRecurrenceExpander.RevealConflictedSeriesDeletes(recConflictSnapshot) == 1
+            && !recConflictSnapshot[0].Deleted && !recConflictSnapshot[0].SeriesEditPending
+            && !recConflictSnapshot[0].Dirty && recConflictSnapshot[0].Conflict,
+            "a rejected series delete is undone and shown as a conflict");
+
+        var recDirtyInstance = new CalendarEvent { Date = recStart, EndDate = recStart, Title = "dirty", CalendarId = "primary",
+            RemoteId = "series3_20261005", RemoteETag = "\"1\"", RecurringEventId = "series3", Dirty = true };
+        recAfter.CommitSnapshot([recDirtyInstance]);
+        var recDirtyBlocked = false;
+        try { recAfter.UpsertSeriesChange(recAfter.Events[0], new CalendarEventDraft { StartDate = recStart, EndDate = recStart,
+            CalendarId = "primary", Text = "all" }); }
+        catch (InvalidOperationException) { recDirtyBlocked = true; }
+        Assert.That(recDirtyBlocked && recAfter.Events[0].Title == "dirty" && !recAfter.Events[0].SeriesEditPending,
+            "a whole-series change waits for an unsent this-only edit");
+
+        var recLinkedMaster = new CalendarEvent { Date = recStart, EndDate = recStart, Title = "linked series", CalendarId = "primary",
+            Recurrence = "FREQ=DAILY", RemoteId = "dd" + Guid.NewGuid().ToString("N"), RemoteETag = "\"1\"", Dirty = false };
+        recAfter.CommitSnapshot([recLinkedMaster]);
+        var recLinkedDateBlocked = false;
+        try { recAfter.UpsertBatch(new CalendarEventDraft { StartDate = recStart.AddDays(1), EndDate = recStart.AddDays(1),
+            CalendarId = "primary", Text = "linked series", Recurrence = "FREQ=DAILY" }, recAfter.Events[0]); }
+        catch (InvalidOperationException) { recLinkedDateBlocked = true; }
+        recAfter.UpsertBatch(new CalendarEventDraft { StartDate = recStart, EndDate = recStart,
+            CalendarId = "primary", Text = "linked renamed", Recurrence = "FREQ=DAILY" }, recAfter.Events[0]);
+        Assert.That(recLinkedDateBlocked && recAfter.Events[0].Date == recStart && recAfter.Events[0].Title == "linked renamed",
+            "an uploaded series keeps its dates; title changes still save");
+    }
+    finally { Directory.Delete(recScratch, recursive: true); }
+}
 
 Console.WriteLine("All calendar domain tests passed.");
 

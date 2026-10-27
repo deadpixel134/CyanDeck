@@ -778,7 +778,9 @@ public partial class FenceWindow : Window
     private async void RefreshPortalItemsAsync(DeckTab tab, IconMovementAnimationContext movementContext, IReadOnlyCollection<string>? excludedItemIds)
     {
         var path = tab.PortalPath;
-        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+        // The folder-existence probe runs inside the background read below, so a slow
+        // NAS/USB path never stalls the UI thread on every change notification.
+        if (string.IsNullOrWhiteSpace(path))
         {
             CancelPortalLoad();
             _portalLoadGeneration++;
@@ -836,18 +838,20 @@ public partial class FenceWindow : Window
             {
                 try
                 {
+                    if (!Directory.Exists(fullPath))
+                        return (Tiles: new List<ItemTile>(), Error: (Exception?)null, Missing: true);
                     var tiles = new List<ItemTile>();
                     foreach (var entry in Directory.EnumerateFileSystemEntries(fullPath))
                     {
                         token.ThrowIfCancellationRequested();
                         tiles.Add(BuildTile(new DeckItem { Path = entry }, isFolderPortalItem: true));
                     }
-                    return (Tiles: tiles, Error: (Exception?)null);
+                    return (Tiles: tiles, Error: (Exception?)null, Missing: false);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    return (Tiles: new List<ItemTile>(), Error: (Exception?)ex);
+                    return (Tiles: new List<ItemTile>(), Error: (Exception?)ex, Missing: false);
                 }
             }, token);
 
@@ -860,6 +864,18 @@ public partial class FenceWindow : Window
             _portalLoadingTabId = null;
             _portalLoadingPath = null;
             _portalLoadingVisualKey = null;
+
+            if (result.Missing)
+            {
+                // Same presentation as the former synchronous missing-folder check.
+                _portalTilesCache = [];
+                _portalCacheDirty = true;
+                ItemsList.ItemsSource = null;
+                UpdateSearchCount(0, 0);
+                EmptyText.Text = "폴더를 선택하세요";
+                EmptyText.Visibility = Visibility.Visible;
+                return;
+            }
 
             if (result.Error is not null)
             {
@@ -910,7 +926,7 @@ public partial class FenceWindow : Window
     {
         var sorted = SortTiles(tiles, tab).Where(MatchesSearch).ToList();
         var movementBatch = BeginIconMovementBatch(tab, movementContext, excludedItemIds);
-        ItemsList.ItemsSource = sorted;
+        SetPortalItemsSourcePreservingView(tab, sorted);
         ApplyItemScrollbars(DesktopPointerHover.IsActuallyOver(this));
         AnimateItemSurfaceIfChanged(ItemsList, ref _lastPortalRenderSignature, ComputeTileSignature(sorted));
         UpdateSearchCount(sorted.Count, tiles.Count);
@@ -1183,6 +1199,7 @@ public partial class FenceWindow : Window
         _freeDragStartX = Canvas.GetLeft(border);
         _freeDragStartY = Canvas.GetTop(border);
         _freeDragging = false;
+        BeginFreeGroupDrag(tile);
         border.CaptureMouse();
         e.Handled = true;
     }
@@ -1202,7 +1219,9 @@ public partial class FenceWindow : Window
             _freeDragBorder = null;
             _freeDragItem = null;
             _freeDragging = false;
+            RestoreFreeGroupDragPositions();
             var data = new DataObject(DataFormats.FileDrop, selected);
+            AttachItemMovePayload(data, FreeDragPayloadTiles(source));
             DragDrop.DoDragDrop(source, data, DragDropEffects.Copy | DragDropEffects.Link);
             e.Handled = true;
             return;
@@ -1211,10 +1230,12 @@ public partial class FenceWindow : Window
         var dy = now.Y - _freeDragStart.Y;
         if (!_freeDragging && Math.Abs(dx) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(dy) < SystemParameters.MinimumVerticalDragDistance) return;
         _freeDragging = true;
+        (dx, dy) = ClampFreeGroupDragOffset(dx, dy);
         var x = Math.Max(0, _freeDragStartX + dx);
         var y = Math.Max(0, _freeDragStartY + dy);
         Canvas.SetLeft(_freeDragBorder, x);
         Canvas.SetTop(_freeDragBorder, y);
+        MoveFreeGroupDrag(dx, dy);
         FreeCanvas.Width = Math.Max(FreeCanvas.Width, x + _freeDragBorder.ActualWidth + 18);
         FreeCanvas.Height = Math.Max(FreeCanvas.Height, y + _freeDragBorder.ActualHeight + 18);
         e.Handled = true;
@@ -1227,8 +1248,10 @@ public partial class FenceWindow : Window
         {
             _freeDragItem.PositionX = Canvas.GetLeft(_freeDragBorder);
             _freeDragItem.PositionY = Canvas.GetTop(_freeDragBorder);
+            CommitFreeGroupDrag();
             ModelChanged?.Invoke();
         }
+        _freeGroupDragStarts.Clear();
         _freeDragBorder.ReleaseMouseCapture();
         _freeDragBorder = null;
         _freeDragItem = null;
@@ -1308,21 +1331,43 @@ public partial class FenceWindow : Window
         }
 
         DateTime modified = DateTime.MinValue;
+        DateTime createdUtc = DateTime.MinValue;
         long size = 0;
+        var isDirectory = false;
+        // One metadata read per tile (normally on the background loader). The folder flag
+        // is stored on the tile so type/size text, "folders first", sorting and search
+        // never repeat File/Directory probes on slow NAS or removable drives.
         try
         {
-            if (File.Exists(item.Path))
+            if (!DesktopSystemItems.IsShellNamespacePath(item.Path))
             {
                 var fi = new FileInfo(item.Path);
-                modified = fi.LastWriteTime;
-                size = fi.Length;
+                if (fi.Exists)
+                {
+                    modified = fi.LastWriteTime;
+                    createdUtc = fi.CreationTimeUtc;
+                    size = fi.Length;
+                }
+                else
+                {
+                    var di = new DirectoryInfo(item.Path);
+                    if (di.Exists)
+                    {
+                        isDirectory = true;
+                        modified = di.LastWriteTime;
+                        createdUtc = di.CreationTimeUtc;
+                    }
+                }
             }
-            else if (Directory.Exists(item.Path)) modified = Directory.GetLastWriteTime(item.Path);
         }
         catch { }
 
         var metrics = GetGridTileMetrics();
-        return new ItemTile(item, icon, modified, size, metrics.IconSize, metrics.TileWidth, metrics.TileHeight, metrics.IconRowHeight, Model.IconLabelMode, isFolderPortalItem);
+        return new ItemTile(item, icon, modified, size, metrics.IconSize, metrics.TileWidth, metrics.TileHeight, metrics.IconRowHeight, Model.IconLabelMode, isFolderPortalItem)
+        {
+            IsDirectory = isDirectory,
+            CreatedUtc = createdUtc,
+        };
     }
 
     private ItemSurfaceLayoutKind GetCurrentSurfaceLayoutKind(DeckTab? tab = null)
@@ -1391,7 +1436,8 @@ public partial class FenceWindow : Window
         {
             DeckSortMode.Type => i => i.Type,
             DeckSortMode.Modified => i => i.Modified,
-            DeckSortMode.Added => i => i.Source.AddedUtc,
+            // Folder Portal items are rebuilt on every refresh, so "added" means file creation time there.
+            DeckSortMode.Added => i => i.IsFolderPortalItem ? i.CreatedUtc : i.Source.AddedUtc,
             DeckSortMode.Size => i => i.Size,
             DeckSortMode.OpenCount => i => i.Source.OpenCount,
             _ => i => i.Name
@@ -1400,8 +1446,8 @@ public partial class FenceWindow : Window
         if (tab.FoldersFirst)
         {
             return tab.SortDescending
-                ? source.OrderBy(i => Directory.Exists(i.Path) ? 0 : 1).ThenByDescending(key).ThenBy(i => i.Name)
-                : source.OrderBy(i => Directory.Exists(i.Path) ? 0 : 1).ThenBy(key).ThenBy(i => i.Name);
+                ? source.OrderBy(i => i.IsDirectory ? 0 : 1).ThenByDescending(key).ThenBy(i => i.Name)
+                : source.OrderBy(i => i.IsDirectory ? 0 : 1).ThenBy(key).ThenBy(i => i.Name);
         }
         return tab.SortDescending ? source.OrderByDescending(key).ThenBy(i => i.Name) : source.OrderBy(key).ThenBy(i => i.Name);
     }
@@ -1409,7 +1455,7 @@ public partial class FenceWindow : Window
     private void EnsurePortalWatcher(DeckTab tab)
     {
         var path = tab.PortalPath;
-        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+        if (string.IsNullOrWhiteSpace(path))
         {
             _portalWatch.Clear();
             return;
@@ -1418,16 +1464,19 @@ public partial class FenceWindow : Window
         string fullPath;
         try { fullPath = Path.GetFullPath(path); }
         catch { fullPath = path; }
+        // Already watching this folder: skip the (possibly slow NAS/USB) existence probe
+        // that every coalesced refresh would otherwise repeat on the UI thread.
+        if (string.Equals(_portalWatch.CurrentPath, fullPath, StringComparison.OrdinalIgnoreCase)) return;
+        if (!Directory.Exists(fullPath))
+        {
+            _portalWatch.Clear();
+            return;
+        }
         _portalWatch.Bind(
             fullPath,
             action => _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, action),
-            (changedPath, oldPath) =>
-            {
-                if (!string.IsNullOrWhiteSpace(changedPath)) _icons.Invalidate(changedPath);
-                if (!string.IsNullOrWhiteSpace(oldPath)) _icons.Invalidate(oldPath);
-                _portalCacheDirty = true;
-                RefreshItems(IconMovementAnimationContext.ExternalRefresh);
-            },
+            // Bursts of changes are coalesced into one refresh (QueuePortalWatcherRefresh).
+            (changedPath, oldPath) => QueuePortalWatcherRefresh(changedPath, oldPath),
             error =>
             {
                 _portalCacheDirty = true;
@@ -1547,7 +1596,16 @@ public partial class FenceWindow : Window
             };
             inactiveControls.Children.Add(closeButton);
 
-            button.Click += (_, _) => SelectTabById(target.TabId);
+            button.Click += (_, _) =>
+            {
+                // "메뉴만" shows only the current tab; its "탭이름 ▾" button opens the tab list.
+                if (Model.TabStyle == DeckTabStyle.MenuOnly)
+                {
+                    OpenMenuOnlyTabList(button);
+                    return;
+                }
+                SelectTabById(target.TabId);
+            };
             header.MouseEnter += (_, _) =>
             {
                 if (!TabSwitchActivationPolicy.ShouldSelectOnPointerEnter(
@@ -1666,7 +1724,8 @@ public partial class FenceWindow : Window
         var detach = MakeItem("탭 분리", () => DetachTabById(tabId));
         detach.IsEnabled = Model.Tabs.Count > 1 && CapabilityAllowed("Layout.CreateDeleteGroups");
         menu.Items.Add(detach);
-        var remove = MakeItem("탭 제거", () => RemoveTabById(tabId));
+        var remove = MakeItem("탭 제거…", () => RemoveTabById(tabId));
+        remove.Tag = MenuDangerTag;
         remove.IsEnabled = Model.Tabs.Count > 1 && CapabilityAllowed("Settings.EditGroups");
         menu.Items.Add(remove);
         menu.IsOpen = true;
@@ -1705,6 +1764,12 @@ public partial class FenceWindow : Window
         if (!CapabilityAllowed("Settings.EditGroups") || Model.Tabs.Count <= 1) return;
         var current = Model.Tabs.FindIndex(t => t.Id == tabId);
         if (current < 0) return;
+        // Every path (group menu, inactive-tab menu, × button) confirms like group deletion.
+        var removedTab = Model.Tabs[current];
+        if (!ConfirmRemoveTab(removedTab)) return;
+        current = Model.Tabs.IndexOf(removedTab);
+        if (current < 0 || Model.Tabs.Count <= 1) return;
+        TabRemoving?.Invoke(this, removedTab);
         var selectedId = SelectedTab?.Id;
         Model.Tabs.RemoveAt(current);
         if (selectedId is Guid selected)
@@ -1719,6 +1784,7 @@ public partial class FenceWindow : Window
         RebuildTabs();
         RefreshItems(IconMovementAnimationContext.InitialMaterialization);
         ModelChanged?.Invoke();
+        TabRemoved?.Invoke(this, removedTab);
     }
 
     private void SelectTab(DeckTab tab)
@@ -2010,6 +2076,7 @@ public partial class FenceWindow : Window
             if (Math.Abs(dx) < minX && Math.Abs(dy) < minY) return;
             _movePending = false;
             _moving = true;
+            ResetPageEdgeDropTracking();
             if (!Model.RolledUp) Model.RollupDockEdge = DeckRollupDockEdge.None;
             Mouse.Capture(this, CaptureMode.SubTree);
             Cursor = Cursors.SizeAll;
@@ -2026,6 +2093,7 @@ public partial class FenceWindow : Window
         Left = left;
         Top = top;
         if (_settings.EnableSmartGroupSnapping) SnapToMonitorEdges();
+        UpdatePageEdgeDropPreview();
         e.Handled = true;
     }
 
@@ -2047,6 +2115,8 @@ public partial class FenceWindow : Window
         var moved = _moving;
         _movePending = false;
         _moving = false;
+        // The edge dwell state stays until AppController reads it in MoveCompleted.
+        HidePageEdgeDropPreview();
         Cursor = null;
         if (IsMouseCaptured) ReleaseMouseCapture();
         if (!moved) return;
@@ -2219,7 +2289,8 @@ public partial class FenceWindow : Window
         var q = SearchBox?.Text?.Trim();
         if (string.IsNullOrWhiteSpace(q)) return true;
         return tile.Name.Contains(q, StringComparison.CurrentCultureIgnoreCase)
-            || tile.Path.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+            // The Desktop / portal folder part of a path is not searched: "desktop" or the user name would match everything.
+            || GlobalItemSearchPolicy.SearchablePath(tile.Path, GetSearchExcludedRoots()).Contains(q, StringComparison.CurrentCultureIgnoreCase)
             || tile.Type.Contains(q, StringComparison.CurrentCultureIgnoreCase);
     }
 
@@ -3000,6 +3071,7 @@ public partial class FenceWindow : Window
     private void Window_Drop(object sender, DragEventArgs e)
     {
         if (TryHandleTabDrop(e, Model.Tabs.Count)) return;
+        if (TryHandleItemMoveDrop(e, SelectedTab, selectTarget: false)) return;
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var files = e.Data.GetData(DataFormats.FileDrop) as string[];
         if (files is null) return;
@@ -3023,6 +3095,7 @@ public partial class FenceWindow : Window
             if (e.GetPosition(header).X >= Math.Max(1, header.ActualWidth) / 2.0) targetIndex++;
         }
         if (TryHandleTabDrop(e, Math.Max(0, targetIndex))) return;
+        if (TryHandleItemMoveDrop(e, tab, selectTarget: true)) return;
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var files = e.Data.GetData(DataFormats.FileDrop) as string[];
         if (files is null) return;
@@ -3142,6 +3215,7 @@ public partial class FenceWindow : Window
             try { path = Path.GetFullPath(file); } catch { }
             if (tab.Items.Any(i => string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase))) continue;
             tab.Items.Add(new DeckItem { Path = path });
+            tab.Items[^1].UserPlaced = true; // dropped here by the user; automatic arrangement keeps it
             SourcePathDropped?.Invoke(path);
             changed = true;
         }
@@ -3311,6 +3385,7 @@ public partial class FenceWindow : Window
     private void Window_DragOver(object sender, DragEventArgs e)
     {
         if (e.Data.GetDataPresent(TabDragFormat)) e.Effects = DragDropEffects.Move;
+        else if (IsItemCopyDrag(e)) e.Effects = DragDropEffects.Copy; // Ctrl copies CyanDeck items
         else e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Link : DragDropEffects.None;
         e.Handled = true;
     }
@@ -3318,13 +3393,8 @@ public partial class FenceWindow : Window
     private void ItemsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (ItemsList.SelectedItem is not ItemTile tile) return;
-        var tab = SelectedTab;
-        if (tab?.Kind == DeckTabKind.FolderPortal && Directory.Exists(tile.Path))
-        {
-            OpenPortalFolder(tile.Path);
-            return;
-        }
-        OpenItem(tile);
+        // Same open path as Enter and the menus (portal folders navigate, opens are counted).
+        OpenTileFromUser(tile);
     }
 
     private void ItemsList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -3385,13 +3455,15 @@ public partial class FenceWindow : Window
         };
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
+            // Same command as the CyanDeck-only menu, which the Windows menu replaces here.
+            extras.Add(new("첫 항목을 파일 탐색기에서 표시", () => Reveal(existing[0].Path)));
             extras.Add(new("선택 항목을 바탕화면에 단독 아이콘으로 빼기", () =>
             {
                 var tab = SelectedTab;
                 if (tab is null) return;
                 ItemsDetachToDesktopRequested?.Invoke(this, tab.Id, existing.Select(t => t.Source.Id).ToArray(), screen);
             }));
-            extras.Add(new("Remove selected from CyanDeck group", () =>
+            extras.Add(new("선택 항목을 그룹에서만 제거 (원본 유지)", () =>
             {
                 var tab = SelectedTab;
                 if (tab is null) return;
@@ -3401,45 +3473,33 @@ public partial class FenceWindow : Window
                 RefreshItems(IconMovementAnimationContext.ItemSetChanged);
                 ModelChanged?.Invoke();
             }));
+            AddBatchItemPlacementShellExtras(extras, existing);
         }
 
-        Func<string, bool>? batchVerbInterceptor = null;
-        if (SelectedTab?.Kind == DeckTabKind.Collection)
-        {
-            batchVerbInterceptor = verb =>
-            {
-                if (!string.Equals(verb, "open", StringComparison.OrdinalIgnoreCase)) return false;
-                foreach (var selectedTile in existing.Take(12)) OpenItem(selectedTile);
-                return true;
-            };
-        }
+        // open/rename/group delete are routed to CyanDeck's own commands (see TryHandleNativeShellVerb).
+        Func<string, bool>? batchVerbInterceptor = verb => TryHandleNativeShellVerb(verb, existing);
         // Collection tiles are REFERENCES to arbitrary disk paths (including C:\ and user folders).
         // Shell delete/shift-delete verbs would operate on the ORIGINAL filesystem target,
-        // potentially permanently. Do not expose native Shell verbs for collections.
-        if (SelectedTab?.Kind != DeckTabKind.Collection &&
+        // potentially permanently. Native Shell verbs are exposed for a collection only when
+        // every selected item is a real Desktop child (CanShowNativeShellMenu), as for loose icons.
+        if (CanShowNativeShellMenu(existing.Select(t => t.Path)) &&
             existing.All(t => !IsProtectedDeletionTarget(t.Path)) &&
             ShellContextMenuService.TryShow(this, existing.Select(t => t.Path).ToArray(), screen, extras, batchVerbInterceptor))
         {
             e.Handled = true;
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                if (SelectedTab?.Kind == DeckTabKind.Collection)
-                    SelectedTab.Items.RemoveAll(i => !File.Exists(i.Path) && !Directory.Exists(i.Path)
-                        && !DesktopSystemItems.IsSupportedVirtualPath(i.Path));
-                RefreshItems(IconMovementAnimationContext.ItemSetChanged);
-                ModelChanged?.Invoke();
-            }));
+            SchedulePostShellMenuRefresh(SelectedTab, existing);
             return;
         }
 
         // Mixed-parent collections cannot be represented by one Windows Shell context
         // menu. Fall back to CyanDeck's batch commands in that case.
         var menu = CreateThemedContextMenu();
-        menu.Items.Add(new MenuItem { Header = $"{existing.Count} items selected", IsEnabled = false });
+        menu.Items.Add(new MenuItem { Header = $"{existing.Count}개 선택됨", IsEnabled = false });
         menu.Items.Add(new Separator());
-        menu.Items.Add(MakeItem("선택 항목 열기", () => { foreach (var tile in existing.Take(12)) OpenItem(tile); }));
+        menu.Items.Add(MakeItem("선택 항목 열기", () => OpenTilesFromUser(existing)));
         menu.Items.Add(MakeItem("첫 항목을 파일 탐색기에서 표시", () => Reveal(existing[0].Path)));
         menu.Items.Add(MakeItem("경로 복사", () => Clipboard.SetText(string.Join(Environment.NewLine, existing.Select(t => t.Path)))));
+        AddClipboardMenuItems(menu, existing);
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection &&
             existing.All(t => DesktopRecycleService.IsActualDesktopItem(t.Path))
@@ -3453,6 +3513,7 @@ public partial class FenceWindow : Window
                 () => RecycleActualDesktopCollectionItems(existing)));
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
+            AddItemPlacementMenuEntries(menu, tiles);
             menu.Items.Add(MakeItem("선택 항목을 바탕화면에 단독 아이콘으로 빼기", () =>
             {
                 var tab = SelectedTab;
@@ -3502,13 +3563,15 @@ public partial class FenceWindow : Window
         };
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
+            // Same command as the CyanDeck-only menu, which the Windows menu replaces here.
+            extras.Add(new("파일 탐색기에서 표시", () => Reveal(tile.Path)));
             extras.Add(new("바탕화면에 단독 아이콘으로 빼기", () =>
             {
                 var tab = SelectedTab;
                 if (tab is null) return;
                 ItemsDetachToDesktopRequested?.Invoke(this, tab.Id, [tile.Source.Id], screen);
             }));
-            extras.Add(new("Remove from CyanDeck group", () =>
+            extras.Add(new("그룹에서만 제거 (원본 유지)", () =>
             {
                 var tab = SelectedTab;
                 if (tab is null) return;
@@ -3517,37 +3580,19 @@ public partial class FenceWindow : Window
                 ModelChanged?.Invoke();
             }));
         }
+        AddItemPlacementShellExtras(extras, tile);
 
-        Func<string, bool>? verbInterceptor = verb =>
-        {
-            if (!string.Equals(verb, "open", StringComparison.OrdinalIgnoreCase)) return false;
-            if (SelectedTab?.Kind == DeckTabKind.FolderPortal && Directory.Exists(tile.Path))
-            {
-                Open(tile.Path);
-                return true;
-            }
-            if (SelectedTab?.Kind == DeckTabKind.Collection)
-            {
-                OpenItem(tile);
-                return true;
-            }
-            return false;
-        };
-        // Never hand a Collection reference to a native Shell context menu: a Shell
-        // extension may offer irreversible delete on the underlying source directory.
-        if (SelectedTab?.Kind != DeckTabKind.Collection &&
+        // open/rename/group delete are routed to CyanDeck's own commands (see TryHandleNativeShellVerb).
+        Func<string, bool>? verbInterceptor = verb => TryHandleNativeShellVerb(verb, [tile]);
+        // Never hand an external Collection reference to a native Shell context menu: a Shell
+        // extension may offer irreversible delete on the underlying source directory. Real
+        // Desktop children get the Windows menu, as standalone desktop icons do.
+        if (CanShowNativeShellMenu([tile.Path]) &&
             !IsProtectedDeletionTarget(tile.Path) &&
             ShellContextMenuService.TryShow(this, tile.Path, screen, extras, verbInterceptor))
         {
             e.Handled = true;
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                if (SelectedTab?.Kind == DeckTabKind.Collection)
-                    SelectedTab.Items.RemoveAll(i => !File.Exists(i.Path) && !Directory.Exists(i.Path)
-                        && !DesktopSystemItems.IsSupportedVirtualPath(i.Path));
-                RefreshItems(IconMovementAnimationContext.ItemSetChanged);
-                ModelChanged?.Invoke();
-            }));
+            SchedulePostShellMenuRefresh(SelectedTab, [tile]);
             return;
         }
 
@@ -3555,7 +3600,10 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("열기", () => OpenItem(tile)));
         menu.Items.Add(MakeItem("파일 탐색기에서 표시", () => Reveal(tile.Path)));
         menu.Items.Add(new Separator());
-        menu.Items.Add(MakeItem("이름 바꾸기…", () => RenameItem(tile)));
+        menu.Items.Add(SelectedTab?.Kind == DeckTabKind.Collection
+            ? WithGesture(MakeItem("표시 이름만 바꾸기…", () => RenameItem(tile)), "F2")
+            : WithGesture(MakeItem("이름 바꾸기…", () => RenameItem(tile)), "F2"));
+        AddFileRenameMenuEntry(menu, tile);
         menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection &&
             DesktopRecycleService.IsActualDesktopItem(tile.Path)
                 ? "삭제… (휴지통 또는 그룹에서만 제거)"
@@ -3567,8 +3615,10 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("속성", () => ShowProperties(tile.Path)));
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("경로 복사", () => Clipboard.SetText(tile.Path)));
+        AddClipboardMenuItems(menu, [tile]);
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
+            AddItemPlacementMenuEntries(menu, new[] { tile });
             menu.Items.Add(MakeItem("바탕화면에 단독 아이콘으로 빼기", () =>
             {
                 var tab = SelectedTab;
@@ -3602,6 +3652,7 @@ public partial class FenceWindow : Window
         _pendingSelectionCollapseItem = null;
         if (ItemsList.IsMouseCaptured) ItemsList.ReleaseMouseCapture();
         var data = new DataObject(DataFormats.FileDrop, selected);
+        AttachItemMovePayload(data, ItemsList.SelectedItems.Cast<ItemTile>());
         try { DragDrop.DoDragDrop(ItemsList, data, DragDropEffects.Copy | DragDropEffects.Link); }
         finally { _listDragStarted = false; }
     }
@@ -4586,9 +4637,14 @@ public partial class FenceWindow : Window
         public string StableItemId { get; }
         public bool ShowLabelAlways => LabelMode == DeckIconLabelMode.Always;
         public bool ShowLabelOnHover => LabelMode == DeckIconLabelMode.Mouseover;
-        public string Type => Directory.Exists(Path) ? "폴더" : System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant();
+        /// <summary>Computed once when the tile is built; bindings, sort and search reuse it (no disk probe).</summary>
+        public bool IsDirectory { get; init; }
+        /// <summary>File/folder creation time (UTC); used by the Folder Portal "만든 날짜" sort.</summary>
+        public DateTime CreatedUtc { get; init; }
+        private string? _type;
+        public string Type => _type ??= IsDirectory ? "폴더" : System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant();
         public string ModifiedText => Modified == DateTime.MinValue ? "" : Modified.ToString("g", CultureInfo.CurrentCulture);
-        public string SizeText => Directory.Exists(Path) ? "" : FormatSize(Size);
+        public string SizeText => IsDirectory ? "" : FormatSize(Size);
 
         private static string FormatSize(long bytes)
         {

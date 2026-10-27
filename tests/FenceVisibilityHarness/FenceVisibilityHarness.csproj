@@ -13,15 +13,29 @@
     <Compile Include="../../src/CyanDeck/Services/NativeDesktopIconRecoveryPolicy.cs" Link="Production/NativeDesktopIconRecoveryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/MonitorDisconnectLayoutPlanner.cs" Link="Production/MonitorDisconnectLayoutPlanner.cs" />
     <Compile Include="../../src/CyanDeck/Layout/MonitorGroupRecoveryPlanner.cs" Link="Production/MonitorGroupRecoveryPlanner.cs" />
+    <Compile Include="../../src/CyanDeck/Topology/DesktopMonitorTopology.cs" Link="Production/DesktopMonitorTopology.cs" />
+    <Compile Include="../../src/CyanDeck/Topology/DesktopMonitorTopologyTypes.cs" Link="Production/DesktopMonitorTopologyTypes.cs" />
+    <Compile Include="../../src/CyanDeck/Services/GroupPageOperationsPolicy.cs" Link="Production/GroupPageOperationsPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/GlobalItemSearchPolicy.cs" Link="Production/GlobalItemSearchPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/InitialGeometryResetPolicy.cs" Link="Production/InitialGeometryResetPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/SavedMonitorLayoutSafetyPolicy.cs" Link="Production/SavedMonitorLayoutSafetyPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Appearance/LooseIconOpacityPolicy.cs" Link="Production/LooseIconOpacityPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TabSwitchActivationPolicy.cs" Link="Production/TabSwitchActivationPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TrayMenuRoutingPolicy.cs" Link="Production/TrayMenuRoutingPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/InputCommandPolicy.cs" Link="Production/InputCommandPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Models/DeckTrayDoubleClickAction.cs" Link="Production/DeckTrayDoubleClickAction.cs" />
     <Compile Include="../../src/CyanDeck/Services/DisplaySurfaceRecoveryPlan.cs" Link="Production/DisplaySurfaceRecoveryPlan.cs" />
     <Compile Include="../../src/CyanDeck/Services/RuleWeekdayParser.cs" Link="Production/RuleWeekdayParser.cs" />
+    <Compile Include="../../src/CyanDeck/Services/DesktopItemPreservationPolicy.cs" Link="Production/DesktopItemPreservationPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/WindowsFileNamePolicy.cs" Link="Production/WindowsFileNamePolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/RecoveryCheckpointLabelPolicy.cs" Link="Production/RecoveryCheckpointLabelPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/RecoveryCheckpointRetentionPolicy.cs" Link="Production/RecoveryCheckpointRetentionPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/LayoutSnapshotNamePolicy.cs" Link="Production/LayoutSnapshotNamePolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/ShellPropertiesLauncher.cs" Link="Production/ShellPropertiesLauncher.cs" />
+    <Compile Include="../../src/CyanDeck/Services/BatchOpenPolicy.cs" Link="Production/BatchOpenPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/FolderPortalRefreshCoalescingPolicy.cs" Link="Production/FolderPortalRefreshCoalescingPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Layout/LinkedIconSpacingTypes.cs" Link="Production/LinkedIconSpacingTypes.cs" />
+    <Compile Include="../../src/CyanDeck/Layout/LooseDesktopIconLayoutProfile.cs" Link="Production/LooseDesktopIconLayoutProfile.cs" />
+    <Compile Include="../../src/CyanDeck/Layout/LooseDesktopAutoPlacementPlanner.cs" Link="Production/LooseDesktopAutoPlacementPlanner.cs" />
   </ItemGroup>
 </Project>

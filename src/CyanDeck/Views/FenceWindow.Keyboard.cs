@@ -29,6 +29,15 @@ public partial class FenceWindow
 {
     private void HandleWindowKeyboardCommand(KeyEventArgs e)
     {
+        // Ctrl+Shift+F searches every group, tab and page; plain Ctrl+F stays in this group.
+        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.F &&
+            GlobalSearchRequested is not null)
+        {
+            GlobalSearchRequested.Invoke();
+            e.Handled = true;
+            return;
+        }
+
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.F)
         {
             ShowSearch();
@@ -48,6 +57,14 @@ public partial class FenceWindow
         {
             DeckShellClipboardService.CancelPendingCut(Dispatcher);
             DeckCutClipboardVisualState.Clear();
+            e.Handled = true;
+            return;
+        }
+
+        // Esc in a Peek-raised group ends Peek (after closing the search box or a pending cut above).
+        if (e.Key == Key.Escape && _peekMode && PeekEndRequested is not null)
+        {
+            PeekEndRequested.Invoke();
             e.Handled = true;
             return;
         }
@@ -154,15 +171,10 @@ public partial class FenceWindow
         if (tile is null && selected.Count == 0) return;
         if (e.Key == Key.Enter)
         {
-            if (selected.Count > 1)
-            {
-                foreach (var item in selected.Take(12)) Open(item.Path);
-            }
-            else if (tile is not null && SelectedTab?.Kind == DeckTabKind.FolderPortal && Directory.Exists(tile.Path))
-            {
-                OpenPortalFolder(tile.Path);
-            }
-            else if (tile is not null) Open(tile.Path);
+            // Same open path as double-click and the menus: counted, and large
+            // selections are confirmed (or capped with a notice) instead of cut silently.
+            if (selected.Count > 1) OpenTilesFromUser(selected);
+            else if (tile is not null) OpenTilesFromUser([tile]);
             e.Handled = true;
         }
         else if (e.Key == Key.F2 && selected.Count <= 1 && tile is not null)

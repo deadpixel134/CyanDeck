@@ -36,16 +36,26 @@ public partial class App : Application
         // Capture the physical cursor monitor *before* Explorer can close/reposition its menu.
         var recoveryMonitor = recoverGroups ? Forms.Screen.FromPoint(Forms.Cursor.Position).DeviceName : null;
         var managedPolicyPath = GetOptionValue(e.Args, "--managed-policy");
+        // v8.0.44 keyboard-free commands for Windows shortcut keys (--quick-hide-toggle,
+        // --desktop-display-toggle, --page-next, --page-previous). --peek-toggle keeps its own path.
+        string? desktopCommand = null;
+        if (ExternalDesktopCommandCatalog.TryParseArguments(e.Args, out var parsedDesktopCommand) &&
+            parsedDesktopCommand != ExternalDesktopCommand.PeekToggle)
+            desktopCommand = ExternalDesktopCommandCatalog.Get(parsedDesktopCommand).PipeCommand;
 
         _instanceGate = CyanDeckSingleInstanceGate.TryAcquire();
         if (!_instanceGate.IsFirst)
         {
             NotifyExistingInstance(recoverGroups && recoveryMonitor is not null
                 ? "recover-groups|" + recoveryMonitor
-                : peekToggle ? "peek-toggle" : "activate");
+                : peekToggle ? "peek-toggle" : desktopCommand ?? "activate");
             Shutdown();
             return;
         }
+        // A command shortcut pressed while CyanDeck is not running simply starts it; hiding
+        // or switching pages during a cold start would be surprising.
+        if (desktopCommand is not null)
+            DiagnosticsLog.Info($"CyanDeck started by a command shortcut; command not applied on first launch: {desktopCommand}");
 
         // Only the user-confirmed, token-authorized second process can erase
         // local application state, after the previous instance has stopped.
@@ -128,6 +138,9 @@ public partial class App : Application
             {
                 if (!FirstRunOnboardingPolicy.ShouldOffer(DataRootPaths.ActiveRoaming))
                     throw new IOException("기존 설정 또는 복구 데이터가 감지되어 덮어쓰지 않습니다.");
+                // A fresh install is not an update: do not show the "what's new" notice.
+                if (System.Reflection.Assembly.GetExecutingAssembly().GetName().Version is { } installedVersion)
+                    configured.LastSeenFeatureNoticeVersion = InputHintPolicy.NormalizeVersion(installedVersion);
                 firstStore.Save(new DeckState { Settings = configured });
                 try { File.Delete(Path.Combine(DataRootPaths.ActiveRoaming, FirstRunOnboardingPolicy.PendingMarker)); }
                 catch (IOException) { /* Durable layout.json is the completion sentinel. */ }
@@ -165,12 +178,14 @@ public partial class App : Application
         try
         {
             var store = new StateStore();
-            var loaded = store.Load();
+            // The controller's own Load keeps the copies of unreadable files; do not copy twice.
+            var loaded = store.Load(archiveUnreadable: false);
             var settings = loaded.Settings;
             var crashSafeMode = !ignoreCrashLoop && settings.EnableCrashLoopProtection
                 && StartupHealthService.GetSnapshot(settings.CrashLoopWindowMinutes,
                     settings.CrashLoopThreshold).ShouldUseSafeMode;
-            var readOnly = store.EncounteredUnsupportedState;
+            // v8.0.44: unreadable layout files start protected; never update over them.
+            var readOnly = store.EncounteredUnsupportedState || store.EncounteredUnreadableState;
             if (!StartupUpdatePolicy.ShouldPreflight(settings.EnableAutomaticUpdateChecks,
                     settings.InstallUpdatesAutomatically, safeMode || crashSafeMode,
                     readOnly, UpdateService.HasPendingRecovery(), externalCommand))
@@ -202,7 +217,7 @@ public partial class App : Application
             // Fast up-to-date starts should not create a transient top-level
             // progress window at all. Only display status if network checking
             // exceeds the grace period; all desktop/Calendar HWNDs still wait.
-            var checkTask = UpdateService.CheckAsync(source, true,
+            var checkTask = UpdateService.CheckAsync(source,
                 settings.UpdatePublicKeyPath, checkTimeout.Token);
             var graceTask = Task.Delay(StartupUpdatePresentationPolicy.CheckingGraceMilliseconds);
             if (await Task.WhenAny(checkTask, graceTask) != checkTask &&
@@ -230,6 +245,16 @@ public partial class App : Application
             {
                 DiagnosticsLog.Warn($"Startup update v{check.LatestVersion.ToString(3)} deferred because its package failed previously; manual update remains available");
                 splash?.SetStage("이전 자동 업데이트에 실패하여 현재 버전으로 실행합니다.\\n환경설정에서 업데이트를 직접 다시 시도할 수 있습니다.", false);
+                return (false, true);
+            }
+            // v8.0.44: the user rolled back from this version. Skip automatic reinstall until a
+            // newer release is published (which releases the hold) or the user updates manually.
+            if (UpdateRollbackHold.ShouldSkipAutomaticInstall(DataRootPaths.ActiveLocal,
+                check.LatestVersion, out var heldVersion))
+            {
+                var heldText = heldVersion is null ? "?" : UpdateRollbackHold.Format(heldVersion);
+                DiagnosticsLog.Info($"Startup update v{check.LatestVersion.ToString(3)} skipped: rolled back from v{heldText}; manual update remains available");
+                splash?.SetStage("되돌린 버전은 자동으로 다시 설치하지 않습니다.\\n현재 버전으로 CyanDeck을 시작합니다.", false);
                 return (false, true);
             }
 
@@ -373,6 +398,8 @@ public partial class App : Application
             _controller.TogglePeekFromExternalCommand();
         else if (command.StartsWith("recover-groups|", StringComparison.Ordinal))
             _controller.RecoverAllGroupsToMonitor(command.Substring("recover-groups|".Length));
+        else if (ExternalDesktopCommandCatalog.TryParsePipeCommand(command, out var desktopCommand))
+            _controller.HandleExternalDesktopCommand(desktopCommand);
     }
 
     private static void NotifyExistingInstance(string command)
