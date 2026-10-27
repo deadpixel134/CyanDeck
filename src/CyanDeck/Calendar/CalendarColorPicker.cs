@@ -61,6 +61,9 @@ internal sealed class CalendarColorPicker : StackPanel
         };
         _swatch.IsEnabled = canEdit;
         _swatch.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_lastSaved));
+        // Swatch template: the colour stays visible on hover and only the outline brightens.
+        var swatchStyle = CyanDeck.Views.DeckThemeResources.ControlStyle("DeckSwatchButtonStyle");
+        if (swatchStyle is not null) _swatch.Style = swatchStyle;
         if (externalSwatch is null) Children.Add(_swatch);
 
         var content = new StackPanel { Margin = new Thickness(10) };
@@ -81,6 +84,7 @@ internal sealed class CalendarColorPicker : StackPanel
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(sample)),
                 ToolTip = sample, Cursor = Cursors.Hand
             };
+            if (swatchStyle is not null) quick.Style = swatchStyle;
             quick.Click += (_, _) => SetColor(sample);
             palette.Children.Add(quick);
         }
