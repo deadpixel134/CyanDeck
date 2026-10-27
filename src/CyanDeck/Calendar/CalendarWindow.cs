@@ -59,6 +59,7 @@ public sealed class CalendarWindow : Window
     private Border? _sourceBar;
     private Point _pressPoint;
     private bool _isMoving;
+    private int _openEventMenus;
     private Brush? _savedBarBackground;
     private UIElement? _savedBarChild;
     private object? _savedBarTooltip;
@@ -586,6 +587,9 @@ public sealed class CalendarWindow : Window
     {
         var menu = new ContextMenu();
         CyanDeck.Views.FenceContextMenuTheme.ApplyTheme(menu); // same look as the group menus
+        // While the menu is open the pointer may be over it, outside the calendar: stay opaque.
+        menu.Opened += (_, _) => { _openEventMenus++; ApplyCalendarAppearance(); };
+        menu.Closed += (_, _) => { _openEventMenus = Math.Max(0, _openEventMenus - 1); ApplyCalendarAppearance(); };
         var baseStyle = _eventAppearance.Get(ev.Id);
         var canEdit = !_eventAppearance.IsReadOnly;
         AddColorSubmenu(menu, ev, "배경색 변경", background: true,
@@ -1096,6 +1100,7 @@ public sealed class CalendarWindow : Window
         _savedBarTooltip = null;
         _moveDropDate = null;
         if (Mouse.Captured == _body) Mouse.Capture(null);
+        ApplyCalendarAppearance(); // a drag that ends outside the calendar fades it right away
     }
 
     // Keep text opaque while changing only the calendar background brushes.
@@ -1118,8 +1123,12 @@ public sealed class CalendarWindow : Window
             ? Math.Clamp(_settings.CalendarOpacity, 0.35, 1) : 0.86;
         double idle = double.IsFinite(_settings.CalendarIdleOpacity)
             ? Math.Clamp(_settings.CalendarIdleOpacity, 0.15, 1) : 0.38;
+        // Keyboard focus alone must not keep the calendar opaque: after a click the window stays
+        // active until another window is chosen, so the chameleon fade would never return. Like
+        // the groups, it follows the pointer, plus editing, the settings panel, an event drag and
+        // an open event menu (that menu can extend outside the calendar).
         bool full = !_settings.CalendarChameleonEnabled || _editing || _showingPreferences
-            || IsActive || DesktopPointerHover.IsActuallyOver(this);
+            || _isMoving || _openEventMenus > 0 || DesktopPointerHover.IsActuallyOver(this);
         double activeBackground = double.IsFinite(_settings.CalendarActiveBackgroundOpacity)
             ? Math.Clamp(_settings.CalendarActiveBackgroundOpacity, 0.15, 1) : 0.86;
         double opacity = full ? Math.Clamp(activeBackground / active, 0.15, 1)
@@ -1606,7 +1615,7 @@ public sealed class CalendarWindow : Window
             SaveCalendarSetting($"평소 배경 불투명도를 {idleOpacity.Value:P0}(으)로 저장했습니다.");
         };
         panel.Children.Add(idleOpacity); panel.Children.Add(idleOpacityValue);
-        panel.Children.Add(new TextBlock { Text = "사용 중(마우스를 올리거나 선택했을 때) 배경 불투명도", Foreground = TextLight,
+        panel.Children.Add(new TextBlock { Text = "사용 중(마우스를 올렸을 때·편집 중) 배경 불투명도", Foreground = TextLight,
             Margin = new Thickness(0, 7, 0, 0) });
         var activeOpacity = new Slider { Minimum = 0.15, Maximum = 1, TickFrequency = 0.05,
             Value = Math.Clamp(_settings.CalendarActiveBackgroundOpacity, 0.15, 1), Width = 240,

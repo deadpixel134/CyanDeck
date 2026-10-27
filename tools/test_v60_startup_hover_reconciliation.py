@@ -48,7 +48,10 @@ checks = {
     "calendar re-evaluates opacity at idle after placement":
         "new Action(ApplyCalendarAppearance)" in calendar and
         "DispatcherPriority.ContextIdle" in calendar and
-        "|| IsActive || DesktopPointerHover.IsActuallyOver(this);" in calendar,
+        # v8.0.43: keyboard focus (IsActive) no longer keeps the calendar opaque; the guarded
+        # pointer check stays the hover source, plus editing/menu states.
+        "|| _isMoving || _openEventMenus > 0 || DesktopPointerHover.IsActuallyOver(this);" in calendar and
+        "|| IsActive ||" not in calendar,
     "cursor-check does not send input or alter saved user data":
         all(s not in pointer for s in ("SetCursorPos", "SendInput", "File.", "Mouse.Capture",
                                         "Model.", ".Save(", ".Delete(")),
