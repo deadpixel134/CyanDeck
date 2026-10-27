@@ -98,7 +98,15 @@ public partial class SnapshotGalleryWindow : Window
             Rebuild();
         };
         var delete = new Button { Content = "삭제" };
-        delete.Click += (_, _) => { _delete(snapshot); Rebuild(); };
+        delete.Click += (_, _) =>
+        {
+            var answer = MessageBox.Show(this,
+                $"'{snapshot.Name}' 스냅샷을 삭제하시겠습니까?\n\n삭제한 스냅샷은 되돌릴 수 없습니다. 현재 그룹 배치는 바뀌지 않습니다.",
+                "레이아웃 스냅샷 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes) return;
+            _delete(snapshot);
+            Rebuild();
+        };
         buttons.Children.Add(restore);
         buttons.Children.Add(rename);
         buttons.Children.Add(delete);

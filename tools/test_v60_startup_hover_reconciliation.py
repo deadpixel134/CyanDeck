@@ -4,6 +4,7 @@
 Non-destructive static checks; Windows UI verification remains a separate step.
 """
 from pathlib import Path
+import re
 
 root = Path(__file__).resolve().parents[1]
 
@@ -52,7 +53,7 @@ checks = {
         all(s not in pointer for s in ("SetCursorPos", "SendInput", "File.", "Mouse.Capture",
                                         "Model.", ".Save(", ".Delete(")),
     "beta version incremented":
-        "<Version>8.0.37</Version>" in project,
+        tuple(map(int, re.search(r"<Version>(\d+\.\d+\.\d+)</Version>", project).group(1).split("."))) >= (8, 0, 37),
 }
 for label, ok in checks.items():
     print(("PASS: " if ok else "FAIL: ") + label)

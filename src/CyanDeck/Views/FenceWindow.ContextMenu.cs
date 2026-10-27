@@ -27,176 +27,161 @@ namespace CyanDeck.Views;
 /// <summary>Group menu composition and commands, separate from window rendering.</summary>
 public partial class FenceWindow
 {
+    // One menu serves both the right-click and the header "..." button. Frequent commands
+    // stay at the top level; options are grouped by intent (tabs, sort, view, appearance,
+    // placement, rules) and every option list shows its current value with a check mark.
     private void PopulateGroupContextMenu(ContextMenu menu)
     {
-        menu.Items.Add(MakeItem("검색…   Ctrl+F", ShowSearch));
-        menu.Items.Add(new Separator());
-        var renameGroupItem = MakeItem("그룹 이름 바꾸기", () =>
-        {
-            var text = TextPrompt.Show(this, "그룹 이름 바꾸기", "이름", Model.Title);
-            if (text is null) return;
-            Model.Title = text;
-            if (Model.Tabs.Count == 1)
-            {
-                Model.Tabs[0].Title = text;
-                RebuildTabs();
-            }
-            ModelChanged?.Invoke();
-        });
-        renameGroupItem.IsEnabled = CapabilityAllowed("Settings.EditGroups");
-        menu.Items.Add(renameGroupItem);
-        var renameTabItem = MakeItem("현재 탭 이름 바꾸기", () =>
-        {
-            var tab = SelectedTab;
-            if (tab is null) return;
-            var text = TextPrompt.Show(this, "탭 이름 바꾸기", "이름", tab.Title);
-            if (text is null) return;
-            tab.Title = text;
-            RebuildTabs();
-            ModelChanged?.Invoke();
-        });
-        renameTabItem.IsEnabled = CapabilityAllowed("Settings.EditGroups");
-        menu.Items.Add(renameTabItem);
+        var canEditGroups = CapabilityAllowed("Settings.EditGroups");
+        var canCreateDelete = CapabilityAllowed("Layout.CreateDeleteGroups");
 
-        var groupTools = new MenuItem { Header = "그룹 도구" };
-        var duplicateItem = MakeItem("그룹 복제", () => DuplicateRequested?.Invoke(this));
-        duplicateItem.IsEnabled = CapabilityAllowed("Layout.CreateDeleteGroups");
-        groupTools.Items.Add(duplicateItem);
-        var saveTemplateItem = MakeItem("현재 그룹을 템플릿으로 저장…", () => SaveTemplateRequested?.Invoke(this));
-        saveTemplateItem.IsEnabled = CapabilityAllowed("Templates.Edit");
-        groupTools.Items.Add(saveTemplateItem);
-        if (_templates.Count > 0)
-        {
-            var fromTemplate = new MenuItem { Header = "템플릿에서 새 그룹 만들기", IsEnabled = CapabilityAllowed("Layout.CreateDeleteGroups") };
-            foreach (var template in _templates.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
-            {
-                var localTemplate = template;
-                fromTemplate.Items.Add(MakeItem(localTemplate.Name, () => CreateFromTemplateRequested?.Invoke(localTemplate.Id)));
-            }
-            groupTools.Items.Add(fromTemplate);
-        }
-        menu.Items.Add(groupTools);
+        menu.Items.Add(MakeItem("검색…   Ctrl+F", ShowSearch));
+        var renameGroupItem = MakeItem("그룹 이름 바꾸기…", RenameGroup);
+        renameGroupItem.IsEnabled = canEditGroups;
+        menu.Items.Add(renameGroupItem);
         menu.Items.Add(new Separator());
-        var addTabItem = MakeItem("탭 추가", AddCollectionTab);
-        addTabItem.IsEnabled = CapabilityAllowed("Settings.EditGroups");
-        menu.Items.Add(addTabItem);
-        var addPortalItem = MakeItem("폴더 포털 추가…", AddPortalTab);
-        addPortalItem.IsEnabled = CapabilityAllowed("FolderPortal.Edit");
-        menu.Items.Add(addPortalItem);
+
+        menu.Items.Add(BuildTabsMenu(canEditGroups));
+        if (SelectedTab is { Kind: DeckTabKind.FolderPortal } portal)
+            menu.Items.Add(BuildPortalMenu(portal));
+        menu.Items.Add(BuildSortMenu());
+        menu.Items.Add(BuildViewMenu());
+        menu.Items.Add(BuildAppearanceMenu());
+        menu.Items.Add(BuildBehaviorMenu());
+        menu.Items.Add(BuildAutomationMenu());
+
+        if (_settings.EnableRollup)
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeItem(Model.RolledUp ? "그룹 펼치기" : "그룹 접기", ToggleRollUp));
+        }
+
+        menu.Items.Add(new Separator());
+        var newFenceItem = MakeItem("새 그룹 만들기", () => NewFenceRequested?.Invoke());
+        newFenceItem.IsEnabled = canCreateDelete;
+        menu.Items.Add(newFenceItem);
+        menu.Items.Add(BuildGroupToolsMenu(canCreateDelete));
+        menu.Items.Add(MakeItem("CyanDeck 설정…", () => SettingsRequested?.Invoke()));
+
+        // Destructive command is isolated at the bottom and always confirmed.
+        menu.Items.Add(new Separator());
+        var deleteFenceItem = MakeItem("그룹 삭제…", ConfirmDeleteGroup);
+        deleteFenceItem.IsEnabled = canCreateDelete;
+        menu.Items.Add(deleteFenceItem);
+    }
+
+    private MenuItem BuildTabsMenu(bool canEditGroups)
+    {
         var tabsMenu = new MenuItem { Header = "탭" };
         foreach (var candidate in Model.Tabs)
         {
             var local = candidate;
-            var item = MakeItem(local.Title, () => SelectTab(local));
-            item.IsCheckable = true;
-            item.IsChecked = ReferenceEquals(local, SelectedTab);
-            tabsMenu.Items.Add(item);
+            var label = local.Kind == DeckTabKind.FolderPortal ? $"{local.Title}  (폴더 포털)" : local.Title;
+            tabsMenu.Items.Add(MakeCheckItem(label, ReferenceEquals(local, SelectedTab), () => SelectTab(local)));
         }
+        tabsMenu.Items.Add(new Separator());
+        var addTabItem = MakeItem("새 탭 추가", AddCollectionTab);
+        addTabItem.IsEnabled = canEditGroups;
+        tabsMenu.Items.Add(addTabItem);
+        var addPortalItem = MakeItem("폴더 포털 탭 추가…", AddPortalTab);
+        addPortalItem.IsEnabled = CapabilityAllowed("FolderPortal.Edit");
+        tabsMenu.Items.Add(addPortalItem);
         if (Model.Tabs.Count > 1)
         {
+            var index = SelectedTab is null ? -1 : Model.Tabs.IndexOf(SelectedTab);
             tabsMenu.Items.Add(new Separator());
-            tabsMenu.Items.Add(MakeItem("현재 탭 왼쪽으로 이동", () => MoveCurrentTab(-1)));
-            tabsMenu.Items.Add(MakeItem("현재 탭 오른쪽으로 이동", () => MoveCurrentTab(1)));
-            tabsMenu.Items.Add(MakeItem("현재 탭 분리", DetachCurrentTab));
+            var renameTabItem = MakeItem("현재 탭 이름 바꾸기…", RenameCurrentTab);
+            renameTabItem.IsEnabled = canEditGroups;
+            tabsMenu.Items.Add(renameTabItem);
+            var moveLeft = MakeItem("현재 탭 왼쪽으로 이동", () => MoveCurrentTab(-1));
+            moveLeft.IsEnabled = index > 0;
+            tabsMenu.Items.Add(moveLeft);
+            var moveRight = MakeItem("현재 탭 오른쪽으로 이동", () => MoveCurrentTab(1));
+            moveRight.IsEnabled = index >= 0 && index < Model.Tabs.Count - 1;
+            tabsMenu.Items.Add(moveRight);
+            tabsMenu.Items.Add(MakeItem("현재 탭을 새 그룹으로 분리", DetachCurrentTab));
+            tabsMenu.Items.Add(new Separator());
+            var removeTabItem = MakeItem("현재 탭 제거", RemoveCurrentTab);
+            removeTabItem.IsEnabled = canEditGroups;
+            tabsMenu.Items.Add(removeTabItem);
         }
-        menu.Items.Add(tabsMenu);
-        if (SelectedTab?.Kind == DeckTabKind.FolderPortal)
+        return tabsMenu;
+    }
+
+    private MenuItem BuildPortalMenu(DeckTab portal)
+    {
+        var portalMenu = new MenuItem { Header = "폴더 포털" };
+        portalMenu.Items.Add(MakeItem("뒤로   Alt+왼쪽", NavigatePortalBack));
+        portalMenu.Items.Add(MakeItem("앞으로   Alt+오른쪽", NavigatePortalForward));
+        portalMenu.Items.Add(MakeItem("상위 폴더   Alt+위쪽", NavigatePortalUp));
+        portalMenu.Items.Add(MakeItem("포털의 처음 폴더로", NavigatePortalHome));
+        portalMenu.Items.Add(new Separator());
+        portalMenu.Items.Add(MakeItem("현재 폴더를 Explorer에서 열기", () => { if (!string.IsNullOrWhiteSpace(portal.PortalPath)) Open(portal.PortalPath); }));
+        portalMenu.Items.Add(new Separator());
+        portalMenu.Items.Add(MakeCheckItem("하위 폴더를 포털 안에서 열기", portal.NavigateFoldersInPortal, () =>
         {
-            var portal = SelectedTab;
-            var portalMenu = new MenuItem { Header = "폴더 포털" };
-            portalMenu.Items.Add(MakeItem("뒤로   Alt+왼쪽", NavigatePortalBack));
-            portalMenu.Items.Add(MakeItem("앞으로   Alt+오른쪽", NavigatePortalForward));
-            portalMenu.Items.Add(MakeItem("상위 폴더   Alt+위쪽", NavigatePortalUp));
-            portalMenu.Items.Add(MakeItem("홈 / 포털 루트", NavigatePortalHome));
-            portalMenu.Items.Add(new Separator());
-            var navigateInPortal = MakeItem("포털 안에서 폴더 탐색", () =>
+            portal.NavigateFoldersInPortal = !portal.NavigateFoldersInPortal;
+            ModelChanged?.Invoke();
+        }));
+        portalMenu.Items.Add(MakeCheckItem("하위 폴더에도 같은 보기 방식 사용", portal.InheritPortalViewMode, () =>
+        {
+            portal.InheritPortalViewMode = !portal.InheritPortalViewMode;
+            RememberPortalView(portal, portal.PortalPath);
+            ModelChanged?.Invoke();
+        }));
+        portalMenu.Items.Add(MakeCheckItem("탭에 폴더 아이콘 표시", portal.ShowPortalFolderIcon, () =>
+        {
+            portal.ShowPortalFolderIcon = !portal.ShowPortalFolderIcon;
+            RebuildTabs();
+            ModelChanged?.Invoke();
+        }));
+
+        var sync = new MenuItem { Header = "Explorer 보기 동기화" };
+        sync.Items.Add(MakeCheckItem("같은 폴더를 연 Explorer 창과 자동 동기화", portal.SyncOpenExplorerView, () =>
+        {
+            portal.SyncOpenExplorerView = !portal.SyncOpenExplorerView;
+            if (portal.SyncOpenExplorerView) TrySyncPortalFromExplorer(portal, force: true);
+            ModelChanged?.Invoke();
+        }));
+        if (portal.SyncOpenExplorerView)
+        {
+            sync.Items.Add(new Separator());
+            sync.Items.Add(MakeMenuSectionHeader("함께 맞출 항목"));
+            sync.Items.Add(MakeCheckItem("보기 방식", portal.SyncExplorerViewMode, () => { portal.SyncExplorerViewMode = !portal.SyncExplorerViewMode; TrySyncPortalFromExplorer(portal, force: true); ModelChanged?.Invoke(); }));
+            sync.Items.Add(MakeCheckItem("아이콘 크기", portal.SyncExplorerIconSize, () => { portal.SyncExplorerIconSize = !portal.SyncExplorerIconSize; TrySyncPortalFromExplorer(portal, force: true); ModelChanged?.Invoke(); }));
+            sync.Items.Add(MakeCheckItem("정렬", portal.SyncExplorerSort, () => { portal.SyncExplorerSort = !portal.SyncExplorerSort; TrySyncPortalFromExplorer(portal, force: true); ModelChanged?.Invoke(); }));
+            var detailsColumns = MakeCheckItem("자세히 보기 열·순서", portal.SyncExplorerDetailsColumns, () =>
             {
-                portal.NavigateFoldersInPortal = !portal.NavigateFoldersInPortal;
+                portal.SyncExplorerDetailsColumns = !portal.SyncExplorerDetailsColumns;
+                TrySyncPortalFromExplorer(portal, force: true);
                 ModelChanged?.Invoke();
             });
-            navigateInPortal.IsCheckable = true;
-            navigateInPortal.IsChecked = portal.NavigateFoldersInPortal;
-            portalMenu.Items.Add(navigateInPortal);
-            var inheritView = MakeItem("하위 폴더에 보기 방식 상속", () =>
+            detailsColumns.IsEnabled = CapabilityAllowed("FolderPortal.Edit");
+            sync.Items.Add(detailsColumns);
+            var detailsWidths = MakeCheckItem("자세히 보기 열 너비", portal.SyncExplorerDetailsColumnWidths, () =>
             {
-                portal.InheritPortalViewMode = !portal.InheritPortalViewMode;
-                RememberPortalView(portal, portal.PortalPath);
+                portal.SyncExplorerDetailsColumnWidths = !portal.SyncExplorerDetailsColumnWidths;
+                TrySyncPortalFromExplorer(portal, force: true);
                 ModelChanged?.Invoke();
             });
-            inheritView.IsCheckable = true;
-            inheritView.IsChecked = portal.InheritPortalViewMode;
-            portalMenu.Items.Add(inheritView);
-            var folderIcon = MakeItem("탭에 폴더 아이콘 표시", () =>
-            {
-                portal.ShowPortalFolderIcon = !portal.ShowPortalFolderIcon;
-                RebuildTabs();
-                ModelChanged?.Invoke();
-            });
-            folderIcon.IsCheckable = true;
-            folderIcon.IsChecked = portal.ShowPortalFolderIcon;
-            portalMenu.Items.Add(folderIcon);
-            portalMenu.Items.Add(new Separator());
-            var syncExplorer = MakeItem("일치하는 Explorer 창에서 보기 동기화", () =>
-            {
-                portal.SyncOpenExplorerView = !portal.SyncOpenExplorerView;
-                if (portal.SyncOpenExplorerView) TrySyncPortalFromExplorer(portal, force: true);
-                ModelChanged?.Invoke();
-            });
-            syncExplorer.IsCheckable = true;
-            syncExplorer.IsChecked = portal.SyncOpenExplorerView;
-            portalMenu.Items.Add(syncExplorer);
-            if (portal.SyncOpenExplorerView)
-            {
-                var syncMode = MakeItem("  보기 방식 동기화", () => { portal.SyncExplorerViewMode = !portal.SyncExplorerViewMode; TrySyncPortalFromExplorer(portal, force: true); ModelChanged?.Invoke(); });
-                syncMode.IsCheckable = true; syncMode.IsChecked = portal.SyncExplorerViewMode; portalMenu.Items.Add(syncMode);
-                var syncSize = MakeItem("  아이콘 크기 동기화", () => { portal.SyncExplorerIconSize = !portal.SyncExplorerIconSize; TrySyncPortalFromExplorer(portal, force: true); ModelChanged?.Invoke(); });
-                syncSize.IsCheckable = true; syncSize.IsChecked = portal.SyncExplorerIconSize; portalMenu.Items.Add(syncSize);
-                var syncSort = MakeItem("  정렬 동기화", () => { portal.SyncExplorerSort = !portal.SyncExplorerSort; TrySyncPortalFromExplorer(portal, force: true); ModelChanged?.Invoke(); });
-                syncSort.IsCheckable = true; syncSort.IsChecked = portal.SyncExplorerSort; portalMenu.Items.Add(syncSort);
-                var syncDetailsColumns = MakeItem("  Details 열/순서 동기화", () =>
-                {
-                    portal.SyncExplorerDetailsColumns = !portal.SyncExplorerDetailsColumns;
-                    TrySyncPortalFromExplorer(portal, force: true);
-                    ModelChanged?.Invoke();
-                });
-                syncDetailsColumns.IsCheckable = true;
-                syncDetailsColumns.IsChecked = portal.SyncExplorerDetailsColumns;
-                syncDetailsColumns.IsEnabled = CapabilityAllowed("FolderPortal.Edit");
-                portalMenu.Items.Add(syncDetailsColumns);
-                var syncDetailsWidths = MakeItem("  Details 열 너비 동기화", () =>
-                {
-                    portal.SyncExplorerDetailsColumnWidths = !portal.SyncExplorerDetailsColumnWidths;
-                    TrySyncPortalFromExplorer(portal, force: true);
-                    ModelChanged?.Invoke();
-                });
-                syncDetailsWidths.IsCheckable = true;
-                syncDetailsWidths.IsChecked = portal.SyncExplorerDetailsColumnWidths;
-                syncDetailsWidths.IsEnabled = CapabilityAllowed("FolderPortal.Edit");
-                portalMenu.Items.Add(syncDetailsWidths);
-            }
-            portalMenu.Items.Add(MakeItem("지금 Explorer 보기와 동기화", () => TrySyncPortalFromExplorer(portal, force: true)));
-            portalMenu.Items.Add(new Separator());
-            portalMenu.Items.Add(MakeItem("현재 폴더를 Explorer에서 열기", () => { if (!string.IsNullOrWhiteSpace(portal.PortalPath)) Open(portal.PortalPath); }));
-            menu.Items.Add(portalMenu);
+            detailsWidths.IsEnabled = CapabilityAllowed("FolderPortal.Edit");
+            sync.Items.Add(detailsWidths);
         }
+        sync.Items.Add(new Separator());
+        sync.Items.Add(MakeItem("지금 한 번 동기화", () => TrySyncPortalFromExplorer(portal, force: true)));
+        portalMenu.Items.Add(new Separator());
+        portalMenu.Items.Add(sync);
+        return portalMenu;
+    }
 
-        var automation = new MenuItem { Header = "자동 분류 규칙", IsEnabled = CapabilityAllowed("Automation.EditRules") };
-        automation.Items.Add(MakeItem("규칙 편집…", OpenRuleEditor));
-        automation.Items.Add(new Separator());
-        automation.Items.Add(MakeItem("빠른 추가: 확장자…", () => AddRule(RuleField.Extension, "확장자(세미콜론으로 구분)", "pdf;docx")));
-        automation.Items.Add(MakeItem("빠른 추가: 이름 포함…", () => AddRule(RuleField.NameContains, "이름에 포함할 텍스트", "invoice")));
-        automation.Items.Add(MakeItem("빠른 추가: 정확한 이름…", () => AddRule(RuleField.NameExact, "정확한 파일 또는 폴더 이름", "Report.xlsx")));
-        automation.Items.Add(MakeItem("빠른 추가: 최근 수정 일수…", () => AddRule(RuleField.ModifiedWithinDays, "일수", "7")));
-        automation.Items.Add(MakeItem("빠른 추가: 바로 가기 대상…", () => AddRule(RuleField.ShortcutTargetContains, "바로 가기 대상에 포함할 텍스트", "steam")));
-        automation.Items.Add(MakeItem("빠른 추가: 아이콘 형식…", () => AddRule(RuleField.IconTypeIs, "아이콘 형식(file/folder/shortcut/application/other)", "shortcut")));
-        automation.Items.Add(MakeItem("현재 탭 규칙 모두 지우기", () => { var t = SelectedTab; if (t is null) return; t.Rules.Clear(); ModelChanged?.Invoke(); AutomationRulesChanged?.Invoke(); }));
-        menu.Items.Add(automation);
-
+    private MenuItem BuildSortMenu()
+    {
         var sortMenu = new MenuItem { Header = "정렬" };
+        var tab = SelectedTab;
         foreach (var mode in Enum.GetValues<DeckSortMode>())
         {
             var local = mode;
-            var sortLabel = mode switch
+            var label = mode switch
             {
                 DeckSortMode.Name => "이름",
                 DeckSortMode.Type => "형식",
@@ -205,34 +190,34 @@ public partial class FenceWindow
                 DeckSortMode.Size => "크기",
                 _ => "열기 횟수"
             };
-            var item = MakeItem(sortLabel, () =>
+            // Re-selecting the active key still flips the direction, as before.
+            sortMenu.Items.Add(MakeCheckItem(label, tab?.Sort == mode, () => ApplyGroupSort(t =>
             {
-                var tab = SelectedTab;
-                if (tab is null) return;
-                if (tab.Sort == local) tab.SortDescending = !tab.SortDescending;
-                else { tab.Sort = local; tab.SortDescending = false; }
-                RefreshItems(IconMovementAnimationContext.SortOrArrange);
-                ModelChanged?.Invoke();
-            });
-            item.IsCheckable = true;
-            if (SelectedTab?.Sort == mode) item.IsChecked = true;
-            sortMenu.Items.Add(item);
+                if (t.Sort == local) t.SortDescending = !t.SortDescending;
+                else { t.Sort = local; t.SortDescending = false; }
+            })));
         }
         sortMenu.Items.Add(new Separator());
-        var foldersFirst = MakeItem("폴더 먼저", () =>
-        {
-            var tab = SelectedTab;
-            if (tab is null) return;
-            tab.FoldersFirst = !tab.FoldersFirst;
-            RefreshItems(IconMovementAnimationContext.SortOrArrange);
-            ModelChanged?.Invoke();
-        });
-        foldersFirst.IsCheckable = true;
-        foldersFirst.IsChecked = SelectedTab?.FoldersFirst == true;
-        sortMenu.Items.Add(foldersFirst);
-        menu.Items.Add(sortMenu);
+        sortMenu.Items.Add(MakeCheckItem("오름차순", tab is { SortDescending: false }, () => ApplyGroupSort(t => t.SortDescending = false)));
+        sortMenu.Items.Add(MakeCheckItem("내림차순", tab is { SortDescending: true }, () => ApplyGroupSort(t => t.SortDescending = true)));
+        sortMenu.Items.Add(new Separator());
+        sortMenu.Items.Add(MakeCheckItem("폴더 먼저", tab?.FoldersFirst == true, () => ApplyGroupSort(t => t.FoldersFirst = !t.FoldersFirst)));
+        return sortMenu;
+    }
 
+    private void ApplyGroupSort(Action<DeckTab> change)
+    {
+        var tab = SelectedTab;
+        if (tab is null) return;
+        change(tab);
+        RefreshItems(IconMovementAnimationContext.SortOrArrange);
+        ModelChanged?.Invoke();
+    }
+
+    private MenuItem BuildViewMenu()
+    {
         var viewMenu = new MenuItem { Header = "보기" };
+        var tab = SelectedTab;
         foreach (var mode in Enum.GetValues<DeckItemViewMode>())
         {
             var localMode = mode;
@@ -242,279 +227,359 @@ public partial class FenceWindow
                 DeckItemViewMode.List => "목록",
                 _ => "자세히"
             };
-            var item = MakeItem(label, () => SetItemViewMode(localMode));
-            item.IsCheckable = true;
-            item.IsChecked = SelectedTab?.ViewMode == mode;
-            viewMenu.Items.Add(item);
+            viewMenu.Items.Add(MakeCheckItem(label, tab?.ViewMode == mode, () => SetItemViewMode(localMode)));
         }
-        if (SelectedTab?.Kind == DeckTabKind.FolderPortal)
+        if (tab?.ViewMode == DeckItemViewMode.List)
         {
             viewMenu.Items.Add(new Separator());
-            var iconSizeMenu = new MenuItem { Header = "아이콘 크기" };
-            foreach (var preset in new double[] { 24, 32, 48, 64, 96, 128 })
-            {
-                var size = preset;
-                var item = MakeItem($"{size:0} px", () => SetIconSize(size));
-                item.IsCheckable = true;
-                item.IsChecked = Math.Abs(Model.IconSize - size) < 0.5;
-                iconSizeMenu.Items.Add(item);
-            }
-            if (!new double[] { 24, 32, 48, 64, 96, 128 }.Any(v => Math.Abs(Model.IconSize - v) < 0.5))
-            {
-                var custom = new MenuItem { Header = $"사용자 지정 ({Model.IconSize:0} px)", IsCheckable = true, IsChecked = true, IsEnabled = false };
-                iconSizeMenu.Items.Add(new Separator());
-                iconSizeMenu.Items.Add(custom);
-            }
-            viewMenu.Items.Add(iconSizeMenu);
-        }
-        if (SelectedTab?.ViewMode == DeckItemViewMode.List)
-        {
-            var listOrientation = new MenuItem { Header = "목록 방향" };
             foreach (var orientation in Enum.GetValues<DeckListOrientation>())
             {
                 var localOrientation = orientation;
-                var item = MakeItem(orientation == DeckListOrientation.Vertical ? "세로 목록" : "가로 목록", () => SetListOrientation(localOrientation));
-                item.IsCheckable = true;
-                item.IsChecked = SelectedTab?.ListOrientation == orientation;
-                listOrientation.Items.Add(item);
+                viewMenu.Items.Add(MakeCheckItem(orientation == DeckListOrientation.Vertical ? "세로로 나열" : "가로로 나열",
+                    tab.ListOrientation == orientation, () => SetListOrientation(localOrientation)));
             }
-            viewMenu.Items.Add(new Separator());
-            viewMenu.Items.Add(listOrientation);
         }
-        if (SelectedTab?.ViewMode == DeckItemViewMode.Details)
+        if (tab?.ViewMode == DeckItemViewMode.Details)
         {
             viewMenu.Items.Add(new Separator());
-            var detailsHeader = MakeItem("자세히 보기 헤더 표시", ToggleDetailsHeader);
-            detailsHeader.IsCheckable = true;
-            detailsHeader.IsChecked = SelectedTab?.ShowDetailsHeader == true;
-            viewMenu.Items.Add(detailsHeader);
+            viewMenu.Items.Add(MakeCheckItem("열 제목 표시", tab.ShowDetailsHeader, ToggleDetailsHeader));
         }
-        menu.Items.Add(viewMenu);
 
-        var appearance = new MenuItem { Header = "모양", IsEnabled = CapabilityAllowed("Appearance.Edit") };
-        appearance.Items.Add(MakeSubMenu("투명도", new (string, Action)[]
+        // A single icon-size list for every tab kind (previously split between View and Appearance).
+        viewMenu.Items.Add(new Separator());
+        var presets = new (double Size, string Label)[]
         {
-            ("50%", () => SetOpacity(.50)), ("65%", () => SetOpacity(.65)), ("75%", () => SetOpacity(.75)),
-            ("85%", () => SetOpacity(.85)), ("95%", () => SetOpacity(.95))
-        }));
-        appearance.Items.Add(MakeSubMenu("아이콘 색조", new (string, Action)[]
+            (24, "아주 작게 (24)"), (32, "작게 (32)"), (46, "보통 (46)"),
+            (64, "크게 (64)"), (88, "매우 크게 (88)"), (128, "최대 (128)")
+        };
+        var iconSizeMenu = new MenuItem { Header = "아이콘 크기" };
+        foreach (var (size, label) in presets)
         {
-            ("끄기", () => SetTint(0)), ("약하게", () => SetTint(.32)), ("중간", () => SetTint(.58)), ("강하게", () => SetTint(.82))
-        }));
-        appearance.Items.Add(MakeSubMenu("아이콘 크기", new (string, Action)[]
-        {
-            ("작게 (32)", () => SetIconSize(32)), ("중간 (46)", () => SetIconSize(46)),
-            ("크게 (64)", () => SetIconSize(64)), ("매우 크게 (88)", () => SetIconSize(88))
-        }));
-        var iconSpacingMenu = MakeSubMenu("아이콘 간격", new (string, Action)[]
-        {
-            ("좁게", () => SetIconSpacing(4, 4)), ("보통", () => SetIconSpacing(14, 12)),
-            ("여유롭게", () => SetIconSpacing(26, 22)), ("넓게", () => SetIconSpacing(42, 32))
-        });
-        iconSpacingMenu.IsEnabled = !_settings.UseSameSpacingInsideAndOutsideGroups
-            && CapabilityAllowed(LinkedIconSpacingIntegrationContract.ManagedCapability);
-        appearance.Items.Add(iconSpacingMenu);
-        var labelMode = new MenuItem { Header = "아이콘 이름" };
-        foreach (var mode in Enum.GetValues<DeckIconLabelMode>())
-        {
-            var localMode = mode;
-            var item = MakeItem(mode switch
-            {
-                DeckIconLabelMode.Always => "항상 표시",
-                DeckIconLabelMode.Mouseover => "마우스 오버 시 표시",
-                _ => "숨김"
-            }, () => SetIconLabelMode(localMode));
-            item.IsCheckable = true;
-            item.IsChecked = Model.IconLabelMode == mode;
-            labelMode.Items.Add(item);
+            var localSize = size;
+            iconSizeMenu.Items.Add(MakeCheckItem(label, NearlyEqual(Model.IconSize, size, 0.5), () => SetIconSize(localSize)));
         }
-        appearance.Items.Add(labelMode);
+        if (!presets.Any(p => NearlyEqual(Model.IconSize, p.Size, 0.5)))
+        {
+            iconSizeMenu.Items.Add(new Separator());
+            iconSizeMenu.Items.Add(new MenuItem { Header = $"사용자 지정 ({Model.IconSize:0})", IsCheckable = true, IsChecked = true, IsEnabled = false });
+        }
+        viewMenu.Items.Add(iconSizeMenu);
+        return viewMenu;
+    }
+
+    private MenuItem BuildAppearanceMenu()
+    {
+        var appearance = new MenuItem { Header = "모양", IsEnabled = CapabilityAllowed("Appearance.Edit") };
+
+        appearance.Items.Add(MakeChoiceMenu("색상 테마", new (string, bool, Action)[]
+        {
+            ("그래파이트", IsTheme("#17191E", "#7AA2FF"), () => SetTheme("#17191E", "#7AA2FF")),
+            ("슬레이트", IsTheme("#18202A", "#79B7FF"), () => SetTheme("#18202A", "#79B7FF")),
+            ("바이올렛", IsTheme("#1C1924", "#A995FF"), () => SetTheme("#1C1924", "#A995FF")),
+            ("에메랄드", IsTheme("#14201C", "#70D3A9"), () => SetTheme("#14201C", "#70D3A9")),
+            ("앰버", IsTheme("#221C13", "#F0BA62"), () => SetTheme("#221C13", "#F0BA62")),
+            ("로즈", IsTheme("#22171C", "#ED8FAF"), () => SetTheme("#22171C", "#ED8FAF"))
+        }));
+        appearance.Items.Add(MakeChoiceMenu("배경 불투명도", new[] { .50, .65, .75, .85, .95 }
+            .Select(v => ($"{v:P0}", NearlyEqual(Model.Opacity, v, 0.005), (Action)(() => SetOpacity(v))))));
+        appearance.Items.Add(MakeChoiceMenu("모서리", new (string, bool, Action)[]
+        {
+            ("각지게", NearlyEqual(Model.CornerRadius, 0, 0.5), () => SetCornerRadius(0)),
+            ("살짝 둥글게", NearlyEqual(Model.CornerRadius, 6, 0.5), () => SetCornerRadius(6)),
+            ("둥글게", NearlyEqual(Model.CornerRadius, 12, 0.5), () => SetCornerRadius(12)),
+            ("많이 둥글게", NearlyEqual(Model.CornerRadius, 18, 0.5), () => SetCornerRadius(18))
+        }));
+
+        appearance.Items.Add(new Separator());
+        var spacingLinked = _settings.UseSameSpacingInsideAndOutsideGroups;
+        var iconSpacingMenu = MakeChoiceMenu("아이콘 간격", new (string, bool, Action)[]
+        {
+            ("좁게", IsSpacing(4, 4), () => SetIconSpacing(4, 4)),
+            ("보통", IsSpacing(14, 12), () => SetIconSpacing(14, 12)),
+            ("여유롭게", IsSpacing(26, 22), () => SetIconSpacing(26, 22)),
+            ("넓게", IsSpacing(42, 32), () => SetIconSpacing(42, 32))
+        });
+        iconSpacingMenu.IsEnabled = !spacingLinked
+            && CapabilityAllowed(LinkedIconSpacingIntegrationContract.ManagedCapability);
+        if (spacingLinked)
+        {
+            // Explain why the item is unavailable instead of silently greying it out.
+            iconSpacingMenu.Header = "아이콘 간격 (바탕화면과 같게 사용 중)";
+            ToolTipService.SetShowOnDisabled(iconSpacingMenu, true);
+            iconSpacingMenu.ToolTip = "환경설정 > 모양 및 외관 > 그룹 개별 편집에서 '그룹 안팎의 아이콘 간격을 동일하게 사용'을 끄면 그룹별로 바꿀 수 있습니다.";
+        }
+        appearance.Items.Add(iconSpacingMenu);
+        appearance.Items.Add(MakeChoiceMenu("아이콘 이름", Enum.GetValues<DeckIconLabelMode>().Select(mode => (mode switch
+        {
+            DeckIconLabelMode.Always => "항상 표시",
+            DeckIconLabelMode.Mouseover => "마우스를 올릴 때만 표시",
+            _ => "숨김"
+        }, Model.IconLabelMode == mode, (Action)(() => SetIconLabelMode(mode))))));
+        appearance.Items.Add(MakeChoiceMenu("아이콘 색조", new (string, bool, Action)[]
+        {
+            ("끄기", NearlyEqual(Model.IconTintStrength, 0), () => SetTint(0)),
+            ("약하게", NearlyEqual(Model.IconTintStrength, .32), () => SetTint(.32)),
+            ("중간", NearlyEqual(Model.IconTintStrength, .58), () => SetTint(.58)),
+            ("강하게", NearlyEqual(Model.IconTintStrength, .82), () => SetTint(.82))
+        }));
         var layoutMode = new MenuItem { Header = "아이콘 배치" };
         foreach (var mode in Enum.GetValues<DeckIconLayoutMode>())
         {
             var localMode = mode;
-            var item = MakeItem(mode == DeckIconLayoutMode.Grid ? "격자 / 자동" : "자유 배치", () => SetIconLayout(localMode));
-            item.IsCheckable = true;
-            item.IsChecked = Model.IconLayoutMode == mode;
-            layoutMode.Items.Add(item);
+            layoutMode.Items.Add(MakeCheckItem(mode == DeckIconLayoutMode.Grid ? "자동 격자" : "자유 배치",
+                Model.IconLayoutMode == mode, () => SetIconLayout(localMode)));
         }
-        layoutMode.Items.Add(new Separator());
-        layoutMode.Items.Add(MakeItem("자유 배치 아이콘을 왼쪽 위부터 정렬", PackFreePositions));
-        layoutMode.Items.Add(MakeItem("자유 배치 아이콘을 간격 격자에 맞춤", SnapFreePositions));
-        layoutMode.Items.Add(MakeItem("선택한 아이콘 왼쪽 맞춤", AlignSelectedFreeIconsLeft));
-        layoutMode.Items.Add(MakeItem("선택한 아이콘 위쪽 맞춤", AlignSelectedFreeIconsTop));
-        layoutMode.Items.Add(MakeItem("자유 배치 아이콘 위치 초기화", ResetFreePositions));
+        if (Model.IconLayoutMode != DeckIconLayoutMode.Grid)
+        {
+            layoutMode.Items.Add(new Separator());
+            layoutMode.Items.Add(MakeMenuSectionHeader("자유 배치 정리"));
+            layoutMode.Items.Add(MakeItem("왼쪽 위부터 빈틈없이 정렬", PackFreePositions));
+            layoutMode.Items.Add(MakeItem("간격 격자에 맞춤", SnapFreePositions));
+            layoutMode.Items.Add(MakeItem("선택한 아이콘 왼쪽 맞춤", AlignSelectedFreeIconsLeft));
+            layoutMode.Items.Add(MakeItem("선택한 아이콘 위쪽 맞춤", AlignSelectedFreeIconsTop));
+            layoutMode.Items.Add(MakeItem("아이콘 위치 초기화", ResetFreePositions));
+        }
         appearance.Items.Add(layoutMode);
-        appearance.Items.Add(MakeSubMenu("테마 색상", new (string, Action)[]
-        {
-            ("그래파이트", () => SetTheme("#17191E", "#7AA2FF")),
-            ("슬레이트", () => SetTheme("#18202A", "#79B7FF")),
-            ("바이올렛", () => SetTheme("#1C1924", "#A995FF")),
-            ("에메랄드", () => SetTheme("#14201C", "#70D3A9")),
-            ("앰버", () => SetTheme("#221C13", "#F0BA62")),
-            ("로즈", () => SetTheme("#22171C", "#ED8FAF"))
-        }));
-        appearance.Items.Add(MakeSubMenu("모서리", new (string, Action)[]
-        {
-            ("각진 모서리", () => SetCornerRadius(0)),
-            ("살짝 둥글게", () => SetCornerRadius(6)),
-            ("둥글게", () => SetCornerRadius(12)),
-            ("약하게", () => SetCornerRadius(18))
-        }));
-        appearance.Items.Add(MakeSubMenu("현재 탭 강조색", new (string, Action)[]
-        {
-            ("파랑", () => SetTabAccent("#7AA2FF")), ("Violet", () => SetTabAccent("#AA8EFF")),
-            ("초록", () => SetTabAccent("#70D3A9")), ("Amber", () => SetTabAccent("#F0BA62")),
-            ("Rose", () => SetTabAccent("#ED8FAF"))
-        }));
+
+        appearance.Items.Add(new Separator());
         var titlebar = new MenuItem { Header = "제목 표시줄" };
         foreach (var mode in Enum.GetValues<DeckTitlebarMode>())
         {
             var localMode = mode;
-            var item = MakeItem(mode switch
+            titlebar.Items.Add(MakeCheckItem(mode switch
             {
                 DeckTitlebarMode.Always => "항상 표시",
-                DeckTitlebarMode.Mouseover => "마우스 오버 시 표시",
+                DeckTitlebarMode.Mouseover => "마우스를 올릴 때만 표시",
                 _ => "숨김"
-            }, () =>
+            }, Model.TitlebarMode == mode, () =>
             {
                 Model.TitlebarMode = localMode;
-                ApplyTitlebarMode(IsMouseOver);
+                ApplyTitlebarMode(DesktopPointerHover.IsActuallyOver(this));
                 ModelChanged?.Invoke();
-            });
-            item.IsCheckable = true;
-            item.IsChecked = Model.TitlebarMode == mode;
-            titlebar.Items.Add(item);
+            }));
         }
         titlebar.Items.Add(new Separator());
-        var titleAtBottom = MakeItem("화면 위쪽에서는 제목 표시줄을 아래로 이동", () =>
+        titlebar.Items.Add(MakeCheckItem("화면 위쪽에 붙으면 제목 표시줄을 아래로", Model.MoveTitlebarToBottomNearTop, () =>
         {
             Model.MoveTitlebarToBottomNearTop = !Model.MoveTitlebarToBottomNearTop;
             UpdateTitlebarPlacement();
             ModelChanged?.Invoke();
-        });
-        titleAtBottom.IsCheckable = true;
-        titleAtBottom.IsChecked = Model.MoveTitlebarToBottomNearTop;
-        titlebar.Items.Add(titleAtBottom);
+        }));
         appearance.Items.Add(titlebar);
-        appearance.Items.Add(MakeSubMenu("제목 글꼴", new (string, Action)[]
-        {
-            ("Segoe UI", () => SetTitleFont("Segoe UI")),
-            ("Segoe UI Variable", () => SetTitleFont("Segoe UI Variable")),
-            ("Arial", () => SetTitleFont("Arial")),
-            ("Consolas", () => SetTitleFont("Consolas"))
-        }));
-        appearance.Items.Add(MakeSubMenu("제목 크기", new (string, Action)[]
-        {
-            ("Small (10)", () => SetTitleFontSize(10)),
-            ("Normal (12)", () => SetTitleFontSize(12)),
-            ("Large (14)", () => SetTitleFontSize(14)),
-            ("Extra large (16)", () => SetTitleFontSize(16))
-        }));
-        appearance.Items.Add(MakeSubMenu("제목 색상", new (string, Action)[]
-        {
-            ("White", () => SetTitleColor("#F4F6FA")),
-            ("Soft gray", () => SetTitleColor("#C8D0DA")),
-            ("Blue", () => SetTitleColor("#AFC9FF")),
-            ("Amber", () => SetTitleColor("#FFD28A")),
-            ("Mint", () => SetTitleColor("#A9E4CD"))
-        }));
 
-        var tabStyle = new MenuItem { Header = "탭 스타일" };
+        var titleText = new MenuItem { Header = "제목 글자" };
+        titleText.Items.Add(MakeMenuSectionHeader("글꼴"));
+        foreach (var family in new[] { "Segoe UI", "Segoe UI Variable", "Arial", "Consolas" })
+            titleText.Items.Add(MakeCheckItem(family, SameMenuText(Model.TitleFontFamily, family), () => SetTitleFont(family)));
+        titleText.Items.Add(new Separator());
+        titleText.Items.Add(MakeMenuSectionHeader("크기"));
+        foreach (var (size, label) in new (double, string)[] { (10, "작게 (10)"), (12, "보통 (12)"), (14, "크게 (14)"), (16, "매우 크게 (16)") })
+            titleText.Items.Add(MakeCheckItem(label, NearlyEqual(Model.TitleFontSize, size, 0.5), () => SetTitleFontSize(size)));
+        titleText.Items.Add(new Separator());
+        titleText.Items.Add(MakeMenuSectionHeader("색상"));
+        foreach (var (color, label) in new[] { ("#F4F6FA", "흰색"), ("#C8D0DA", "연한 회색"), ("#AFC9FF", "파랑"), ("#FFD28A", "앰버"), ("#A9E4CD", "민트") })
+            titleText.Items.Add(MakeCheckItem(label, SameMenuText(Model.TitleForeground, color), () => SetTitleColor(color)));
+        appearance.Items.Add(titleText);
+
+        var tabLook = new MenuItem { Header = "탭 모양" };
         foreach (var style in Enum.GetValues<DeckTabStyle>())
         {
             var localStyle = style;
-            var item = MakeItem(style switch
+            tabLook.Items.Add(MakeCheckItem(style switch
             {
                 DeckTabStyle.MenuOnly => "메뉴만",
                 DeckTabStyle.Flat => "평면",
                 DeckTabStyle.Segmented => "분할",
                 _ => "둥글게"
-            }, () =>
+            }, Model.TabStyle == style, () =>
             {
                 Model.TabStyle = localStyle;
                 RebuildTabs();
                 ModelChanged?.Invoke();
-            });
-            item.IsCheckable = true;
-            item.IsChecked = Model.TabStyle == style;
-            tabStyle.Items.Add(item);
+            }));
         }
-        appearance.Items.Add(tabStyle);
-        var fade = MakeItem("카멜레온 자동 흐림", () =>
+        tabLook.Items.Add(new Separator());
+        tabLook.Items.Add(MakeMenuSectionHeader("현재 탭 강조색"));
+        foreach (var (color, label) in new[] { ("#7AA2FF", "파랑"), ("#AA8EFF", "바이올렛"), ("#70D3A9", "초록"), ("#F0BA62", "앰버"), ("#ED8FAF", "로즈") })
+            tabLook.Items.Add(MakeCheckItem(label, SameMenuText(SelectedTab?.Accent, color), () => SetTabAccent(color)));
+        appearance.Items.Add(tabLook);
+
+        appearance.Items.Add(new Separator());
+        appearance.Items.Add(MakeCheckItem("마우스가 멀어지면 흐리게 (카멜레온)", Model.AutoFade, () =>
         {
             Model.AutoFade = !Model.AutoFade;
             Shell.Opacity = 1;
             _lastAppliedChameleonOpacity = 1;
             ModelChanged?.Invoke();
-        });
-        fade.IsCheckable = true;
-        fade.IsChecked = Model.AutoFade;
-        appearance.Items.Add(fade);
+        }));
         appearance.Items.Add(new Separator());
-        appearance.Items.Add(MakeItem("그룹 모양 복사", CopyAppearance));
-        var pasteAppearance = MakeItem("그룹 모양 붙여넣기", PasteAppearance);
+        appearance.Items.Add(MakeItem("이 그룹 모양 복사", CopyAppearance));
+        var pasteAppearance = MakeItem("복사한 모양 붙여넣기", PasteAppearance);
         pasteAppearance.IsEnabled = _appearanceClipboard is not null;
         appearance.Items.Add(pasteAppearance);
-        appearance.Items.Add(MakeItem("그룹 모양 초기화", ResetAppearance));
-        menu.Items.Add(appearance);
+        appearance.Items.Add(MakeItem("기본 모양으로 되돌리기", ResetAppearance));
+        return appearance;
+    }
 
-        var always = MakeItem("이 그룹은 빠른 숨김에서 제외", () => { Model.AlwaysVisible = !Model.AlwaysVisible; ModelChanged?.Invoke(); VisibilitySettingsChanged?.Invoke(); });
-        always.IsCheckable = true;
-        always.IsChecked = Model.AlwaysVisible;
-        menu.Items.Add(always);
-        var allPages = MakeItem("모든 바탕화면 페이지에 표시", () => { Model.ShowOnAllPages = !Model.ShowOnAllPages; ModelChanged?.Invoke(); });
-        allPages.IsCheckable = true;
-        allPages.IsChecked = Model.ShowOnAllPages;
-        menu.Items.Add(allPages);
-        var locked = MakeItem("그룹 위치와 크기 잠금", () =>
+    private MenuItem BuildBehaviorMenu()
+    {
+        var behavior = new MenuItem { Header = "배치 및 동작" };
+        behavior.Items.Add(MakeCheckItem("위치와 크기 잠금", Model.Locked, () =>
         {
             Model.Locked = !Model.Locked;
             ApplyRolledState(false);
             ModelChanged?.Invoke();
-        });
-        locked.IsCheckable = true;
-        locked.IsChecked = Model.Locked;
-        menu.Items.Add(locked);
-        menu.Items.Add(new MenuItem { Header = $"바탕화면 페이지: {Model.PageIndex + 1}", IsEnabled = false });
-        var rollupBehavior = new MenuItem { Header = "접기 동작" };
-        foreach (var mode in Enum.GetValues<DeckRollupActivation>())
+        }));
+        behavior.Items.Add(MakeCheckItem("모든 바탕화면 페이지에 표시", Model.ShowOnAllPages, () =>
         {
-            var localMode = mode;
-            var label = mode switch
+            Model.ShowOnAllPages = !Model.ShowOnAllPages;
+            ModelChanged?.Invoke();
+        }));
+        behavior.Items.Add(MakeCheckItem("빠른 숨김을 해도 계속 표시", Model.AlwaysVisible, () =>
+        {
+            Model.AlwaysVisible = !Model.AlwaysVisible;
+            ModelChanged?.Invoke();
+            VisibilitySettingsChanged?.Invoke();
+        }));
+        if (_settings.EnableRollup)
+        {
+            behavior.Items.Add(new Separator());
+            var rollup = new MenuItem { Header = "접힌 그룹 여는 방법" };
+            foreach (var mode in Enum.GetValues<DeckRollupActivation>())
             {
-                DeckRollupActivation.Hover => "마우스 오버 시 열기",
-                DeckRollupActivation.DelayedHover => "잠시 올려두면 열기",
-                _ => "클릭해야 열기"
-            };
-            var item = MakeItem(label, () => SetRollupActivation(localMode));
-            item.IsCheckable = true;
-            item.IsChecked = Model.RollupActivation == mode;
-            rollupBehavior.Items.Add(item);
+                var localMode = mode;
+                rollup.Items.Add(MakeCheckItem(mode switch
+                {
+                    DeckRollupActivation.Hover => "마우스를 올리면 바로 열기",
+                    DeckRollupActivation.DelayedHover => "잠시 올려두면 열기",
+                    _ => "클릭해야 열기"
+                }, Model.RollupActivation == mode, () => SetRollupActivation(localMode)));
+            }
+            behavior.Items.Add(rollup);
         }
-        menu.Items.Add(rollupBehavior);
-        menu.Items.Add(MakeItem(Model.RolledUp ? "계속 펼쳐두기" : "접기", ToggleRollUp));
-
-        menu.Items.Add(new Separator());
-        if (Model.Tabs.Count > 1)
+        behavior.Items.Add(new Separator());
+        behavior.Items.Add(new MenuItem
         {
-            var removeTabItem = MakeItem("현재 탭 제거", RemoveCurrentTab);
-            removeTabItem.IsEnabled = CapabilityAllowed("Settings.EditGroups");
-            menu.Items.Add(removeTabItem);
-        }
-        var newFenceItem = MakeItem("새 그룹", () => NewFenceRequested?.Invoke());
-        newFenceItem.IsEnabled = CapabilityAllowed("Layout.CreateDeleteGroups");
-        menu.Items.Add(newFenceItem);
-        menu.Items.Add(MakeItem("CyanDeck 설정…", () => SettingsRequested?.Invoke()));
-        var deleteFenceItem = MakeItem("그룹 삭제", () => DeleteRequested?.Invoke(this));
-        deleteFenceItem.IsEnabled = CapabilityAllowed("Layout.CreateDeleteGroups");
-        menu.Items.Add(deleteFenceItem);
+            Header = Model.ShowOnAllPages ? "표시 위치: 모든 바탕화면 페이지" : $"표시 위치: 바탕화면 페이지 {Model.PageIndex + 1}",
+            IsEnabled = false
+        });
+        return behavior;
     }
 
-    private static MenuItem MakeSubMenu(string header, IEnumerable<(string Label, Action Action)> actions)
+    private MenuItem BuildAutomationMenu()
+    {
+        var automation = new MenuItem { Header = "자동 분류 규칙", IsEnabled = CapabilityAllowed("Automation.EditRules") };
+        automation.Items.Add(MakeItem("규칙 편집…", OpenRuleEditor));
+        automation.Items.Add(new Separator());
+        automation.Items.Add(MakeMenuSectionHeader("현재 탭에 빠르게 추가"));
+        automation.Items.Add(MakeItem("확장자로…", () => AddRule(RuleField.Extension, "확장자(세미콜론으로 구분)", "pdf;docx")));
+        automation.Items.Add(MakeItem("이름에 포함된 글자로…", () => AddRule(RuleField.NameContains, "이름에 포함할 텍스트", "invoice")));
+        automation.Items.Add(MakeItem("정확한 이름으로…", () => AddRule(RuleField.NameExact, "정확한 파일 또는 폴더 이름", "Report.xlsx")));
+        automation.Items.Add(MakeItem("최근 수정한 항목(일수)으로…", () => AddRule(RuleField.ModifiedWithinDays, "일수", "7")));
+        automation.Items.Add(MakeItem("바로 가기 대상으로…", () => AddRule(RuleField.ShortcutTargetContains, "바로 가기 대상에 포함할 텍스트", "steam")));
+        automation.Items.Add(MakeItem("아이콘 형식으로…", () => AddRule(RuleField.IconTypeIs, "아이콘 형식(file/folder/shortcut/application/other)", "shortcut")));
+        automation.Items.Add(new Separator());
+        var clear = MakeItem("현재 탭 규칙 모두 지우기…", ConfirmClearTabRules);
+        clear.IsEnabled = SelectedTab is { Rules.Count: > 0 };
+        automation.Items.Add(clear);
+        return automation;
+    }
+
+    private MenuItem BuildGroupToolsMenu(bool canCreateDelete)
+    {
+        var groupTools = new MenuItem { Header = "그룹 복제 및 템플릿" };
+        var duplicateItem = MakeItem("이 그룹 복제", () => DuplicateRequested?.Invoke(this));
+        duplicateItem.IsEnabled = canCreateDelete;
+        groupTools.Items.Add(duplicateItem);
+        var saveTemplateItem = MakeItem("이 그룹을 템플릿으로 저장…", () => SaveTemplateRequested?.Invoke(this));
+        saveTemplateItem.IsEnabled = CapabilityAllowed("Templates.Edit");
+        groupTools.Items.Add(saveTemplateItem);
+        if (_templates.Count > 0)
+        {
+            var fromTemplate = new MenuItem { Header = "템플릿으로 새 그룹 만들기", IsEnabled = canCreateDelete };
+            foreach (var template in _templates.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
+            {
+                var localTemplate = template;
+                fromTemplate.Items.Add(MakeItem(localTemplate.Name, () => CreateFromTemplateRequested?.Invoke(localTemplate.Id)));
+            }
+            groupTools.Items.Add(fromTemplate);
+        }
+        return groupTools;
+    }
+
+    private void RenameGroup()
+    {
+        var text = TextPrompt.Show(this, "그룹 이름 바꾸기", "이름", Model.Title);
+        if (text is null) return;
+        Model.Title = text;
+        if (Model.Tabs.Count == 1)
+        {
+            Model.Tabs[0].Title = text;
+            RebuildTabs();
+        }
+        ModelChanged?.Invoke();
+    }
+
+    private void RenameCurrentTab()
+    {
+        var tab = SelectedTab;
+        if (tab is null) return;
+        var text = TextPrompt.Show(this, "탭 이름 바꾸기", "이름", tab.Title);
+        if (text is null) return;
+        tab.Title = text;
+        RebuildTabs();
+        ModelChanged?.Invoke();
+    }
+
+    private void ConfirmDeleteGroup()
+    {
+        var name = string.IsNullOrWhiteSpace(Model.Title) ? "이 그룹" : $"'{Model.Title}' 그룹";
+        var answer = System.Windows.MessageBox.Show(this,
+            $"{name}을(를) 삭제하시겠습니까?\n\n그룹과 그 안의 탭, 모양 설정이 삭제됩니다. 바탕화면의 실제 파일과 폴더는 삭제되지 않습니다.",
+            "그룹 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer == MessageBoxResult.Yes) DeleteRequested?.Invoke(this);
+    }
+
+    private void ConfirmClearTabRules()
+    {
+        var tab = SelectedTab;
+        if (tab is null || tab.Rules.Count == 0) return;
+        var answer = System.Windows.MessageBox.Show(this,
+            $"'{tab.Title}' 탭의 자동 분류 규칙 {tab.Rules.Count}개를 모두 지우시겠습니까?\n\n이미 분류된 항목과 실제 파일은 그대로 유지됩니다.",
+            "자동 분류 규칙 지우기", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes) return;
+        tab.Rules.Clear();
+        ModelChanged?.Invoke();
+        AutomationRulesChanged?.Invoke();
+    }
+
+    private bool IsTheme(string background, string accent)
+        => SameMenuText(Model.Background, background) && SameMenuText(Model.Accent, accent);
+
+    private bool IsSpacing(double horizontal, double vertical)
+        => NearlyEqual(Model.IconSpacingX, horizontal, 0.5) && NearlyEqual(Model.IconSpacingY, vertical, 0.5);
+
+    private static bool NearlyEqual(double value, double expected, double tolerance = 0.01)
+        => double.IsFinite(value) && Math.Abs(value - expected) <= tolerance;
+
+    private static bool SameMenuText(string? value, string expected)
+        => string.Equals(value?.Trim(), expected, StringComparison.OrdinalIgnoreCase);
+
+    private static MenuItem MakeMenuSectionHeader(string text)
+        => new() { Header = text, IsEnabled = false, FontWeight = FontWeights.SemiBold };
+
+    private static MenuItem MakeCheckItem(string header, bool isChecked, Action action)
+    {
+        var item = MakeItem(header, action);
+        item.IsCheckable = true;
+        item.IsChecked = isChecked;
+        return item;
+    }
+
+    private static MenuItem MakeChoiceMenu(string header, IEnumerable<(string Label, bool Checked, Action Action)> choices)
     {
         var root = new MenuItem { Header = header };
-        foreach (var (label, action) in actions) root.Items.Add(MakeItem(label, action));
+        foreach (var (label, isChecked, action) in choices) root.Items.Add(MakeCheckItem(label, isChecked, action));
         return root;
     }
 

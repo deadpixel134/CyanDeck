@@ -74,7 +74,7 @@
                     <Button Content="일치 항목 미리보기" Click="Preview_Click" MinWidth="112"/>
                 </StackPanel>
                 <TextBlock x:Name="PreviewText" Margin="16,0,0,0" Foreground="#8F9AAA" TextWrapping="Wrap"
-                           Text="값 안내: 크기 규칙은 MB, 요일은 Monday…Sunday(또는 1…7), 시간 범위는 HH:mm-HH:mm 형식입니다. 파일 분류는 앱/설치/PDF/시트/발표/문서/텍스트/코드/이미지/동영상/오디오/압축/폴더/기타를 지원합니다. 미리보기는 규칙을 실제 적용하지 않고 현재 Windows 바탕화면을 검사합니다."/>
+                           Text="값 안내: 크기 규칙은 MB, 요일은 월·화·수 또는 월요일처럼 쓰고 여러 개는 쉼표로 구분(Monday, Mon, 1…7도 가능), 시간 범위는 HH:mm-HH:mm 형식입니다. 파일 분류는 앱/설치/PDF/시트/발표/문서/텍스트/코드/이미지/동영상/오디오/압축/폴더/기타를 지원합니다. 미리보기는 규칙을 실제 적용하지 않고 현재 Windows 바탕화면을 검사합니다."/>
             </DockPanel>
         </Grid>
 

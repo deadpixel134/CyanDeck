@@ -3103,7 +3103,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (!CanRunMonitorContentSwap())
         {
             System.Windows.MessageBox.Show(
-                "현재 디스플레이 구성이 변경 중이거나 Peek/Desktop Display가 활성화되어 있습니다. 화면이 안정된 뒤 다시 시도하세요.",
+                "현재 디스플레이 구성이 변경 중이거나 Peek 또는 바탕화면 보기가 켜져 있습니다. 화면이 안정된 뒤 다시 시도하세요.",
                 "CyanDeck",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -4274,14 +4274,16 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             (_safeMode ? "안전 모드" : !_state.Settings.EnableCalendar ? "설정 꺼짐"
                 : _calendar?.GetTrayDisplayStatus() ?? "시작 대기/상태 확인 필요"))
         { Enabled = false, Tag = "calendar.status" });
+        // Calendar repair/diagnostic commands are grouped under "캘린더 문제 해결" so the
+        // everyday calendar commands (today, sync, on/off) stay visible at the first level.
         menu.Items.Add("캘린더 표시 복구", null, (_, _) =>
-            _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RepairCalendarSurface)));
-        menu.Items.Add("캘린더 상태 진단…", null, (_, _) => QueueTrayDialog(ShowCalendarDiagnostics));
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RepairCalendarSurface))).Tag = "calendar.repair";
+        menu.Items.Add("캘린더 상태 진단…", null, (_, _) => QueueTrayDialog(ShowCalendarDiagnostics)).Tag = "calendar.repair";
         if (!_safeMode && _state.Settings.EnableCalendar)
             menu.Items.Add("캘린더 일반 창으로 열기 (표시 실패 시)", null, (_, _) =>
-                _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(OpenCalendarStandaloneWindow)));
+                _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(OpenCalendarStandaloneWindow))).Tag = "calendar.repair";
         menu.Items.Add("캘린더 위치 초기화 / 표시 복구", null, (_, _) =>
-            QueueTrayDialog(ResetCalendarPositionAndRepair));
+            QueueTrayDialog(ResetCalendarPositionAndRepair)).Tag = "calendar.repair";
         // Available in combined and calendar-only modes. The command respects
         // display-transition barriers and the calendar's 15-second retry limit.
         if (!_safeMode && (_state.Settings.EnableCyanDeck || _state.Settings.EnableCalendar))
@@ -4441,20 +4443,15 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 restoreSnapshotItem.Enabled = IsManagedCapabilityAllowed("Layout.RestoreSnapshots");
             }
             snapshots.DropDownItems.Add(new Forms.ToolStripSeparator());
-            snapshots.DropDownItems.Add("모든 스냅샷 삭제", null, (_, _) => _dispatcher.Invoke(() =>
-            {
-                _state.Snapshots.Clear();
-                Persist();
-                RebuildTrayMenu();
-            }));
+            snapshots.DropDownItems.Add("모든 스냅샷 삭제…", null, (_, _) => QueueTrayDialog(ConfirmDeleteAllSnapshots));
         }
         menu.Items.Add(snapshots);
-        var peekCommand = menu.Items.Add(_peek ? "Peek 종료" : "Peek", null,
+        var peekCommand = menu.Items.Add(_peek ? "Peek 끝내기" : "Peek: 창 위로 그룹 보기", null,
             (_, _) => _dispatcher.Invoke(TogglePeek));
         peekCommand.Tag = "desktop.peek";
         if (_state.Settings.EnableDesktopDisplay)
         {
-            var display = menu.Items.Add(_desktopDisplay.IsActive ? "Desktop Display 종료" : "Desktop Display", null,
+            var display = menu.Items.Add(_desktopDisplay.IsActive ? "바탕화면 보기 끝내기 (창 되돌리기)" : "바탕화면 보기 (모든 창 최소화)", null,
                 (_, _) => _dispatcher.Invoke(() => { _desktopDisplay.Toggle(); UpdateWindowVisibility(); RefreshDesktopTouchPageHost(); RefreshDesktopFolderPortalDropHost(); RefreshLooseDesktopIconHost(); UpdateTrayText(); RebuildTrayMenu(); }));
             display.Tag = "desktop.display";
         }
@@ -4483,8 +4480,10 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             foreach (var file in recoveryFiles)
             {
                 var path = file.FullName;
-                var label = $"{file.LastWriteTime:yyyy-MM-dd HH:mm} · {Path.GetFileNameWithoutExtension(file.Name)}";
-                recovery.DropDownItems.Add(label, null, (_, _) => _dispatcher.Invoke(() => RestoreRecoveryCheckpoint(path)));
+                // Show what the checkpoint was taken before, not the internal file name.
+                var label = $"{file.LastWriteTime:yyyy-MM-dd HH:mm} · {RecoveryCheckpointLabelPolicy.Describe(Path.GetFileNameWithoutExtension(file.Name))}";
+                var restoreItem = recovery.DropDownItems.Add(label, null, (_, _) => _dispatcher.Invoke(() => RestoreRecoveryCheckpoint(path)));
+                restoreItem.ToolTipText = file.Name;
             }
             if (recoveryFiles.Length > 0)
             {
@@ -4554,6 +4553,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             menu.Items.Remove(separator);
 
         var calendar = new Forms.ToolStripMenuItem("캘린더");
+        var calendarRepair = new Forms.ToolStripMenuItem("캘린더 문제 해결");
         var groups = new Forms.ToolStripMenuItem("그룹 및 화면");
         var iconTools = new Forms.ToolStripMenuItem("아이콘 및 분류");
         var recovery = new Forms.ToolStripMenuItem("백업 및 복구");
@@ -4571,6 +4571,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                     break;
                 case TrayMenuSection.Calendar:
                     calendar.DropDownItems.Add(item);
+                    break;
+                case TrayMenuSection.CalendarRepair:
+                    calendarRepair.DropDownItems.Add(item);
                     break;
                 case TrayMenuSection.Groups:
                     groups.DropDownItems.Add(item);
@@ -4595,6 +4598,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             }
         }
         foreach (var item in primary) menu.Items.Add(item);
+        if (calendarRepair.DropDownItems.Count > 0)
+        {
+            if (calendar.DropDownItems.Count > 0) calendar.DropDownItems.Add(new Forms.ToolStripSeparator());
+            calendar.DropDownItems.Add(calendarRepair);
+        }
         if (calendar.DropDownItems.Count > 0) menu.Items.Add(calendar);
         if (iconTools.DropDownItems.Count > 0)
             groups.DropDownItems.Add(iconTools);
@@ -4611,7 +4619,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void UpdateTrayText()
     {
         if (_trayController is null) return;
-        var status = _desktopDisplay.IsActive ? "Desktop Display" : _quickHidden ? "숨김" : _peek ? "Peek" : $"페이지 {_state.CurrentPage + 1}";
+        var status = _desktopDisplay.IsActive ? "바탕화면 보기" : _quickHidden ? "숨김" : _peek ? "Peek" : $"페이지 {_state.CurrentPage + 1}";
         _trayController.SetText($"CyanDeck - {status}");
     }
 
@@ -4630,6 +4638,19 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _trayController?.CloseMenu();
         }
         else _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, show);
+    }
+
+    private void ConfirmDeleteAllSnapshots()
+    {
+        var count = _state.Snapshots.Count;
+        if (count == 0) return;
+        if (System.Windows.MessageBox.Show(
+                $"저장된 레이아웃 스냅샷 {count}개를 모두 삭제하시겠습니까?\n\n삭제한 스냅샷은 되돌릴 수 없습니다. 현재 그룹 배치는 바뀌지 않습니다.",
+                "레이아웃 스냅샷 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+        _state.Snapshots.Clear();
+        Persist();
+        RebuildTrayMenu();
     }
 
     private void ShowCalendarDiagnostics()

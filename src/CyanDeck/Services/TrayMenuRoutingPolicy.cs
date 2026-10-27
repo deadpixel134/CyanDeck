@@ -14,7 +14,9 @@ internal enum TrayMenuSection
     Recovery,
     Tools,
     SettingsOnly,
-    Exit
+    Exit,
+    // Calendar repair/diagnostic commands, nested as "캘린더 문제 해결" inside the calendar menu.
+    CalendarRepair
 }
 
 internal static class TrayMenuRoutingPolicy
@@ -26,6 +28,7 @@ internal static class TrayMenuRoutingPolicy
             case "brand.identity": return TrayMenuSection.Tools;
             case "calendar.status":
             case "calendar.enable": return TrayMenuSection.Calendar;
+            case "calendar.repair": return TrayMenuSection.CalendarRepair;
             case "group.new":
             case "desktop.pages":
             case "desktop.peek":
@@ -41,7 +44,8 @@ internal static class TrayMenuRoutingPolicy
         if (label == "종료") return TrayMenuSection.Exit;
         if (label == "설정…" || label == "새 그룹" ||
             label.StartsWith("바탕화면 페이지 (", StringComparison.Ordinal) ||
-            label is "빠른 숨김" or "빠른 숨김 종료" or "Peek" or "Peek 종료")
+            label is "빠른 숨김" or "빠른 숨김 종료" or "Peek" or "Peek 종료" or
+                "Peek: 창 위로 그룹 보기" or "Peek 끝내기")
             return TrayMenuSection.Primary;
         if (label.StartsWith("캘린더", StringComparison.Ordinal) ||
             label is "바탕화면 캘린더 사용" or "Google Calendar 동기화")
