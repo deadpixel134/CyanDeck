@@ -36,6 +36,7 @@ public partial class FenceWindow
         var canCreateDelete = CapabilityAllowed("Layout.CreateDeleteGroups");
 
         menu.Items.Add(WithGesture(MakeItem("검색…", ShowSearch), "Ctrl+F"));
+        menu.Items.Add(WithGesture(MakeItem("모든 그룹에서 찾기…", () => GlobalSearchRequested?.Invoke()), "Ctrl+Shift+F"));
         var renameGroupItem = MakeItem("그룹 이름 바꾸기…", RenameGroup);
         renameGroupItem.IsEnabled = canEditGroups;
         menu.Items.Add(renameGroupItem);
@@ -60,6 +61,7 @@ public partial class FenceWindow
         var newFenceItem = MakeItem("새 그룹 만들기", () => NewFenceRequested?.Invoke());
         newFenceItem.IsEnabled = canCreateDelete;
         menu.Items.Add(newFenceItem);
+        menu.Items.Add(BuildSendToPageMenu());
         menu.Items.Add(BuildGroupToolsMenu(canCreateDelete));
         menu.Items.Add(MakeItem("CyanDeck 설정…", () => SettingsRequested?.Invoke()));
 
@@ -458,12 +460,7 @@ public partial class FenceWindow
             }
             behavior.Items.Add(rollup);
         }
-        behavior.Items.Add(new Separator());
-        behavior.Items.Add(new MenuItem
-        {
-            Header = Model.ShowOnAllPages ? "표시 위치: 모든 바탕화면 페이지" : $"표시 위치: 바탕화면 페이지 {Model.PageIndex + 1}",
-            IsEnabled = false
-        });
+        // The current page is shown and changed in the top-level "다른 페이지로 보내기" submenu.
         return behavior;
     }
 
@@ -497,11 +494,13 @@ public partial class FenceWindow
         groupTools.Items.Add(saveTemplateItem);
         if (_templates.Count > 0)
         {
-            var fromTemplate = new MenuItem { Header = "템플릿으로 새 그룹 만들기", IsEnabled = canCreateDelete };
+            // Each template has create / rename / delete. The list itself stays open when group
+            // creation is locked by policy so templates can still be renamed or deleted.
+            var fromTemplate = new MenuItem { Header = "저장한 템플릿" };
             foreach (var template in _templates.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
             {
                 var localTemplate = template;
-                fromTemplate.Items.Add(MakeItem(localTemplate.Name, () => CreateFromTemplateRequested?.Invoke(localTemplate.Id)));
+                fromTemplate.Items.Add(BuildTemplateEntryMenu(localTemplate, canCreateDelete));
             }
             groupTools.Items.Add(fromTemplate);
         }

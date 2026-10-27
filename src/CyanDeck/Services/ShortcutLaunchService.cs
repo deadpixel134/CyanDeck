@@ -16,12 +16,26 @@ namespace CyanDeck.Services;
 /// </summary>
 internal static class ShortcutLaunchService
 {
+    /// <summary>
+    /// Raised after Windows accepted an open request from CyanDeck (group item, Enter,
+    /// loose icon, virtual system icon). AppController ends Peek so the new window is not
+    /// covered by Peek-raised groups. Subscribers must not throw.
+    /// </summary>
+    internal static event Action? Launched;
+
+    internal static void NotifyLaunched()
+    {
+        try { Launched?.Invoke(); }
+        catch (Exception ex) { DiagnosticsLog.Warn($"Launch notification failed; errorType={ex.GetType().Name}"); }
+    }
+
     internal static void Open(string path)
     {
         if (!string.Equals(Path.GetExtension(path), ".lnk", StringComparison.OrdinalIgnoreCase))
         {
             // Preserve standard Windows Shell behavior for all non-.lnk items.
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            NotifyLaunched();
             return;
         }
 
@@ -36,6 +50,7 @@ internal static class ShortcutLaunchService
             // referenced target actually opened (later Shell failures are async).
             // Do not clear a previous error merely because explorer.exe started.
             DiagnosticsLog.Info("Shortcut .lnk activation request sent to Explorer; target launch unverified.");
+            NotifyLaunched();
         }
         catch (Exception launchFailure) when (launchFailure is Win32Exception or
             IOException or UnauthorizedAccessException or InvalidOperationException)

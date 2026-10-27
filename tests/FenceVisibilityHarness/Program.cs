@@ -307,6 +307,9 @@ foreach (var (id, label, expected) in trayCases)
         throw new Exception($"Tray policy mismatch: {id ?? "(legacy)"} / {label} -> {expected}");
 Console.WriteLine($"PASS: {trayCases.Length} tray routes including safe-mode, calendar-only, fallback and settings de-duplication");
 
+// v8.0.43 group/page operations (GroupPageOperationsTests.cs).
+GroupPageOperationsTests.Run();
+
 
 // Unified tray recovery must be safe under monitor transitions, have no
 // actions in Safe Mode, and work in calendar-only configurations. This is a

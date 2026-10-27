@@ -29,6 +29,15 @@ public partial class FenceWindow
 {
     private void HandleWindowKeyboardCommand(KeyEventArgs e)
     {
+        // Ctrl+Shift+F searches every group, tab and page; plain Ctrl+F stays in this group.
+        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.F &&
+            GlobalSearchRequested is not null)
+        {
+            GlobalSearchRequested.Invoke();
+            e.Handled = true;
+            return;
+        }
+
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.F)
         {
             ShowSearch();
@@ -48,6 +57,14 @@ public partial class FenceWindow
         {
             DeckShellClipboardService.CancelPendingCut(Dispatcher);
             DeckCutClipboardVisualState.Clear();
+            e.Handled = true;
+            return;
+        }
+
+        // Esc in a Peek-raised group ends Peek (after closing the search box or a pending cut above).
+        if (e.Key == Key.Escape && _peekMode && PeekEndRequested is not null)
+        {
+            PeekEndRequested.Invoke();
             e.Handled = true;
             return;
         }

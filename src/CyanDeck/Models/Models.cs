@@ -184,6 +184,11 @@ public sealed class DeckSettings
     public bool UseSameSpacingInsideAndOutsideGroups { get; set; }
     public int GroupSnapGap { get; set; } = 12;
     public bool PeekRespectWorkingArea { get; set; } = true;
+    // Opening an item from a Peek-raised group ends Peek so the new window is not covered.
+    // Absent in older layouts: true.
+    public bool EndPeekAfterLaunch { get; set; } = true;
+    // "다른 페이지로 보내기" in the group menu then switches to that page. Absent in older layouts: true.
+    public bool FollowGroupSentToPage { get; set; } = true;
     public bool PeekHotCornerEnabled { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public PeekHotCornerAction PeekHotCornerLeftAction { get; set; } = PeekHotCornerAction.ShowFences;
