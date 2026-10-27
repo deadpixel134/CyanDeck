@@ -165,12 +165,14 @@ public partial class App : Application
         try
         {
             var store = new StateStore();
-            var loaded = store.Load();
+            // The controller's own Load keeps the copies of unreadable files; do not copy twice.
+            var loaded = store.Load(archiveUnreadable: false);
             var settings = loaded.Settings;
             var crashSafeMode = !ignoreCrashLoop && settings.EnableCrashLoopProtection
                 && StartupHealthService.GetSnapshot(settings.CrashLoopWindowMinutes,
                     settings.CrashLoopThreshold).ShouldUseSafeMode;
-            var readOnly = store.EncounteredUnsupportedState;
+            // v8.0.43: unreadable layout files start protected; never update over them.
+            var readOnly = store.EncounteredUnsupportedState || store.EncounteredUnreadableState;
             if (!StartupUpdatePolicy.ShouldPreflight(settings.EnableAutomaticUpdateChecks,
                     settings.InstallUpdatesAutomatically, safeMode || crashSafeMode,
                     readOnly, UpdateService.HasPendingRecovery(), externalCommand))
@@ -230,6 +232,16 @@ public partial class App : Application
             {
                 DiagnosticsLog.Warn($"Startup update v{check.LatestVersion.ToString(3)} deferred because its package failed previously; manual update remains available");
                 splash?.SetStage("이전 자동 업데이트에 실패하여 현재 버전으로 실행합니다.\\n환경설정에서 업데이트를 직접 다시 시도할 수 있습니다.", false);
+                return (false, true);
+            }
+            // v8.0.43: the user rolled back from this version. Skip automatic reinstall until a
+            // newer release is published (which releases the hold) or the user updates manually.
+            if (UpdateRollbackHold.ShouldSkipAutomaticInstall(DataRootPaths.ActiveLocal,
+                check.LatestVersion, out var heldVersion))
+            {
+                var heldText = heldVersion is null ? "?" : UpdateRollbackHold.Format(heldVersion);
+                DiagnosticsLog.Info($"Startup update v{check.LatestVersion.ToString(3)} skipped: rolled back from v{heldText}; manual update remains available");
+                splash?.SetStage("되돌린 버전은 자동으로 다시 설치하지 않습니다.\\n현재 버전으로 CyanDeck을 시작합니다.", false);
                 return (false, true);
             }
 

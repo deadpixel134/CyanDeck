@@ -446,3 +446,58 @@ foreach (var empty in new[] { null, "", "   " })
     if (ShellPropertiesLauncher.TryShow(empty, out var emptyError) || string.IsNullOrEmpty(emptyError))
         throw new Exception("Empty properties target must fail with a reason.");
 Console.WriteLine("PASS: 6 properties target checks");
+
+// v8.0.43: recovery checkpoints are retained per kind, so frequent automatic monitor
+// checkpoints keep only 5 and never push out pre-update/pre-import/unclean-session ones.
+if (RecoveryCheckpointRetentionPolicy.Classify("before-monitor-profile-restore-0123456789abcdef0123456789abcdef-20261027-101500") != RecoveryCheckpointBucket.MonitorAutomatic ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-auto-monitor-reduction-0123456789abcdef0123456789abcdef-20261027-101500") != RecoveryCheckpointBucket.MonitorAutomatic ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-import-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("unclean-session-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-update-8-0-42-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-importer-20261027-101500") != RecoveryCheckpointBucket.Other)
+    throw new Exception("Recovery checkpoint retention bucket mismatch.");
+var retentionNow = new DateTime(2026, 10, 27, 12, 0, 0, DateTimeKind.Utc);
+var retentionFiles = new List<(string Name, DateTime LastWriteUtc)>();
+for (var i = 0; i < 30; i++)
+    retentionFiles.Add(($"before-monitor-profile-restore-{i:D32}-20261027-1000{i:D2}.json", retentionNow.AddMinutes(-i)));
+retentionFiles.Add(("before-update-8-0-42-20261001-101500.json", retentionNow.AddDays(-26)));
+retentionFiles.Add(("before-import-20260801-101500.json", retentionNow.AddDays(-87)));
+retentionFiles.Add(("unclean-session-20260701-101500.json", retentionNow.AddDays(-118)));
+var retentionDeleted = RecoveryCheckpointRetentionPolicy.SelectForDeletion(retentionFiles, retentionNow);
+if (retentionDeleted.Count != 25 || retentionDeleted.Any(n => !n.StartsWith("before-monitor-profile-restore-", StringComparison.Ordinal)))
+    throw new Exception("Monitor checkpoints must keep 5 and never evict pre-update/pre-import/unclean-session checkpoints.");
+var oldImportant = Enumerable.Range(0, 25).Select(i => ($"before-update-{i}-20260101-101500.json", retentionNow.AddDays(-40 - i))).ToList();
+if (RecoveryCheckpointRetentionPolicy.SelectForDeletion(oldImportant, retentionNow).Count != 5)
+    throw new Exception("Important checkpoints older than 30 days must keep the newest 20.");
+var recentImportant = Enumerable.Range(0, 25).Select(i => ($"before-import-{i}-20261001-101500.json", retentionNow.AddDays(-i))).ToList();
+if (RecoveryCheckpointRetentionPolicy.SelectForDeletion(recentImportant, retentionNow).Count != 0)
+    throw new Exception("Important checkpoints from the last 30 days must be kept.");
+if (RecoveryCheckpointLabelPolicy.Describe("unclean-session-20261027-101500") != "비정상 종료된 세션 시작 시점")
+    throw new Exception("Unclean-session checkpoint must have a Korean label.");
+Console.WriteLine("PASS: per-kind recovery checkpoint retention and unclean-session label");
+
+// v8.0.43: undo snapshots have Korean names and their own retention bucket; legacy names
+// are recognized only in their exact machine-generated form.
+var namedAt = new DateTime(2026, 10, 27, 14, 3, 0);
+if (LayoutSnapshotNamePolicy.BuildUndoName(LayoutSnapshotNamePolicy.AlignLeft, namedAt) != "왼쪽 맞춤 전 · 10월 27일 14:03" ||
+    LayoutSnapshotNamePolicy.BuildAutomaticName(namedAt) != "자동 · 10월 27일" ||
+    LayoutSnapshotNamePolicy.BuildManualDefaultName(namedAt) != "레이아웃 2026-10-27 14:03" ||
+    LayoutSnapshotNamePolicy.Display("Before align-left 2026-10-27 14:03:00", false, namedAt) != "왼쪽 맞춤 전 · 10월 27일 14:03" ||
+    LayoutSnapshotNamePolicy.Display("Automatic 2026-10-27", true, namedAt) != "자동 · 10월 27일" ||
+    LayoutSnapshotNamePolicy.Display("업무용 배치", false, namedAt) != "업무용 배치")
+    throw new Exception("Layout snapshot Korean naming mismatch.");
+if (!LayoutSnapshotNamePolicy.IsUndoCheckpoint(false, false, "Before pack-groups 2026-10-27 14:03:00") ||
+    !LayoutSnapshotNamePolicy.IsUndoCheckpoint(true, false, "아무 이름") ||
+    LayoutSnapshotNamePolicy.IsUndoCheckpoint(false, false, "Before align-left (업무용)") ||
+    LayoutSnapshotNamePolicy.IsUndoCheckpoint(false, true, "Before align-left 2026-10-27 14:03:00") ||
+    LayoutSnapshotNamePolicy.LegacyUndoAction("Before snapshot restore 2026-10-27 14:03:00") != LayoutSnapshotNamePolicy.SnapshotRestore ||
+    LayoutSnapshotNamePolicy.UndoRetention != 5)
+    throw new Exception("Undo snapshot classification mismatch.");
+// The undo command shows the date when the checkpoint is not from today.
+if (LayoutSnapshotNamePolicy.BuildUndoCommandLabel(LayoutSnapshotNamePolicy.AlignLeft, namedAt, namedAt.AddHours(2)) != "마지막 배치 변경 되돌리기 (왼쪽 맞춤, 14:03)" ||
+    LayoutSnapshotNamePolicy.BuildUndoCommandLabel(LayoutSnapshotNamePolicy.SnapshotRestore, namedAt, namedAt.AddDays(3)) != "마지막 배치 변경 되돌리기 (스냅샷 복원, 10월 27일 14:03)")
+    throw new Exception("Undo command label must show the date for an earlier day.");
+if (TrayMenuRoutingPolicy.Route("recovery.app-rollback", "되돌리기 취소 (v8.0.43 다시 설치)…") != TrayMenuSection.Recovery ||
+    TrayMenuRoutingPolicy.Route("recovery.app-rollback", "마지막 앱 업데이트 되돌리기…") != TrayMenuSection.Recovery)
+    throw new Exception("App rollback / rollback undo must route to the recovery menu.");
+Console.WriteLine("PASS: Korean snapshot names and separate undo snapshot bucket");

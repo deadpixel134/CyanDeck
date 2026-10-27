@@ -22,6 +22,8 @@
     <Compile Include="../../src/CyanDeck/Services/RuleWeekdayParser.cs" Link="Production/RuleWeekdayParser.cs" />
     <Compile Include="../../src/CyanDeck/Services/WindowsFileNamePolicy.cs" Link="Production/WindowsFileNamePolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/RecoveryCheckpointLabelPolicy.cs" Link="Production/RecoveryCheckpointLabelPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/RecoveryCheckpointRetentionPolicy.cs" Link="Production/RecoveryCheckpointRetentionPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/LayoutSnapshotNamePolicy.cs" Link="Production/LayoutSnapshotNamePolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/ShellPropertiesLauncher.cs" Link="Production/ShellPropertiesLauncher.cs" />
   </ItemGroup>
 </Project>

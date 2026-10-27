@@ -11,5 +11,7 @@
     <Compile Include="../../src/CyanDeck/Services/FailedUpdateRetryPolicy.cs" Link="Production/FailedUpdateRetryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/UpdateFailureDiagnostics.cs" Link="Production/UpdateFailureDiagnostics.cs" />
     <Compile Include="../../src/CyanDeck/Services/WindowsSessionExitPolicy.cs" Link="Production/WindowsSessionExitPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/UpdateRollbackHold.cs" Link="Production/UpdateRollbackHold.cs" />
+    <Compile Include="../../src/CyanDeck/Services/UpdateStorageMaintenance.cs" Link="Production/UpdateStorageMaintenance.cs" />
   </ItemGroup>
 </Project>
