@@ -328,6 +328,38 @@ foreach (var rowCount in new[] { 3, 5, 6, 8 })
         $"today belongs to centered week for {rowCount}-row rolling viewport");
 }
 
+// Day rollover: the next check lands just after local midnight, never more than an hour away.
+Assert.That(CalendarTodayRefreshPolicy.DelayUntilNextCheck(new DateTime(2026, 10, 20, 23, 50, 0))
+    == TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(2), "rollover check is armed just after midnight");
+Assert.That(CalendarTodayRefreshPolicy.DelayUntilNextCheck(new DateTime(2026, 10, 20, 9, 0, 0))
+    == CalendarTodayRefreshPolicy.MaximumCheckInterval, "rollover check re-runs at least hourly");
+Assert.That(CalendarTodayRefreshPolicy.DelayUntilNextCheck(new DateTime(2026, 10, 20, 23, 59, 59, 999))
+    >= TimeSpan.FromSeconds(1), "rollover check delay is never zero");
+var oldToday = new DateTime(2026, 10, 24);
+Assert.That(CalendarTodayRefreshPolicy.ShouldFollowToday(oldToday, "Rolling", 6, oldToday),
+    "rolling view centred on yesterday follows the new today");
+Assert.That(!CalendarTodayRefreshPolicy.ShouldFollowToday(
+    CalendarViewportPolicy.Navigate(oldToday, "Rolling", 6, 1), "Rolling", 6, oldToday),
+    "rolling view paged away from today keeps the chosen period");
+Assert.That(CalendarTodayRefreshPolicy.ShouldFollowToday(new DateTime(2026, 10, 1), "Month", 6, new DateTime(2026, 10, 31)),
+    "month view showing the old today follows into the next month");
+Assert.That(!CalendarTodayRefreshPolicy.ShouldFollowToday(new DateTime(2026, 12, 1), "Month", 6, new DateTime(2026, 10, 31)),
+    "month view browsing another month is not moved");
+
+// The window stays opaque; the slider value is the final background opacity over its range.
+Assert.That(CalendarOpacityPolicy.WindowOpacity == 1.0, "calendar window (text and events) is fully opaque");
+Assert.That(CalendarOpacityPolicy.BackgroundOpacity(true, 1.0, 0.38) == 1.0
+    && CalendarOpacityPolicy.BackgroundOpacity(true, 0.95, 0.38) == 0.95,
+    "in-use background opacity reaches 100% and changes above 86%");
+Assert.That(CalendarOpacityPolicy.BackgroundOpacity(false, 0.86, 0.38) == 0.38,
+    "idle background uses the idle slider value directly");
+Assert.That(CalendarOpacityPolicy.BackgroundOpacity(true, double.NaN, 0.38) == 0.86
+    && CalendarOpacityPolicy.BackgroundOpacity(false, 0.86, 0.01) == 0.15,
+    "invalid or out-of-range background values fall back or clamp");
+Assert.That(CalendarOpacityPolicy.TodayBackgroundOpacity(0.2) == 0.6
+    && CalendarOpacityPolicy.TodayBackgroundOpacity(0.9) == 0.9,
+    "today's cell keeps a readable minimum background");
+
 
 
 Assert.That(CalendarWeekSizingPolicy.MinHeightPerWeek(650, 24, 6) >
