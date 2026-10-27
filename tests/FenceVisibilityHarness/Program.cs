@@ -309,6 +309,90 @@ Console.WriteLine($"PASS: {trayCases.Length} tray routes including safe-mode, ca
 
 // v8.0.43 group/page operations (GroupPageOperationsTests.cs).
 GroupPageOperationsTests.Run();
+// v8.0.43 input discoverability: keyboard-free command shortcuts, double-click
+// choices, the one-time hint, the what's-new notice and the mouse-hook watchdog.
+if (TrayMenuRoutingPolicy.Route("help.input-guide", "단축키·제스처 안내…") != TrayMenuSection.Tools)
+    throw new Exception("Input guide tray item must be routed to Tools");
+if (TrayMenuRoutingPolicy.Route("help.release-notes", "새 기능 보기 (v8.0.43)…") != TrayMenuSection.Tools)
+    throw new Exception("Release notes tray item must be routed to Tools");
+foreach (var info in ExternalDesktopCommandCatalog.All)
+{
+    if (!ExternalDesktopCommandCatalog.TryParseArguments(new[] { "--safe-mode", info.Argument.ToUpperInvariant() }, out var parsedArgument) ||
+        parsedArgument != info.Command)
+        throw new Exception($"Command argument not parsed: {info.Argument}");
+    if (!ExternalDesktopCommandCatalog.TryParsePipeCommand(info.PipeCommand, out var parsedPipe) || parsedPipe != info.Command)
+        throw new Exception($"Pipe command not parsed: {info.PipeCommand}");
+    if (!info.ShortcutFileName.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ||
+        info.ShortcutFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        throw new Exception($"Invalid command shortcut file name: {info.ShortcutFileName}");
+}
+if (ExternalDesktopCommandCatalog.All.Select(i => i.PipeCommand).Distinct().Count() != ExternalDesktopCommandCatalog.All.Count ||
+    ExternalDesktopCommandCatalog.All.Select(i => i.ShortcutFileName).Distinct().Count() != ExternalDesktopCommandCatalog.All.Count)
+    throw new Exception("Command pipe names and shortcut file names must be unique");
+if (ExternalDesktopCommandCatalog.TryParsePipeCommand("activate", out _) ||
+    ExternalDesktopCommandCatalog.TryParsePipeCommand(null, out _) ||
+    ExternalDesktopCommandCatalog.TryParseArguments(new[] { "--safe-mode", "--ignore-crash-loop" }, out _))
+    throw new Exception("Unrelated launch commands must not become desktop commands");
+if (ExternalDesktopCommandCatalog.Get(ExternalDesktopCommand.PeekToggle).Argument != "--peek-toggle")
+    throw new Exception("Peek shortcut must keep the existing --peek-toggle argument");
+
+var trayDoubleClickCases = new (CyanDeck.Models.DeckTrayDoubleClickAction Action, bool Safe, bool Deck, bool Hidden, TrayDoubleClickCommand Expected)[]
+{
+    (CyanDeck.Models.DeckTrayDoubleClickAction.QuickHide, false, true, false, TrayDoubleClickCommand.ToggleQuickHide),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.QuickHide, true, true, false, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.QuickHide, false, false, false, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.OpenSettings, false, true, false, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.OpenSettings, false, true, true, TrayDoubleClickCommand.OpenSettings),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.None, false, true, false, TrayDoubleClickCommand.None),
+    (CyanDeck.Models.DeckTrayDoubleClickAction.None, false, true, true, TrayDoubleClickCommand.ToggleQuickHide),
+    ((CyanDeck.Models.DeckTrayDoubleClickAction)99, false, true, false, TrayDoubleClickCommand.ToggleQuickHide),
+};
+foreach (var x in trayDoubleClickCases)
+    if (InputHintPolicy.ResolveTrayDoubleClick(x.Action, x.Safe, x.Deck, x.Hidden) != x.Expected)
+        throw new Exception($"Tray double-click mismatch: {x}");
+if (!InputHintPolicy.ShouldHandleDesktopDoubleClick(true, true, false) ||
+    InputHintPolicy.ShouldHandleDesktopDoubleClick(false, true, false) ||
+    !InputHintPolicy.ShouldHandleDesktopDoubleClick(false, true, true) ||
+    InputHintPolicy.ShouldHandleDesktopDoubleClick(true, false, false))
+    throw new Exception("Desktop double-click switch must stop hiding but always allow restoring");
+if (!InputHintPolicy.ShouldShowQuickHideHint(true, true, false) ||
+    InputHintPolicy.ShouldShowQuickHideHint(true, false, false) ||
+    InputHintPolicy.ShouldShowQuickHideHint(true, true, true) ||
+    InputHintPolicy.ShouldShowQuickHideHint(false, true, false))
+    throw new Exception("Quick-hide hint must appear once, only after a double-click hid the desktop");
+var noticeVersion = new Version(8, 0, 43, 0);
+if (!InputHintPolicy.ShouldShowWhatsNew("", noticeVersion) ||
+    !InputHintPolicy.ShouldShowWhatsNew(null, noticeVersion) ||
+    !InputHintPolicy.ShouldShowWhatsNew("8.0.42", noticeVersion) ||
+    !InputHintPolicy.ShouldShowWhatsNew("not-a-version", noticeVersion) ||
+    InputHintPolicy.ShouldShowWhatsNew("8.0.43", noticeVersion) ||
+    InputHintPolicy.ShouldShowWhatsNew("8.0.44", noticeVersion))
+    throw new Exception("What's-new notice must show once per newer version");
+if (InputHintPolicy.NormalizeVersion(noticeVersion) != "8.0.43" ||
+    InputHintPolicy.NormalizeVersion(new Version(8, 1)) != "8.1.0" ||
+    !InputHintPolicy.ReleaseNotesUrl(noticeVersion).EndsWith("/releases/tag/v8.0.43", StringComparison.Ordinal))
+    throw new Exception("Release notes version formatting changed");
+
+var longAgo = MouseHookWatchdogPolicy.MinimumReinstallIntervalMs * 10;
+var watchdogCases = new (bool Moved, bool Observed, int Strikes, long SinceReinstall, bool HasHandle, int ExpectedStrikes, bool ExpectedReinstall)[]
+{
+    (true, false, 0, longAgo, true, 1, false),   // first silent interval: suspicious only
+    (true, false, 1, longAgo, true, 0, true),    // second silent interval: reinstall
+    (true, false, 1, 1000, true, 2, false),      // rate limited
+    (true, true, 1, longAgo, true, 0, false),    // callbacks seen: healthy
+    (false, false, 1, longAgo, true, 1, false),  // cursor idle: no evidence
+    (false, false, 0, longAgo, false, 0, true),  // install failed earlier: retry
+    (false, false, 0, 1000, false, 0, false),    // retry rate limited
+};
+foreach (var x in watchdogCases)
+{
+    var decision = MouseHookWatchdogPolicy.Evaluate(x.Moved, x.Observed, x.Strikes, x.SinceReinstall, x.HasHandle);
+    if (decision.Strikes != x.ExpectedStrikes || decision.Reinstall != x.ExpectedReinstall)
+        throw new Exception($"Mouse hook watchdog mismatch: {x} -> {decision}");
+}
+if (InputGuideContent.Sections.Count < 4 || InputGuideContent.Sections.Any(s => s.Rows.Count == 0))
+    throw new Exception("Input guide must list every section with at least one row");
+Console.WriteLine($"PASS: {ExternalDesktopCommandCatalog.All.Count} command shortcuts, {trayDoubleClickCases.Length} tray double-click cases, {watchdogCases.Length} hook watchdog cases and input hints");
 
 
 // Unified tray recovery must be safe under monitor transitions, have no

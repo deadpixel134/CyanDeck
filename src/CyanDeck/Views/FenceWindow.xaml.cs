@@ -3498,6 +3498,7 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("선택 항목 열기", () => OpenTilesFromUser(existing)));
         menu.Items.Add(MakeItem("첫 항목을 파일 탐색기에서 표시", () => Reveal(existing[0].Path)));
         menu.Items.Add(MakeItem("경로 복사", () => Clipboard.SetText(string.Join(Environment.NewLine, existing.Select(t => t.Path)))));
+        AddClipboardMenuItems(menu, existing);
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection &&
             existing.All(t => DesktopRecycleService.IsActualDesktopItem(t.Path))
@@ -3598,7 +3599,9 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("열기", () => OpenItem(tile)));
         menu.Items.Add(MakeItem("파일 탐색기에서 표시", () => Reveal(tile.Path)));
         menu.Items.Add(new Separator());
-        menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection ? "표시 이름만 바꾸기…" : "이름 바꾸기…", () => RenameItem(tile)));
+        menu.Items.Add(SelectedTab?.Kind == DeckTabKind.Collection
+            ? WithGesture(MakeItem("표시 이름만 바꾸기…", () => RenameItem(tile)), "F2")
+            : WithGesture(MakeItem("이름 바꾸기…", () => RenameItem(tile)), "F2"));
         AddFileRenameMenuEntry(menu, tile);
         menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection &&
             DesktopRecycleService.IsActualDesktopItem(tile.Path)
@@ -3611,6 +3614,7 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("속성", () => ShowProperties(tile.Path)));
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("경로 복사", () => Clipboard.SetText(tile.Path)));
+        AddClipboardMenuItems(menu, [tile]);
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
             AddItemPlacementMenuEntries(menu, new[] { tile });

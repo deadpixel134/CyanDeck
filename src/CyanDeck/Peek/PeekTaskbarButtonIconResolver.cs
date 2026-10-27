@@ -55,6 +55,34 @@ public static class PeekTaskbarButtonIconResolver
         }
     }
 
+    /// <summary>
+    /// v8.0.43: user-facing check for the Settings icon picker. Returns null when the file
+    /// would be used, otherwise a short Korean reason (the button then keeps the default icon).
+    /// Mirrors the rules of <see cref="Resolve"/>.
+    /// </summary>
+    public static string? DescribeCustomIconProblem(string? configuredPath)
+    {
+        if (string.IsNullOrWhiteSpace(configuredPath)) return null;
+        try
+        {
+            var fullPath = Path.GetFullPath(configuredPath.Trim());
+            if (!Path.IsPathFullyQualified(fullPath) || IsUnc(fullPath))
+                return "네트워크(UNC) 경로가 아닌 이 PC의 .ico 파일만 사용할 수 있습니다.";
+            if (!string.Equals(Path.GetExtension(fullPath), ".ico", StringComparison.OrdinalIgnoreCase))
+                return ".ico 아이콘 파일만 사용할 수 있습니다.";
+            var info = new FileInfo(fullPath);
+            if (!info.Exists) return "아이콘 파일을 찾을 수 없습니다.";
+            if (info.Length <= 0 || info.Length > MaximumCustomIconBytes)
+                return "4MB 이하의 .ico 파일만 사용할 수 있습니다.";
+            _ = LoadWpfIcon(fullPath);
+            return null;
+        }
+        catch
+        {
+            return "아이콘 파일을 읽을 수 없습니다. 다른 .ico 파일을 선택하세요.";
+        }
+    }
+
     public static ImageSource? TryLoadImageSource(PeekTaskbarButtonIcon icon)
     {
         if (!icon.UsesCustomIcon || string.IsNullOrWhiteSpace(icon.CustomIconPath))

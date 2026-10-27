@@ -193,7 +193,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             CreateTray();
             ScheduleAutomaticUpdateCheck();
             startupTimer.Stop();
-            DiagnosticsLog.Info($"CyanDeck SAFE MODE; state v{_state.Version}; startup={startupTimer.ElapsedMilliseconds}ms. Desktop hooks, shell parenting, native-icon changes, watchers, and global hotkeys are disabled.");
+            DiagnosticsLog.Info($"CyanDeck SAFE MODE; state v{_state.Version}; startup={startupTimer.ElapsedMilliseconds}ms. Desktop mouse hooks, shell parenting, native-icon changes, and watchers are disabled (CyanDeck never registers global hotkeys).");
             _ = TryApplyStartupQuickHideNormalizationAsync();
             if (_layoutUnreadableProtection)
                 _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(OfferUnreadableLayoutRecovery));
@@ -1648,8 +1648,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void StartDesktopDoubleClickHook()
     {
-        _desktopDoubleClick = new DesktopDoubleClickHook(_dispatcher);
-        _desktopDoubleClick.DoubleClicked += () => ToggleQuickHide(QuickHideInvocationSource.DesktopDoubleClick);
+        // The predicate runs on the hook thread: plain settings/flag reads only.
+        _desktopDoubleClick = new DesktopDoubleClickHook(_dispatcher, IsDesktopDoubleClickQuickHideActive);
+        _desktopDoubleClick.DoubleClicked += HandleDesktopDoubleClick;
         _desktopDoubleClick.Start();
     }
 
@@ -4285,11 +4286,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _trayController?.Dispose();
         _trayController = new TrayIconController(
             PopulateTrayMenu,
-            () =>
-            {
-                if (_safeMode || !_state.Settings.EnableCyanDeck) QueueOpenSettingsWindow();
-                else ToggleQuickHide(QuickHideInvocationSource.Tray);
-            },
+            HandleTrayDoubleClick,
             visible => _trayMenuVisible = visible);
         _trayController.NativeMenuClosed += () =>
         {
@@ -4298,6 +4295,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, show);
         };
         UpdateTrayText();
+        ScheduleWhatsNewNotice();
         // The updater can fail after replacing only some managed files. Offer a
         // durable, user-approved restoration on the next successful app launch.
         if (UpdateService.HasPendingRecovery())
@@ -4411,6 +4409,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
             menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
                 QueueTrayDialog(OpenGettingStartedGuide));
+            AddReleaseNotesTrayItem(menu);
             menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
             menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
             menu.Items.Add("종료", null, (_, _) => _dispatcher.Invoke(Exit));
@@ -4590,6 +4589,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         menu.Items.Add("설정…", null, (_, _) => QueueOpenSettingsWindow());
         menu.Items.Add("시작 가이드 다시 보기…", null, (_, _) =>
             QueueTrayDialog(OpenGettingStartedGuide));
+        AddInputGuideTrayItem(menu);
         menu.Items.Add("설정 폴더 열기", null, (_, _) => OpenSettingsFolder());
         menu.Items.Add("진단 로그 열기", null, (_, _) => OpenDiagnosticLogs());
         menu.Items.Add("진단 묶음 만들기…", null, (_, _) => _dispatcher.Invoke(CreateDiagnosticBundle));
@@ -4693,6 +4693,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         if (_trayController is null) return;
         var status = _desktopDisplay.IsActive ? "바탕화면 보기" : _quickHidden ? "숨김" : _peek ? "Peek" : $"페이지 {_state.CurrentPage + 1}";
         _trayController.SetText($"CyanDeck - {status}");
+        _trayController.SetQuickHiddenAppearance(_quickHidden);
     }
 
     // Opening a modal WPF dialog directly inside a WinForms ToolStrip click
@@ -4970,6 +4971,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             TogglePeek,
             () =>
             {
+                // Same switch as the tray command: "바탕화면 보기 사용" off disables it here too.
+                if (!_state.Settings.EnableDesktopDisplay) return;
                 if (_peek) SetPeek(false);
                 _desktopDisplay.Toggle();
                 UpdateTrayText();

@@ -22,6 +22,8 @@
     <Compile Include="../../src/CyanDeck/Appearance/LooseIconOpacityPolicy.cs" Link="Production/LooseIconOpacityPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TabSwitchActivationPolicy.cs" Link="Production/TabSwitchActivationPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Services/TrayMenuRoutingPolicy.cs" Link="Production/TrayMenuRoutingPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/InputCommandPolicy.cs" Link="Production/InputCommandPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Models/DeckTrayDoubleClickAction.cs" Link="Production/DeckTrayDoubleClickAction.cs" />
     <Compile Include="../../src/CyanDeck/Services/DisplaySurfaceRecoveryPlan.cs" Link="Production/DisplaySurfaceRecoveryPlan.cs" />
     <Compile Include="../../src/CyanDeck/Services/RuleWeekdayParser.cs" Link="Production/RuleWeekdayParser.cs" />
     <Compile Include="../../src/CyanDeck/Services/DesktopItemPreservationPolicy.cs" Link="Production/DesktopItemPreservationPolicy.cs" />

@@ -14,6 +14,9 @@ public sealed class CyanDeckManagedDeploymentAdapter : IManagedDeploymentAdapter
 {
     private static readonly HashSet<string> SettingsAllowlist = new(StringComparer.Ordinal)
     {
+        // The two *ActivationMode keys remain accepted and stored so existing policy files keep
+        // validating, but they are compatibility-only: CyanDeck registers no global hotkeys,
+        // so they have no runtime effect (see DeckSettings legacy hotkey comment).
         "General.PeekActivationMode",
         "General.DesktopDisplayActivationMode",
         "QuickHide.Enabled",
@@ -162,9 +165,11 @@ public sealed class CyanDeckManagedDeploymentAdapter : IManagedDeploymentAdapter
         {
             case "General.PeekActivationMode":
                 settings.PeekActivation = ParseEnum<DeckHotkeyActivation>(canonicalJson);
+                DiagnosticsLog.Info("Managed policy key General.PeekActivationMode is compatibility-only; CyanDeck registers no global hotkeys.");
                 break;
             case "General.DesktopDisplayActivationMode":
                 settings.DesktopDisplayActivation = ParseEnum<DeckHotkeyActivation>(canonicalJson);
+                DiagnosticsLog.Info("Managed policy key General.DesktopDisplayActivationMode is compatibility-only; CyanDeck registers no global hotkeys.");
                 break;
             case "QuickHide.Enabled":
                 settings.EnableQuickHide = ParseBoolean(canonicalJson);
