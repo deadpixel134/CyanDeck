@@ -173,7 +173,7 @@ public partial class FenceWindow : Window
                 () => new ChameleonActivationContext(
                     _settings.EnableChameleon,
                     Model.AutoFade,
-                    IsMouseOver,
+                    DesktopPointerHover.IsActuallyOver(this),
                     false,
                     IsVisible,
                     _peekMode),
@@ -230,7 +230,16 @@ public partial class FenceWindow : Window
             menu.IsOpen = true;
             e.Handled = true;
         };
-        Loaded += (_, _) => { EnsureVisibleOnMonitor(); UpdateTitlebarPlacement(); QueueWallpaperBlurRefresh(); };
+        Loaded += (_, _) =>
+        {
+            EnsureVisibleOnMonitor();
+            UpdateTitlebarPlacement();
+            QueueWallpaperBlurRefresh();
+            // The desktop host attaches this HWND during Loaded. Reconcile after that
+            // transition so every restored fence starts in its actual pointer state.
+            Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,
+                new Action(ReconcileInitialHoverPresentation));
+        };
         SourceInitialized += (_, _) =>
         {
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -272,7 +281,7 @@ public partial class FenceWindow : Window
         };
 
         RefreshAppearance();
-        UpdateHeaderControls(IsMouseOver);
+        UpdateHeaderControls(DesktopPointerHover.IsActuallyOver(this));
         RebuildTabs();
         ApplyRolledState(false);
         if (!deferInitialItems) RefreshItems();
@@ -321,7 +330,7 @@ public partial class FenceWindow : Window
         Shadow.BlurRadius = enabled ? 26 : 18;
         Shadow.Opacity = enabled ? 0.55 : 0.34;
         RefreshAppearance();
-        UpdateHeaderControls(IsMouseOver);
+        UpdateHeaderControls(DesktopPointerHover.IsActuallyOver(this));
     }
 
     public void PrepareForPeek(bool respectWorkingArea)
@@ -555,11 +564,11 @@ public partial class FenceWindow : Window
     {
         RebuildTabs();
         RefreshAppearance();
-        UpdateHeaderControls(IsMouseOver);
+        UpdateHeaderControls(DesktopPointerHover.IsActuallyOver(this));
         ApplyModelLayout();
         RefreshItems(IconMovementAnimationContext.ViewModeChanged);
         RefreshShortcutBadges();
-        ApplyItemScrollbars(IsMouseOver);
+        ApplyItemScrollbars(DesktopPointerHover.IsActuallyOver(this));
     }
 
     public void ApplyModelLayout()
@@ -656,7 +665,7 @@ public partial class FenceWindow : Window
             ItemsList.ItemsPanel = (ItemsPanelTemplate)FindResource(panelKey);
             ItemsList.ItemTemplate = (DataTemplate)FindResource(detailsView ? "DetailsItemTemplate" : listView ? "ListItemTemplate" : "GridItemTemplate");
             ItemsList.HorizontalContentAlignment = (listView && !horizontalList) || detailsView ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
-            ApplyItemScrollbars(IsMouseOver);
+            ApplyItemScrollbars(DesktopPointerHover.IsActuallyOver(this));
         }
         UpdatePortalNavigation(tab);
         ApplyDetailsColumnLayout(tab);
@@ -749,7 +758,7 @@ public partial class FenceWindow : Window
         var sorted = SortTiles(tiles, tab).Where(MatchesSearch).ToList();
         var movementBatch = BeginIconMovementBatch(tab, movementContext, excludedItemIds);
         ItemsList.ItemsSource = sorted;
-        ApplyItemScrollbars(IsMouseOver);
+        ApplyItemScrollbars(DesktopPointerHover.IsActuallyOver(this));
         AnimateItemSurfaceIfChanged(ItemsList, ref _lastCollectionRenderSignature, ComputeTileSignature(sorted));
         UpdateSearchCount(sorted.Count, tiles.Count);
         EmptyText.Text = !string.IsNullOrWhiteSpace(SearchBox.Text) && sorted.Count == 0 ? "일치하는 항목 없음" : "파일을 여기에 놓으세요";
@@ -899,7 +908,7 @@ public partial class FenceWindow : Window
         var sorted = SortTiles(tiles, tab).Where(MatchesSearch).ToList();
         var movementBatch = BeginIconMovementBatch(tab, movementContext, excludedItemIds);
         ItemsList.ItemsSource = sorted;
-        ApplyItemScrollbars(IsMouseOver);
+        ApplyItemScrollbars(DesktopPointerHover.IsActuallyOver(this));
         AnimateItemSurfaceIfChanged(ItemsList, ref _lastPortalRenderSignature, ComputeTileSignature(sorted));
         UpdateSearchCount(sorted.Count, tiles.Count);
         EmptyText.Text = !string.IsNullOrWhiteSpace(SearchBox.Text) && sorted.Count == 0 ? "일치하는 항목 없음" : "폴더가 비어 있습니다";
@@ -962,7 +971,7 @@ public partial class FenceWindow : Window
 
         FreeCanvas.Width = Math.Max(Math.Max(200, ActualWidth - 24), maxRight);
         FreeCanvas.Height = Math.Max(Math.Max(120, ActualHeight - 70), maxBottom);
-        ApplyItemScrollbars(IsMouseOver);
+        ApplyItemScrollbars(DesktopPointerHover.IsActuallyOver(this));
         AnimateItemSurfaceIfChanged(FreeCanvas, ref _lastFreeRenderSignature, ComputeTileSignature(tiles));
         CompleteIconMovementBatchAfterLayout(movementBatch);
         return tiles.Count;
@@ -1775,8 +1784,8 @@ public partial class FenceWindow : Window
         ResizeGrip.Visibility = Model.RolledUp || Model.Locked || !CapabilityAllowed("Layout.MoveResizeGroups") ? Visibility.Collapsed : Visibility.Visible;
         Title = $"CyanDeck - {Model.Title}";
         UpdateTitlebarPlacement();
-        ApplyTitlebarMode(IsMouseOver);
-        UpdateHeaderControls(IsMouseOver);
+        ApplyTitlebarMode(DesktopPointerHover.IsActuallyOver(this));
+        UpdateHeaderControls(DesktopPointerHover.IsActuallyOver(this));
         RefreshWallpaperBlur();
         _chameleonActivationBridge?.Refresh();
     }
@@ -1849,7 +1858,7 @@ public partial class FenceWindow : Window
         _titlebarAtBottom = placeBottom;
         Grid.SetRow(HeaderPanel, placeBottom ? 4 : 0);
         HeaderPanel.BorderThickness = placeBottom ? new Thickness(0, 1, 0, 0) : new Thickness(0, 0, 0, 1);
-        ApplyTitlebarMode(IsMouseOver);
+        ApplyTitlebarMode(DesktopPointerHover.IsActuallyOver(this));
     }
 
     private void ApplyRolledState(bool persist)
@@ -4294,8 +4303,26 @@ public partial class FenceWindow : Window
         cts.Dispose();
     }
 
+    // Presentation only: never persists layout or mutates the user's desktop.
+    private void ReconcileInitialHoverPresentation()
+    {
+        if (!IsLoaded || !IsVisible) return;
+        var pointerInside = DesktopPointerHover.IsActuallyOver(this);
+        ApplyTitlebarMode(pointerInside);
+        UpdateHeaderControls(pointerInside);
+        ApplyItemScrollbars(pointerInside);
+        if (_chameleonActivationBridge is not null) _chameleonActivationBridge.Refresh();
+        else ApplyChameleonDecision(ChameleonPresentationDecision.DeferToExistingPolicy);
+    }
+
     private void Window_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        // Layered HWND attachment can synthesize MouseEnter without pointer motion.
+        if (!DesktopPointerHover.IsActuallyOver(this))
+        {
+            ReconcileInitialHoverPresentation();
+            return;
+        }
         VerifyCutClipboardAfterInteraction();
         if (_chameleonActivationBridge is null) Shell.Opacity = 1;
         else _chameleonActivationBridge.Refresh();
@@ -4391,7 +4418,7 @@ public partial class FenceWindow : Window
         {
             ChameleonPresentationDecision.ShowFullColor => 1d,
             ChameleonPresentationDecision.KeepBlended => Math.Clamp(_settings.ChameleonIdleOpacity, 0.15, 1),
-            _ => _peekMode || !_settings.EnableChameleon || !Model.AutoFade || IsMouseOver
+            _ => _peekMode || !_settings.EnableChameleon || !Model.AutoFade || DesktopPointerHover.IsActuallyOver(this)
                 ? 1d
                 : Math.Clamp(_settings.ChameleonIdleOpacity, 0.15, 1),
         };
