@@ -693,11 +693,8 @@ internal sealed class LooseDesktopIconHost : IDisposable
             _selected.Clear();
             _selected.Add(source.Item.Id);
             UpdateSelectionVisuals();
-            var recycleMenu = new ContextMenu
-            {
-                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 32, 37)),
-                Foreground = System.Windows.Media.Brushes.White,
-            };
+            var recycleMenu = new ContextMenu();
+            FenceContextMenuTheme.ApplyTheme(recycleMenu); // same look as the group menus
             var openRecycleBin = new MenuItem { Header = "휴지통 열기" };
             openRecycleBin.Click += (_, _) => OnOpenRequested(source);
             recycleMenu.Items.Add(openRecycleBin);
@@ -715,11 +712,8 @@ internal sealed class LooseDesktopIconHost : IDisposable
         var snapshots = ids.Where(_entries.ContainsKey).Select(id => Snapshot(_entries[id].Item)).ToArray();
         var state = LooseIconQuickHideContextMenuPolicy.GetMenuState(snapshots, editCapabilityAllowed: true);
 
-        var menu = new ContextMenu
-        {
-            Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 32, 37)),
-            Foreground = System.Windows.Media.Brushes.White,
-        };
+        var menu = new ContextMenu();
+        FenceContextMenuTheme.ApplyTheme(menu);
 
         if (ids.Length == 1)
         {
@@ -808,7 +802,9 @@ internal sealed class LooseDesktopIconHost : IDisposable
 
     private static void ShowProperties(string path)
     {
-        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "properties" }); } catch { }
+        if (ShellPropertiesLauncher.TryShow(path, out var error)) return;
+        System.Windows.MessageBox.Show($"속성 창을 열 수 없습니다.\n\n{path}\n{error}", "CyanDeck",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void RemoveEntry(Guid id)

@@ -35,6 +35,7 @@ scripts = [
   'test_v61_menu_ux.py',
   'test_v62_calendar_drop_preview.py',
   'test_v63_settings_findability_ux_batch.py',
+  'test_v64_ux_followups.py',
   'test_full_source_structure.py',
 ]
 results = []

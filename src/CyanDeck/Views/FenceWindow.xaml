@@ -165,7 +165,7 @@
                                 ToolTip="검색 (Ctrl+F)" Click="SearchButton_Click"
                                 Background="Transparent" Foreground="#EAF0F8" BorderThickness="0" FontSize="15"/>
                         <Button x:Name="RollButton" Width="28" Height="28" Margin="2,0" Content="⌃"
-                                ToolTip="말아 올리기/펼치기" AutomationProperties.Name="그룹 말아 올리기 또는 펼치기" Click="RollButton_Click"
+                                ToolTip="그룹 접기/펼치기" AutomationProperties.Name="그룹 접기 또는 펼치기" Click="RollButton_Click"
                                 Background="Transparent" Foreground="#EAF0F8" BorderThickness="0" FontSize="15"/>
                         <Button Width="28" Height="28" Margin="2,0" Content="•••"
                                 ToolTip="메뉴" AutomationProperties.Name="그룹 메뉴" Click="MenuButton_Click"
@@ -269,7 +269,7 @@
                         <Canvas x:Name="FreeCanvas" MinWidth="200" MinHeight="120" Background="Transparent" PreviewMouseLeftButtonDown="FreeCanvas_PreviewMouseLeftButtonDown"/>
                     </ScrollViewer>
 
-                    <TextBlock x:Name="EmptyText" Grid.Row="1" Text="Drop files here" Foreground="#80FFFFFF" FontSize="13"
+                    <TextBlock x:Name="EmptyText" Grid.Row="1" Text="파일을 여기에 놓으세요" Foreground="#80FFFFFF" FontSize="13"
                                HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed"/>
                 </Grid>
             </Border>

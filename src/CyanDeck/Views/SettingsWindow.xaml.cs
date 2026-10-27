@@ -269,6 +269,14 @@ public partial class SettingsWindow : Window
         Closing += SettingsWindow_Closing;
         SourceInitialized += (_, _) =>
             (PresentationSource.FromVisual(this) as System.Windows.Interop.HwndSource)?.AddHook(SettingsWindowMessageHook);
+        HookSaveStateTracking();
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.S || Keyboard.Modifiers != ModifierKeys.Control) return;
+            e.Handled = true;
+            SaveFromSaveBar();
+        };
+        RefreshSaveState();
     }
 
     public void RefreshManagedPolicyState()
@@ -321,6 +329,7 @@ public partial class SettingsWindow : Window
             if (!beforePolicy.TryGetValue(key, out var previous) || !string.Equals(previous, value, StringComparison.Ordinal))
                 _settingsBaseline[key] = value;
         }
+        RefreshSaveState();
     }
 
     private void ApplyManagedPolicyRestrictions()
@@ -501,15 +510,22 @@ public partial class SettingsWindow : Window
     {
         if (_loading || _currentFence is null) return;
         CommitBackgroundHexEditor(revertOnInvalid: true);
+        _drafts[_currentFence.Id] = BuildEditorDraft(_currentFence);
+    }
+
+    // Reads the group editor controls into a draft without changing any control, so it is safe
+    // to call while the user is still typing (e.g. a half-entered colour code).
+    private GroupDraft BuildEditorDraft(DeckFence fence)
+    {
         var spacingX = SpacingXSlider.Value;
         var spacingY = SpacingYSlider.Value;
-        if (LinkedIconSpacingCheck.IsChecked == true && _drafts.TryGetValue(_currentFence.Id, out var previousSpacingDraft))
+        if (LinkedIconSpacingCheck.IsChecked == true && _drafts.TryGetValue(fence.Id, out var previousSpacingDraft))
         {
             spacingX = previousSpacingDraft.IconSpacingX;
             spacingY = previousSpacingDraft.IconSpacingY;
         }
 
-        _drafts[_currentFence.Id] = new GroupDraft(
+        return new GroupDraft(
             Enum.IsDefined(typeof(DeckIconLayoutMode), IconLayoutCombo.SelectedIndex) ? (DeckIconLayoutMode)IconLayoutCombo.SelectedIndex : DeckIconLayoutMode.Grid,
             Enum.IsDefined(typeof(DeckIconLabelMode), IconLabelModeCombo.SelectedIndex) ? (DeckIconLabelMode)IconLabelModeCombo.SelectedIndex : DeckIconLabelMode.Always,
             Enum.IsDefined(typeof(DeckTitlebarMode), TitlebarModeCombo.SelectedIndex) ? (DeckTitlebarMode)TitlebarModeCombo.SelectedIndex : DeckTitlebarMode.Always,
@@ -721,16 +737,23 @@ public partial class SettingsWindow : Window
 
     private void AddSystemIconGroup_Click(object sender, RoutedEventArgs e)
     {
-        // Save checkbox changes before creating the group so its contents follow the
-        // new preference. Never make an uncommitted settings draft externally visible.
-        if (!ApplyChanges()) return;
+        // The group's contents follow the saved preference. Never make an uncommitted settings
+        // draft externally visible: offer to save pending edits first instead.
+        if (!PrepareSavedStateForAction("Windows 기본 아이콘 그룹 추가")) return;
+        var keptUnsavedEdits = HasUnsavedChanges();
         _addSystemIconGroup();
         BuildDefaultDesktopPlacementChoices(_state.Settings);
+        // The rebuilt list reflects the saved state; it is not a new edit by the user.
+        if (!keptUnsavedEdits)
+        {
+            CaptureUnsavedChangesBaseline();
+            RefreshSaveState();
+        }
     }
 
     private void ResetStandaloneRecycleBin_Click(object sender, RoutedEventArgs e)
     {
-        if (!ApplyChanges()) return;
+        if (!PrepareSavedStateForAction("단독 휴지통 위치 초기화")) return;
         _resetStandaloneRecycleBinPosition();
     }
 
@@ -1084,20 +1107,32 @@ public partial class SettingsWindow : Window
         _draftBaseline[_currentFence.Id] = _drafts[_currentFence.Id];
     }
 
+    // Used when the user closes or runs a command: the editor's pending value is committed first.
     private bool HasUnsavedChanges()
     {
         if (_compatibilityReadOnly) return false;
+        SaveCurrentGroupDraft();
+        return DiffersFromBaseline(readEditorLive: false);
+    }
+
+    // Used by the live save bar after every edit. It never commits or reverts a half-typed value.
+    private bool HasUnsavedChangesWithoutCommit()
+        => !_compatibilityReadOnly && DiffersFromBaseline(readEditorLive: true);
+
+    private bool DiffersFromBaseline(bool readEditorLive)
+    {
         var current = ReadSettingsSignature();
         foreach (var (key, value) in current)
         {
             if (!_settingsBaseline.TryGetValue(key, out var baseline) || !string.Equals(baseline, value, StringComparison.Ordinal))
                 return true;
         }
-        SaveCurrentGroupDraft();
         if (_draftBaseline is null) return false;
         foreach (var (id, draft) in _drafts)
         {
-            if (!_draftBaseline.TryGetValue(id, out var baseline) || baseline != draft) return true;
+            var effective = readEditorLive && !_loading && _currentFence is not null && id == _currentFence.Id
+                ? BuildEditorDraft(_currentFence) : draft;
+            if (!_draftBaseline.TryGetValue(id, out var baseline) || baseline != effective) return true;
         }
         return false;
     }
@@ -1122,6 +1157,81 @@ public partial class SettingsWindow : Window
     {
         _closeWithoutPrompt = true;
         Close();
+    }
+
+    // The bar at the bottom shows the save state live: highlighted while edits are unsaved and a
+    // short confirmation after saving. It uses the same comparison as the close prompt.
+    private DispatcherTimer? _saveStateTimer;
+    private bool _justSaved;
+
+    private void HookSaveStateTracking()
+    {
+        SettingsTabs.AddHandler(System.Windows.Controls.Primitives.ToggleButton.CheckedEvent,
+            new RoutedEventHandler((_, _) => QueueSaveStateRefresh()));
+        SettingsTabs.AddHandler(System.Windows.Controls.Primitives.ToggleButton.UncheckedEvent,
+            new RoutedEventHandler((_, _) => QueueSaveStateRefresh()));
+        SettingsTabs.AddHandler(System.Windows.Controls.Primitives.RangeBase.ValueChangedEvent,
+            new RoutedPropertyChangedEventHandler<double>((_, _) => QueueSaveStateRefresh()));
+        SettingsTabs.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
+            new TextChangedEventHandler((_, _) => QueueSaveStateRefresh()));
+        SettingsTabs.AddHandler(System.Windows.Controls.Primitives.Selector.SelectionChangedEvent,
+            new SelectionChangedEventHandler((_, _) => QueueSaveStateRefresh()));
+    }
+
+    private void QueueSaveStateRefresh()
+    {
+        if (_loading) return;
+        if (_saveStateTimer is null)
+        {
+            _saveStateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            _saveStateTimer.Tick += (_, _) => RefreshSaveState();
+        }
+        _saveStateTimer.Stop();
+        _saveStateTimer.Start();
+    }
+
+    private void RefreshSaveState()
+    {
+        _saveStateTimer?.Stop();
+        if (SaveStateText is null || SaveBar is null) return;
+        var dirty = HasUnsavedChangesWithoutCommit();
+        if (dirty) _justSaved = false;
+        if (dirty)
+        {
+            SaveStateText.Text = "● 저장하지 않은 변경 사항이 있습니다. '저장'을 눌러야 적용됩니다.";
+            SaveStateText.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xD3, 0x86));
+            SaveBar.Background = new SolidColorBrush(Color.FromRgb(0x26, 0x23, 0x1B));
+            SaveBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0x7C, 0x66, 0x33));
+            return;
+        }
+        SaveStateText.Text = _justSaved
+            ? "저장했습니다. 바꾼 설정이 적용되었습니다."
+            : "이 창에서 바꾼 설정은 '저장'을 눌러야 적용됩니다.";
+        SaveStateText.Foreground = new SolidColorBrush(_justSaved
+            ? Color.FromRgb(0x9C, 0xD6, 0xA6) : Color.FromRgb(0x8F, 0x9A, 0xA8));
+        SaveBar.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1E, 0x24));
+        SaveBar.BorderBrush = new SolidColorBrush(Color.FromRgb(0x2C, 0x33, 0x3D));
+    }
+
+    // Commands inside the pages act on the saved configuration. They used to save pending edits
+    // silently first; now they ask, so "저장" remains the only thing that saves without asking.
+    private bool PrepareSavedStateForAction(string action, bool closesWindow = false)
+    {
+        if (!HasUnsavedChanges()) return true;
+        var withoutSaving = closesWindow
+            ? "[아니요] 저장하지 않고 실행 (바꾼 내용은 버려집니다)"
+            : "[아니요] 저장하지 않고 실행 (바꾼 내용은 이 창에 그대로 남습니다)";
+        var answer = MessageBox.Show(this,
+            $"저장하지 않은 변경 사항이 있습니다.\n\n'{action}'은(는) 저장된 설정을 기준으로 실행됩니다. 먼저 저장할까요?\n\n[예] 저장한 뒤 실행\n{withoutSaving}\n[취소] 실행하지 않음",
+            "CyanDeck 설정", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, MessageBoxResult.Yes);
+        if (answer == MessageBoxResult.Yes)
+        {
+            if (!ApplyChanges()) return false;
+            _justSaved = true;
+            RefreshSaveState();
+            return true;
+        }
+        return answer == MessageBoxResult.No;
     }
 
     private bool TryReadCalendarSize(out double width, out double height)
@@ -1177,15 +1287,18 @@ public partial class SettingsWindow : Window
         UpdateLabels();
     }
 
+    // "저장" is the window's single save point (also Ctrl+S). Closing asks about unsaved edits.
     private void Apply_Click(object sender, RoutedEventArgs e)
     {
-        DiagnosticsLog.Info("Settings apply button clicked");
-        ApplyChanges();
+        DiagnosticsLog.Info("Settings save button clicked");
+        SaveFromSaveBar();
     }
-    private void Ok_Click(object sender, RoutedEventArgs e)
+
+    private void SaveFromSaveBar()
     {
-        DiagnosticsLog.Info("Settings OK button clicked");
-        if (ApplyChanges()) { _closeWithoutPrompt = true; DialogResult = true; Close(); }
+        if (!ApplyChanges()) return;
+        _justSaved = true;
+        RefreshSaveState();
     }
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
@@ -1193,7 +1306,7 @@ public partial class SettingsWindow : Window
         _userRequestedClose = true;
         Close();
     }
-    private void Export_Click(object sender, RoutedEventArgs e) { if (ApplyChanges()) _export(); }
+    private void Export_Click(object sender, RoutedEventArgs e) { if (PrepareSavedStateForAction("레이아웃 및 설정 내보내기")) _export(); }
     private void Import_Click(object sender, RoutedEventArgs e) { if (_import()) CloseWithoutPrompt(); }
     private void BuildDefaultDesktopPlacementChoices(DeckSettings settings)
     {
@@ -1305,14 +1418,14 @@ public partial class SettingsWindow : Window
 
     private void AutomaticLayout_Click(object sender, RoutedEventArgs e)
     {
-        if (!ApplyChanges()) return;
+        if (!PrepareSavedStateForAction("자동 레이아웃 실행", closesWindow: true)) return;
         CloseWithoutPrompt();
         _automaticLayout();
     }
 
     private void SwapScreenContents_Click(object sender, RoutedEventArgs e)
     {
-        if (!ApplyChanges()) return;
+        if (!PrepareSavedStateForAction("화면 내용 교환")) return;
         _swapScreenContents();
     }
 
@@ -1447,7 +1560,8 @@ public partial class SettingsWindow : Window
     private void AboutValidateConfiguration_Click(object sender, RoutedEventArgs e) => _validateConfiguration();
     private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
     {
-        if (!ApplyChanges()) return;
+        // The update check uses the saved channel (e.g. a just-ticked beta box needs saving first).
+        if (!PrepareSavedStateForAction("업데이트 확인 및 설치")) return;
         await _checkForUpdates();
         LastUpdateCheckText.Text = _state.Settings.LastUpdateCheckUtc is DateTime lastUpdate ? $"마지막 업데이트 확인: {lastUpdate.ToLocalTime():g}" : "마지막 업데이트 확인: 없음";
         RefreshUpdateDiagnostics();
@@ -1491,6 +1605,7 @@ public partial class SettingsWindow : Window
     private void ResetAllWindowGeometry_Click(object sender, RoutedEventArgs e)
     {
         if (_safeMode || _compatibilityReadOnly || !ResetAllWindowGeometryButton.IsEnabled) return;
+        if (!PrepareSavedStateForAction("모든 그룹·캘린더 창 위치 및 크기 초기화", closesWindow: true)) return;
         if (_resetAllWindowGeometry() && IsVisible) CloseWithoutPrompt();
     }
 
@@ -1505,6 +1620,7 @@ public partial class SettingsWindow : Window
                 "CyanDeck 위치 초기화", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        if (!PrepareSavedStateForAction("선택한 항목 초기 설정으로 복원", closesWindow: true)) return;
         if (_resetPlacement(groups, calendar) && IsVisible) CloseWithoutPrompt();
     }
 
@@ -1521,12 +1637,19 @@ public partial class SettingsWindow : Window
         if (_completeLocalReset() && IsVisible) CloseWithoutPrompt();
     }
 
-    private void RestartSafeMode_Click(object sender, RoutedEventArgs e) => _restartSafeMode();
-    private void RestartNormal_Click(object sender, RoutedEventArgs e) => _restartNormal();
+    // Restarting closes this window, so unsaved edits would be lost: ask first.
+    private void RestartSafeMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (PrepareSavedStateForAction("안전 모드로 다시 시작", closesWindow: true)) _restartSafeMode();
+    }
+    private void RestartNormal_Click(object sender, RoutedEventArgs e)
+    {
+        if (PrepareSavedStateForAction("일반 모드로 다시 시작", closesWindow: true)) _restartNormal();
+    }
 
     private void ApplyRulesNow_Click(object sender, RoutedEventArgs e)
     {
-        ApplyChanges();
+        if (!PrepareSavedStateForAction("자동 분류 규칙 지금 실행")) return;
         _applyRulesNow();
     }
 

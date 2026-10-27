@@ -108,7 +108,7 @@ internal sealed class ProblemReportWindow : Window
         };
         copy.Click += (_, _) => CopyReport();
         buttons.Children.Add(copy);
-        var close = new Button { Content = "닫기", MinWidth = 88, Padding = new Thickness(12, 7, 12, 7) };
+        var close = new Button { Content = "닫기", MinWidth = 88, Padding = new Thickness(12, 7, 12, 7), IsCancel = true };
         close.Click += (_, _) => Close();
         buttons.Children.Add(close);
         Grid.SetRow(buttons, 5);

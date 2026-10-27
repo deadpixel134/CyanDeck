@@ -43,8 +43,8 @@ checks = {
     "the unsaved-change prompt never blocks application exit or Windows logoff":
         "!userRequested" in closing and "SC_CLOSE" in settings and
         "_userRequestedClose = true;" in settings.split("private void Cancel_Click(", 1)[1].split("}", 1)[0],
-    "OK and commands that close after saving do not ask again":
-        "_closeWithoutPrompt = true; DialogResult = true;" in settings and
+    # v8.0.41 replaced 적용/확인/취소 with a single 저장 and 닫기 (see test_v64).
+    "commands that close the window after their own confirmation do not ask again":
         settings.count("CloseWithoutPrompt();") >= 5,
     "invalid calendar size is reported instead of silently ignored":
         "if (!TryReadCalendarSize(out var calendarWidth, out var calendarHeight)) return false;" in apply and
@@ -76,10 +76,11 @@ checks = {
         "CalendarViewportPolicy.Navigate(" in navigate and "_body.Children.Add(layer);" in navigate,
     "edge handling never writes event data":
         all(s not in edge for s in ("_store.", "UpsertBatch", "Persist")),
-    "calendar settings background colour has a picker and is still saved by Apply":
+    # v8.0.41: the calendar panel saves each option as soon as it changes.
+    "calendar settings background colour has a picker and is saved when picked":
         "_preferencesBackgroundPicker = new CalendarColorPicker(" in prefs and
-        prefs.index("_preferencesBackgroundPicker") < prefs.index("var appearanceSave = MakeButton(") and
-        "_settings.CalendarBackgroundColor = baseColor.Text.Trim().ToUpperInvariant();" in prefs,
+        "_settings.CalendarBackgroundColor = color.ToUpperInvariant();" in prefs and
+        prefs.index("_preferencesBackgroundPicker") < prefs.index('AddPreferencesSectionTitle(panel, "공휴일 캘린더")'),
     "new pure policies are compiled into the harness":
         all(f'Include="../../src/CyanDeck/Services/{n}.cs"' in harness_project for n in (
             "RuleWeekdayParser", "WindowsFileNamePolicy", "RecoveryCheckpointLabelPolicy")),

@@ -3449,7 +3449,7 @@ public partial class FenceWindow : Window
             () => DeleteItems(existing)));
         if (SelectedTab?.Kind == DeckTabKind.Collection &&
             existing.All(t => DesktopRecycleService.IsActualDesktopItem(t.Path)))
-            menu.Items.Add(MakeItem("바탕화면 원본을 휴지통으로 이동… (Ctrl+Delete)",
+            menu.Items.Add(MakeDangerItem("바탕화면 원본을 휴지통으로 이동…", "Ctrl+Delete",
                 () => RecycleActualDesktopCollectionItems(existing)));
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
@@ -3562,7 +3562,7 @@ public partial class FenceWindow : Window
                 : SelectedTab?.Kind == DeckTabKind.Collection
                     ? "그룹에서만 제거 (원본 유지)" : "휴지통으로 이동", () => DeleteItem(tile)));
         if (SelectedTab?.Kind == DeckTabKind.Collection && DesktopRecycleService.IsActualDesktopItem(tile.Path))
-            menu.Items.Add(MakeItem("바탕화면 원본을 휴지통으로 이동… (Ctrl+Delete)",
+            menu.Items.Add(MakeDangerItem("바탕화면 원본을 휴지통으로 이동…", "Ctrl+Delete",
                 () => RecycleActualDesktopCollectionItems([tile])));
         menu.Items.Add(MakeItem("속성", () => ShowProperties(tile.Path)));
         menu.Items.Add(new Separator());
@@ -3891,11 +3891,9 @@ public partial class FenceWindow : Window
 
     private static void ShowProperties(string path)
     {
-        try
-        {
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "properties" });
-        }
-        catch { }
+        if (ShellPropertiesLauncher.TryShow(path, out var error)) return;
+        System.Windows.MessageBox.Show($"속성 창을 열 수 없습니다.\n\n{path}\n{error}", "CyanDeck",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private static void Open(string path)
