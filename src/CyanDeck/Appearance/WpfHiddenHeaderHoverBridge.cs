@@ -63,7 +63,8 @@ internal sealed class WpfHiddenHeaderHoverBridge : IDisposable
         HiddenHeaderHoverContext host = SafeReadContext();
         HiddenHeaderHoverContext context = host with
         {
-            IsPointerOverGroup = _pointerOverGroup || _groupRoot.IsMouseOver,
+            IsPointerOverGroup = (_pointerOverGroup || _groupRoot.IsMouseOver)
+                && DesktopPointerHover.IsActuallyOver(_groupRoot),
             IsKeyboardFocusWithinHeader = _headerRoot.IsKeyboardFocusWithin,
         };
 
