@@ -3440,6 +3440,7 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("선택 항목 열기", () => { foreach (var tile in existing.Take(12)) OpenItem(tile); }));
         menu.Items.Add(MakeItem("첫 항목을 파일 탐색기에서 표시", () => Reveal(existing[0].Path)));
         menu.Items.Add(MakeItem("경로 복사", () => Clipboard.SetText(string.Join(Environment.NewLine, existing.Select(t => t.Path)))));
+        AddClipboardMenuItems(menu, existing);
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection &&
             existing.All(t => DesktopRecycleService.IsActualDesktopItem(t.Path))
@@ -3555,7 +3556,7 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("열기", () => OpenItem(tile)));
         menu.Items.Add(MakeItem("파일 탐색기에서 표시", () => Reveal(tile.Path)));
         menu.Items.Add(new Separator());
-        menu.Items.Add(MakeItem("이름 바꾸기…", () => RenameItem(tile)));
+        menu.Items.Add(WithGesture(MakeItem("이름 바꾸기…", () => RenameItem(tile)), "F2"));
         menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection &&
             DesktopRecycleService.IsActualDesktopItem(tile.Path)
                 ? "삭제… (휴지통 또는 그룹에서만 제거)"
@@ -3567,6 +3568,7 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("속성", () => ShowProperties(tile.Path)));
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("경로 복사", () => Clipboard.SetText(tile.Path)));
+        AddClipboardMenuItems(menu, [tile]);
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
             menu.Items.Add(MakeItem("바탕화면에 단독 아이콘으로 빼기", () =>

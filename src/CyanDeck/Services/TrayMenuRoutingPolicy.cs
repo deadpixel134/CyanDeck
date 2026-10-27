@@ -25,7 +25,9 @@ internal static class TrayMenuRoutingPolicy
     {
         switch (commandId)
         {
-            case "brand.identity": return TrayMenuSection.Tools;
+            case "brand.identity":
+            case "help.release-notes":
+            case "help.input-guide": return TrayMenuSection.Tools;
             case "calendar.status":
             case "calendar.enable": return TrayMenuSection.Calendar;
             case "calendar.repair": return TrayMenuSection.CalendarRepair;

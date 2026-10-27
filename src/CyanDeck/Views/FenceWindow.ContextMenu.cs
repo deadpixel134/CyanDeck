@@ -36,6 +36,7 @@ public partial class FenceWindow
         var canCreateDelete = CapabilityAllowed("Layout.CreateDeleteGroups");
 
         menu.Items.Add(WithGesture(MakeItem("검색…", ShowSearch), "Ctrl+F"));
+        AddPasteMenuItem(menu);
         var renameGroupItem = MakeItem("그룹 이름 바꾸기…", RenameGroup);
         renameGroupItem.IsEnabled = canEditGroups;
         menu.Items.Add(renameGroupItem);
@@ -80,6 +81,7 @@ public partial class FenceWindow
             var label = local.Kind == DeckTabKind.FolderPortal ? $"{local.Title}  (폴더 포털)" : local.Title;
             tabsMenu.Items.Add(MakeCheckItem(label, ReferenceEquals(local, SelectedTab), () => SelectTab(local)));
         }
+        AnnotateTabShortcutGestures(tabsMenu);
         tabsMenu.Items.Add(new Separator());
         var addTabItem = MakeItem("새 탭 추가", AddCollectionTab);
         addTabItem.IsEnabled = canEditGroups;
@@ -254,6 +256,7 @@ public partial class FenceWindow
             (64, "크게 (64)"), (88, "매우 크게 (88)"), (128, "최대 (128)")
         };
         var iconSizeMenu = new MenuItem { Header = "아이콘 크기" };
+        iconSizeMenu.ToolTip = "그룹 위에서 Ctrl+마우스 휠로도 바꿀 수 있습니다.";
         foreach (var (size, label) in presets)
         {
             var localSize = size;

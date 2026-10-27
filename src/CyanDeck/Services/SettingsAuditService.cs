@@ -12,7 +12,10 @@ public static class SettingsAuditService
         nameof(DeckSettings.LastUpdateCheckUtc),
         nameof(DeckSettings.PeekHotkeyLabel),
         nameof(DeckSettings.DesktopDisplayHotkeyLabel),
-        nameof(DeckSettings.QuickHideHotkeyLabel)
+        nameof(DeckSettings.QuickHideHotkeyLabel),
+        // One-time notice bookkeeping, not a user preference.
+        nameof(DeckSettings.QuickHideDoubleClickHintShown),
+        nameof(DeckSettings.LastSeenFeatureNoticeVersion)
     };
 
     public static string AuditPath => Path.Combine(DiagnosticsLog.LogFolder, "settings-audit.jsonl");

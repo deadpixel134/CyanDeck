@@ -143,6 +143,12 @@ public sealed class DeckSettings
     public double StandaloneIconIdleOpacity { get; set; } = 0.38;
     public double StandaloneIconHoverOpacity { get; set; } = 1.0;
     public bool ApplyStandaloneIconChameleonToRecycleBin { get; set; }
+    // Legacy compatibility values (pre-v8): CyanDeck registers no global hotkeys and installs
+    // no keyboard hook, so the *HotkeyLabel / *Activation values have no runtime effect. They
+    // stay readable for old layout files and managed policies. Keyboard use goes through
+    // single-instance commands (--peek-toggle, --quick-hide-toggle, --desktop-display-toggle,
+    // --page-next, --page-previous) started by Windows shortcut keys on Start menu shortcuts;
+    // EnablePageKeyboardNavigation gates the two page commands.
     public string PeekHotkeyLabel { get; set; } = "Win+Space";
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DeckHotkeyActivation PeekActivation { get; set; } = DeckHotkeyActivation.Toggle;
@@ -155,6 +161,14 @@ public sealed class DeckSettings
     public bool QuickHideAlwaysShowIconsAtStartup { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DeckQuickHideMode QuickHideMode { get; set; } = DeckQuickHideMode.AllDesktop;
+    // v8.0.43 additive input preferences. Absent keys keep the earlier behavior:
+    // blank-desktop and tray double-clicks both toggle quick hide.
+    public bool EnableDesktopDoubleClickQuickHide { get; set; } = true;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DeckTrayDoubleClickAction TrayDoubleClickAction { get; set; } = DeckTrayDoubleClickAction.QuickHide;
+    // One-time notices (bookkeeping, excluded from the settings audit).
+    public bool QuickHideDoubleClickHintShown { get; set; }
+    public string LastSeenFeatureNoticeVersion { get; set; } = "";
     public int MaxLayoutSnapshots { get; set; } = 20;
     public bool EnableAutomaticDailySnapshots { get; set; } = true;
     public int AutomaticSnapshotRetentionDays { get; set; } = 7;
