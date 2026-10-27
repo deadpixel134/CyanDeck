@@ -60,6 +60,10 @@ public static class TextPrompt
             Background = new SolidColorBrush(Color.FromRgb(27, 29, 34)),
             Content = panel
         };
+        // Dark buttons instead of the white stock ones; 확인 is the primary action.
+        if (DeckThemeResources.MergeDarkControls(window.Resources)
+            && DeckThemeResources.ControlStyle("DeckPrimaryButtonStyle") is { } primary)
+            ok.Style = primary;
         PlaceOverOwner(window, owner);
 
         void Validate()

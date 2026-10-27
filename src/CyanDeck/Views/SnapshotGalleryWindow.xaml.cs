@@ -114,6 +114,12 @@ public partial class SnapshotGalleryWindow : Window
             _delete(snapshot);
             Rebuild();
         };
+        // Deleting a snapshot cannot be undone: red like the other destructive buttons.
+        if (TryFindResource("DeckDangerButtonStyle") is Style danger)
+        {
+            delete.Style = danger;
+            delete.Margin = new Thickness(4, 0, 0, 0);
+        }
         buttons.Children.Add(restore);
         buttons.Children.Add(rename);
         buttons.Children.Add(delete);

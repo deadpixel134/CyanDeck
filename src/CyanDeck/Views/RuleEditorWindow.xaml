@@ -8,12 +8,22 @@
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Themes/DarkControls.xaml"/>
                 <ResourceDictionary Source="../Themes/ReadableComboBoxes.xaml"/>
             </ResourceDictionary.MergedDictionaries>
-        <Style TargetType="Button">
+        <Style TargetType="Button" BasedOn="{StaticResource DarkButtonStyle}">
             <Setter Property="Margin" Value="4,0,0,0"/>
             <Setter Property="Padding" Value="12,6"/>
             <Setter Property="MinWidth" Value="76"/>
+        </Style>
+        <!-- Dark column headers instead of the light stock DataGrid header. -->
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#20242B"/>
+            <Setter Property="Foreground" Value="#C9D3DF"/>
+            <Setter Property="BorderBrush" Value="#3A424E"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -58,7 +68,7 @@
             <DataGrid x:Name="RulesGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                       HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Single"
                       Background="#111318" Foreground="#F4F6FA" RowBackground="#15181D" AlternatingRowBackground="#1B1E24"
-                      BorderBrush="#35FFFFFF" SelectionUnit="FullRow">
+                      BorderBrush="#35FFFFFF" SelectionUnit="FullRow" HorizontalGridLinesBrush="#2A3038">
                 <DataGrid.Columns>
                     <DataGridCheckBoxColumn Header="사용" Binding="{Binding Enabled, Mode=TwoWay}" Width="48"/>
                     <DataGridComboBoxColumn x:Name="FieldColumn" Header="조건" Width="220"/>
@@ -78,10 +88,18 @@
             </DockPanel>
         </Grid>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="적용" Click="Apply_Click"/>
-            <Button Content="확인" IsDefault="True" Click="Ok_Click"/>
-            <Button Content="취소" IsCancel="True" Click="Cancel_Click"/>
-        </StackPanel>
+        <!-- Same save model as the Settings window: one save point, closing asks about unsaved rules. -->
+        <Border Grid.Row="3" Margin="0,14,0,0" Padding="12,8" CornerRadius="8" BorderThickness="1"
+                Background="#1A1E24" BorderBrush="#2C333D">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="SaveButton" Content="저장" Click="Apply_Click" Style="{StaticResource DeckPrimaryButtonStyle}"
+                            Padding="22,6" Margin="10,0,0,0" ToolTip="바꾼 규칙을 저장하고 바로 적용합니다 (Ctrl+S)"/>
+                    <Button Content="닫기" IsCancel="True" Click="Cancel_Click" ToolTip="창을 닫습니다. 저장하지 않은 규칙이 있으면 먼저 묻습니다."/>
+                </StackPanel>
+                <TextBlock x:Name="SaveStateText" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="#8F9AA8"
+                           Text="바꾼 규칙은 '저장'을 눌러야 적용됩니다."/>
+            </DockPanel>
+        </Border>
     </Grid>
 </Window>

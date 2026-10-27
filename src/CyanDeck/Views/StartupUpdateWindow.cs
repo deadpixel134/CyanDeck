@@ -68,10 +68,17 @@ public sealed class StartupUpdateWindow : Window
         {
             Content = "이번에는 건너뛰고 실행",
             HorizontalAlignment = HorizontalAlignment.Right,
-            Padding = new Thickness(14, 5, 14, 5),
-            Background = new SolidColorBrush(Color.FromRgb(45, 54, 67)),
-            Foreground = Brushes.White
+            Padding = new Thickness(14, 5, 14, 5)
         };
+        // Dark template: the stock one turned the button light blue on hover and bright grey
+        // once it disables itself after the click.
+        if (DeckThemeResources.ControlStyle("DarkButtonStyle") is { } skipStyle)
+            _skip.Style = skipStyle;
+        else
+        {
+            _skip.Background = new SolidColorBrush(Color.FromRgb(45, 54, 67));
+            _skip.Foreground = Brushes.White;
+        }
         _skip.Click += (_, _) =>
         {
             _skip.IsEnabled = false;

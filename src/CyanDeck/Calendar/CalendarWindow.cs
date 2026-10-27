@@ -307,12 +307,29 @@ public sealed class CalendarWindow : Window
         SetStatus($"표시 기간: {viewport.FirstSunday:yyyy.MM.dd} ~ {last:yyyy.MM.dd}");
     }
 
-    private static Button MakeButton(string label) => new()
+    // Plain calendar buttons use the shared dark button template, so hover, pressed and disabled
+    // states stay dark. Colours set on the stock template were overridden on hover (light blue
+    // behind white text) and when disabled (bright grey).
+    private static Button MakeButton(string label)
     {
-        Content = label, MinWidth = 30, Padding = new Thickness(7, 3, 7, 3),
-        Margin = new Thickness(2, 0, 2, 0), Background = new SolidColorBrush(Color.FromRgb(45, 51, 65)),
-        Foreground = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(76, 86, 105))
-    };
+        var button = new Button
+        {
+            Content = label, MinWidth = 30, Padding = new Thickness(7, 3, 7, 3),
+            Margin = new Thickness(2, 0, 2, 0)
+        };
+        if (CyanDeck.Views.DeckThemeResources.ControlStyle("DarkButtonStyle") is { } style)
+        {
+            button.Style = style;
+            button.MinHeight = 0; // keep the compact calendar header height
+        }
+        else
+        {
+            button.Background = new SolidColorBrush(Color.FromRgb(45, 51, 65));
+            button.Foreground = Brushes.White;
+            button.BorderBrush = new SolidColorBrush(Color.FromRgb(76, 86, 105));
+        }
+        return button;
+    }
 
     // Button roles shared with the Settings window: primary = the one button that finishes,
     // link = a small helper that only resets or selects a value. Plain MakeButton buttons run a
@@ -1237,6 +1254,12 @@ public sealed class CalendarWindow : Window
         toDateColumn.Children.Add(new TextBlock { Text = "종료 날짜", Foreground = TextLight });
         // Margin belongs to the column so the picker does not overflow the compact editor.
         endPicker.Margin = new Thickness(0);
+        // Dark date fields and drop-down calendar instead of the white stock DatePicker.
+        if (CyanDeck.Views.DeckThemeResources.ControlStyle("DeckDatePickerStyle") is { } datePickerStyle)
+        {
+            startPicker.Style = datePickerStyle;
+            endPicker.Style = datePickerStyle;
+        }
         toDateColumn.Children.Add(endPicker);
         dateRow.Children.Add(fromDateColumn); dateRow.Children.Add(toDateColumn); panel.Children.Add(dateRow);
         useDate.Checked += (_, _) => { startPicker.IsEnabled = true; endPicker.IsEnabled = true; };
@@ -1314,7 +1337,7 @@ public sealed class CalendarWindow : Window
         localOnly.Unchecked += (_, _) => UpdateDestinationState();
         UpdateDestinationState();
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
-        var save = MakeButton("저장 (Ctrl+Enter)");
+        var save = MakePrimaryButton("저장 (Ctrl+Enter)");
         save.IsEnabled = true;
         var cancel = MakeButton("취소");
         actions.Children.Add(save); actions.Children.Add(cancel);
@@ -1378,6 +1401,8 @@ public sealed class CalendarWindow : Window
         if (existing is not null)
         {
             var delete = MakeButton("일정 삭제");
+            if (CyanDeck.Views.DeckThemeResources.ControlStyle("DeckDangerButtonStyle") is { } dangerStyle)
+                delete.Style = dangerStyle; // destructive: shown in the same red as other delete commands
             delete.Click += (_, _) =>
             {
                 // Deletion cannot be undone, and a Google-linked event is removed from Google on the next sync.

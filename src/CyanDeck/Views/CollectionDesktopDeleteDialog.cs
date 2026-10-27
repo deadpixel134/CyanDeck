@@ -71,6 +71,10 @@ internal sealed class CollectionDesktopDeleteDialog : Window
         actions.Children.Add(cancel);
         panel.Children.Add(actions);
         Content = panel;
+        // Dark buttons like the rest of CyanDeck; recycling real files is shown as destructive.
+        if (DeckThemeResources.MergeDarkControls(Resources)
+            && DeckThemeResources.ControlStyle("DeckDangerButtonStyle") is { } danger)
+            recycle.Style = danger;
     }
 
     private static Button CreateButton(string title, double minWidth) => new()

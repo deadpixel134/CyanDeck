@@ -270,6 +270,7 @@ public partial class SettingsWindow : Window
         SourceInitialized += (_, _) =>
             (PresentationSource.FromVisual(this) as System.Windows.Interop.HwndSource)?.AddHook(SettingsWindowMessageHook);
         HookSaveStateTracking();
+        HookRepeatNavigationClicks();
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.S || Keyboard.Modifiers != ModifierKeys.Control) return;
@@ -794,15 +795,63 @@ public partial class SettingsWindow : Window
         SettingsTabs.SelectedItem = tab;
         var hit = _searchHits.TryGetValue(selected, out var found) ? found : null;
         var anchorName = parts[1];
-        // After the selected TabItem is measured, BringIntoView scrolls its ScrollViewer.
+        // Scroll once the selected TabItem has been measured.
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
         {
             if (SettingsTabs.SelectedItem != tab) return;
             var target = hit ?? FindName(anchorName) as FrameworkElement;
             if (target is null) return;
-            target.BringIntoView(new Rect(0, -24, Math.Max(1, target.ActualWidth), Math.Max(1, target.ActualHeight) + 48));
+            ScrollSectionToTop(target, keepContextAbove: hit is not null);
             if (hit is not null) FlashSearchHit(hit);
         }));
+    }
+
+    // Puts the chosen section's card at the top of the page so the whole section is visible.
+    // BringIntoView only scrolled until the heading appeared, often at the very bottom.
+    // The first card of a page scrolls fully up so the page title stays visible; a control
+    // found by search keeps some context above it.
+    private static void ScrollSectionToTop(FrameworkElement target, bool keepContextAbove)
+    {
+        ScrollViewer? scroller = null;
+        Border? card = null;
+        for (var node = VisualTreeHelper.GetParent(target); node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (card is null && node is Border { CornerRadius.TopLeft: 10 } border) card = border;
+            if (node is ScrollViewer viewer) { scroller = viewer; break; }
+        }
+        if (scroller is null) { target.BringIntoView(); return; }
+        scroller.UpdateLayout();
+        double offset;
+        if (keepContextAbove || card is null)
+            offset = scroller.VerticalOffset + target.TranslatePoint(new Point(0, 0), scroller).Y - 56;
+        else if (card.Parent is Panel page && ReferenceEquals(page.Children.OfType<Border>().FirstOrDefault(), card))
+            offset = 0;
+        else
+            offset = scroller.VerticalOffset + card.TranslatePoint(new Point(0, 0), scroller).Y - 12;
+        scroller.ScrollToVerticalOffset(Math.Clamp(offset, 0, Math.Max(0, scroller.ScrollableHeight)));
+    }
+
+    // Clicking the entry that is already selected scrolls to its section again; selection
+    // changes alone would not fire for it.
+    private TreeViewItem? _leafSelectedAtPress;
+
+    private static TreeViewItem? FindTreeViewItem(object? source)
+    {
+        for (var node = source as DependencyObject; node is not null; node = VisualTreeHelper.GetParent(node))
+            if (node is TreeViewItem item) return item;
+        return null;
+    }
+
+    private void HookRepeatNavigationClicks()
+    {
+        SettingsNavigation.PreviewMouseLeftButtonDown += (_, e) =>
+            _leafSelectedAtPress = FindTreeViewItem(e.OriginalSource) is { IsSelected: true } item ? item : null;
+        SettingsNavigation.PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            var item = FindTreeViewItem(e.OriginalSource);
+            if (item is not null && ReferenceEquals(item, _leafSelectedAtPress)) NavigateToLeaf(item);
+            _leafSelectedAtPress = null;
+        };
     }
 
     private void NavigateToSettingsAnchor(string route)
@@ -841,12 +890,12 @@ public partial class SettingsWindow : Window
         ["RecycleSection"] = "휴지통 recycle bin 표시 숨기기",
         ["SystemGroupSection"] = "윈도우 windows pc 내 pc 제어판 네트워크 기본 아이콘 그룹",
         ["GesturesSection"] = "제스처 페이지 마우스 터치 휠 드래그 스와이프 alt 가운데 버튼 두 손가락",
-        ["CreateGroupSection"] = "새 그룹 만들기 사각형 드래그 마우스 버튼 왼쪽 오른쪽 folder portal 생성",
-        ["SmartSnapCheck"] = "스냅 맞춤 간격 정렬 자석 그룹 이동 크기",
+        ["CreateGroupSection"] = "새 그룹 만들기 빈 곳 빈 바탕화면 사각형 그리기 드래그 마우스 버튼 왼쪽 오른쪽 우클릭 folder portal 생성",
+        ["SnapSection"] = "스냅 맞춤 간격 정렬 자석 그룹 이동 크기",
         ["TabsSection"] = "탭 전환 클릭 포인터 호버 결합 합치기",
         ["RollupSection"] = "접기 롤업 펼치기 가장자리 제목 두 번 클릭",
         ["PeekSection"] = "peek 핫코너 작업 표시줄 버튼 창 위로 그룹 보기 작업 영역",
-        ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 숨기기 quick hide 더블클릭",
+        ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 숨기기 quick hide 더블클릭 페이지 전환 다시 표시",
         ["PageAnimationSection"] = "애니메이션 페이지 전환 이징 시간 부드럽게 바운스",
         ["ItemAnimationSection"] = "애니메이션 아이콘 이동 효과 항목 배치 시간 최대 항목 수",
         ["CalendarSection"] = "달력 캘린더 calendar 크기 너비 높이 보기 월 주",

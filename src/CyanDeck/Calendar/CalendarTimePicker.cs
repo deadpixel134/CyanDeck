@@ -35,11 +35,18 @@ internal sealed class CalendarTimePicker : Grid
             ToolTip = "클릭하여 시와 분 선택",
             HorizontalContentAlignment = HorizontalAlignment.Center,
             Padding = new Thickness(8, 4, 8, 4),
-            MinHeight = 30,
-            Background = new SolidColorBrush(Color.FromRgb(45, 51, 65)),
-            Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(100, 117, 141))
+            MinHeight = 30
         };
+        // Shared dark button template keeps hover/pressed states dark (the stock template
+        // turned it light blue behind white text).
+        if (CyanDeck.Views.DeckThemeResources.ControlStyle("DarkButtonStyle") is { } displayStyle)
+            _display.Style = displayStyle;
+        else
+        {
+            _display.Background = new SolidColorBrush(Color.FromRgb(45, 51, 65));
+            _display.Foreground = Brushes.White;
+            _display.BorderBrush = new SolidColorBrush(Color.FromRgb(100, 117, 141));
+        }
         Children.Add(_display);
 
         _hours = CreateSelectionList(84, 170);
@@ -62,10 +69,18 @@ internal sealed class CalendarTimePicker : Grid
         var confirm = new Button
         {
             Content = "시간 선택 완료", MinHeight = 28,
-            Margin = new Thickness(0, 8, 0, 0),
-            Background = new SolidColorBrush(Color.FromRgb(62, 85, 113)),
-            Foreground = Brushes.White
+            Margin = new Thickness(0, 8, 0, 0)
         };
+        if (CyanDeck.Views.DeckThemeResources.ControlStyle("DeckPrimaryButtonStyle") is { } confirmStyle)
+        {
+            confirm.Style = confirmStyle;
+            confirm.Padding = new Thickness(10, 3, 10, 3);
+        }
+        else
+        {
+            confirm.Background = new SolidColorBrush(Color.FromRgb(62, 85, 113));
+            confirm.Foreground = Brushes.White;
+        }
         // Bind the handler after _popup is initialized, so it cannot capture
         // a possibly null field during construction (CS8602).
 

@@ -51,6 +51,11 @@ public sealed class FirstRunWizardWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush(Color.FromRgb(28, 34, 45));
         Foreground = Brushes.White;
+        // Dark buttons, check boxes and fields instead of the white stock controls; "다음" is the
+        // primary action of every step.
+        if (DeckThemeResources.MergeDarkControls(Resources)
+            && DeckThemeResources.ControlStyle("DeckPrimaryButtonStyle") is { } primary)
+            _next.Style = primary;
         var root = new DockPanel(); Content = root;
         var footer = new DockPanel { Margin = new Thickness(22, 10, 22, 18) };
         DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);

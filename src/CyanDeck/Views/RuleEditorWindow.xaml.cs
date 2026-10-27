@@ -38,6 +38,19 @@ public partial class RuleEditorWindow : Window
             MatchModeCombo.IsEnabled = false;
             PriorityBox.IsEnabled = false;
         }
+        RulesGrid.CellEditEnding += (_, _) => MarkEdited();
+        MatchModeCombo.SelectionChanged += (_, _) => MarkEdited();
+        PriorityBox.TextChanged += (_, _) => MarkEdited();
+        Closing += RuleEditor_Closing;
+        SourceInitialized += (_, _) =>
+            (PresentationSource.FromVisual(this) as System.Windows.Interop.HwndSource)?.AddHook(RuleEditorMessageHook);
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != System.Windows.Input.Key.S
+                || System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.Control) return;
+            e.Handled = true;
+            Save();
+        };
     }
 
     private void TabPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -80,6 +93,7 @@ public partial class RuleEditorWindow : Window
         if (_currentTab is null || !_drafts.TryGetValue(_currentTab.Id, out var d)) return;
         var rule = new DeckRule { Enabled = true, Field = RuleField.Extension, Pattern = "pdf" };
         d.Rules.Add(rule);
+        MarkEdited();
         RulesGrid.SelectedItem = rule;
         RulesGrid.ScrollIntoView(rule);
     }
@@ -88,6 +102,7 @@ public partial class RuleEditorWindow : Window
     {
         if (_currentTab is null || RulesGrid.SelectedItem is not DeckRule rule || !_drafts.TryGetValue(_currentTab.Id, out var d)) return;
         d.Rules.Remove(rule);
+        MarkEdited();
     }
 
     private void Up_Click(object sender, RoutedEventArgs e) => MoveSelected(-1);
@@ -126,6 +141,7 @@ public partial class RuleEditorWindow : Window
         var target = Math.Clamp(index + delta, 0, d.Rules.Count - 1);
         if (index < 0 || target == index) return;
         d.Rules.Move(index, target);
+        MarkEdited();
         RulesGrid.SelectedItem = rule;
     }
 
@@ -142,9 +158,74 @@ public partial class RuleEditorWindow : Window
         _applied();
     }
 
-    private void Apply_Click(object sender, RoutedEventArgs e) => ApplyChanges();
-    private void Ok_Click(object sender, RoutedEventArgs e) { ApplyChanges(); DialogResult = true; Close(); }
-    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+    // "저장" is the single save point (also Ctrl+S), like the Settings window.
+    private void Apply_Click(object sender, RoutedEventArgs e) => Save();
+
+    // After a save, the next edit brings back the reminder instead of a stale "saved" message.
+    private void MarkEdited()
+    {
+        if (_loading || SaveStateText is null) return;
+        SaveStateText.Text = "바꾼 규칙은 '저장'을 눌러야 적용됩니다.";
+        SaveStateText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x8F, 0x9A, 0xA8));
+    }
+
+    private void Save()
+    {
+        ApplyChanges();
+        SaveStateText.Text = "저장했습니다. 바꾼 규칙이 적용되었습니다.";
+        SaveStateText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x9C, 0xD6, 0xA6));
+    }
+
+    private void Cancel_Click(object sender, RoutedEventArgs e)
+    {
+        _userRequestedClose = true;
+        Close();
+    }
+
+    // Only closes the user starts (닫기/Esc, title-bar X, Alt+F4) ask about unsaved rules;
+    // application exit and Windows logoff close the window without waiting on a dialog.
+    private bool _userRequestedClose;
+
+    private IntPtr RuleEditorMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_SYSCOMMAND = 0x0112;
+        const int SC_CLOSE = 0xF060;
+        if (msg == WM_SYSCOMMAND && (wParam.ToInt64() & 0xFFF0) == SC_CLOSE) _userRequestedClose = true;
+        return IntPtr.Zero;
+    }
+
+    private void RuleEditor_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        var userRequested = _userRequestedClose;
+        _userRequestedClose = false; // a cancelled close has to be requested again
+        if (!userRequested || !HasUnsavedChanges()) return;
+        var answer = MessageBox.Show(this,
+            "저장하지 않은 규칙 변경 사항이 있습니다. 저장하고 닫을까요?\n\n[예] 저장 후 닫기\n[아니요] 저장하지 않고 닫기\n[취소] 계속 편집",
+            "자동 분류 규칙", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
+        if (answer == MessageBoxResult.Yes) ApplyChanges();
+        else if (answer != MessageBoxResult.No) e.Cancel = true;
+    }
+
+    // Compares every tab's draft with the saved rules (match mode, priority, rule order and values).
+    private bool HasUnsavedChanges()
+    {
+        SaveDraftFromUi();
+        foreach (var tab in _fence.Tabs.Where(t => t.Kind == DeckTabKind.Collection))
+        {
+            if (!_drafts.TryGetValue(tab.Id, out var d)) continue;
+            if (d.MatchMode != tab.RuleMatchMode || d.Priority != tab.RulePriority) return true;
+            var saved = tab.Rules;
+            if (saved.Count != d.Rules.Count) return true;
+            for (var i = 0; i < saved.Count; i++)
+            {
+                var (a, b) = (saved[i], d.Rules[i]);
+                if (a.Enabled != b.Enabled || a.Field != b.Field
+                    || !string.Equals(a.Pattern ?? "", b.Pattern ?? "", StringComparison.Ordinal))
+                    return true;
+            }
+        }
+        return false;
+    }
 
     private static DeckRule CloneRule(DeckRule r) => new() { Enabled = r.Enabled, Field = r.Field, Pattern = r.Pattern };
 

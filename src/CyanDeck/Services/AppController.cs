@@ -1771,6 +1771,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (ReferenceEquals(_desktopCreationMenu, menu)) _desktopCreationMenu = null;
             menu.Dispose();
         };
+        // Same dark look as the group and tray menus; a theme failure only falls back to the plain menu.
+        try { DeckToolStripRenderer.Apply(menu); }
+        catch (Exception ex) { DiagnosticsLog.Error("Desktop creation menu theme failed", ex); }
         menu.Show(new System.Drawing.Point(gesture.EndScreenX, gesture.EndScreenY));
     }
 

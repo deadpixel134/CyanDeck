@@ -91,8 +91,8 @@
                         </TreeViewItem>
                         <TreeViewItem Header="마우스·터치 조작" Tag="InteractionTab|GesturesSection" FontWeight="SemiBold" Foreground="#9DB4CF" Margin="0,6,0,1">
                             <TreeViewItem Header="페이지 전환 제스처" Tag="InteractionTab|GesturesSection"/>
-                            <TreeViewItem Header="빈 곳에서 새 그룹 만들기" Tag="InteractionTab|CreateGroupSection"/>
-                            <TreeViewItem Header="그룹 맞춤·스냅" Tag="InteractionTab|SmartSnapCheck"/>
+                            <TreeViewItem Header="빈 바탕화면에서 그룹 만들기" Tag="InteractionTab|CreateGroupSection"/>
+                            <TreeViewItem Header="그룹 맞춤·스냅" Tag="InteractionTab|SnapSection"/>
                             <TreeViewItem Header="탭 그룹" Tag="InteractionTab|TabsSection"/>
                             <TreeViewItem Header="그룹 접기" Tag="InteractionTab|RollupSection"/>
                         </TreeViewItem>
@@ -150,7 +150,7 @@
                         <TextBlock Text="기능 활성화, 시작 동작 및 바탕화면 항목 분류를 설정합니다." Foreground="#AAB9C9" TextWrapping="Wrap" Margin="0,0,0,24"/>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="FeaturesSection" Text="기능별 독립 실행" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="FeaturesSection" Text="기능 켜기·끄기" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="DeckModuleCheck" Content="CyanDeck 그룹·아이콘 관리 켜기"/>
                         <CheckBox x:Name="CalendarModuleCheck" Content="바탕화면 캘린더 켜기 (날짜 더블클릭으로 입력)"/>
                         <TextBlock Text="CyanDeck 기능 전환은 셸 훅을 안전하게 정리하기 위해 프로그램을 자동 재시작합니다. 캘린더는 바로 켜고 끌 수 있습니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/>
@@ -158,7 +158,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="DesktopSection" Text="바탕화면 동작" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="DesktopSection" Text="시작·바탕화면 아이콘" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="HideNativeIconsCheck" Content="CyanDeck 실행 중 Windows 바탕화면 아이콘 숨기기"/>
                         <CheckBox x:Name="AutoImportCheck" Content="Windows 바탕화면의 항목을 자동으로 가져오기"/>
                         <TextBlock Text="새 바탕화면 항목 기본 위치" Margin="0,7,0,0"/>
@@ -181,10 +181,11 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="28,24,26,38" MaxWidth="650" HorizontalAlignment="Left">
                         <TextBlock Text="마우스·터치 조작" FontSize="22" FontWeight="SemiBold" Foreground="#F4F7FD" Margin="0,0,0,8"/>
-                        <TextBlock Text="바탕화면 페이지를 넘기는 제스처, 빈 곳에서 새 그룹 만들기, 그룹 맞춤과 탭·접기 동작을 설정합니다." Foreground="#AAB9C9" TextWrapping="Wrap" Margin="0,0,0,24"/>
+                        <TextBlock Text="바탕화면 페이지를 넘기는 제스처, 빈 바탕화면에서 그룹 만들기, 그룹 맞춤·스냅, 탭 그룹과 그룹 접기를 설정합니다. 왼쪽 목록의 항목마다 아래 카드가 하나씩 있습니다." Foreground="#AAB9C9" TextWrapping="Wrap" Margin="0,0,0,24"/>
+                        <!-- One card per sidebar entry, titled exactly like the entry. -->
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="GesturesSection" Text="페이지 및 입력 제스처" Style="{StaticResource SectionTitle}" Margin="0,18,0,10"/>
+                        <TextBlock x:Name="GesturesSection" Text="페이지 전환 제스처" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="EdgeGesturesCheck" Content="바탕화면 페이지 가장자리/스와이프 제스처 사용"/>
                         <CheckBox x:Name="InteriorSeamGesturesCheck" Content="모니터 사이 경계에서도 가장자리 페이지 제스처 허용" IsEnabled="{Binding IsChecked, ElementName=EdgeGesturesCheck}"/>
                         <TextBlock Foreground="#98A3B3" Text="기본값은 모니터 사이의 연속된 경계를 차단하고 실제 바탕화면 바깥쪽 가장자리에서만 전환합니다. 세로로 어긋난 모니터는 실제로 맞닿은 구간만 내부 경계로 판단합니다." TextWrapping="Wrap" Margin="0,-3,0,7"/>
@@ -195,13 +196,25 @@
                         <CheckBox x:Name="PageAltWheelCheck" Content="Alt + 마우스 휠로 바탕화면 페이지 전환"/>
                         <CheckBox x:Name="PageMiddleDragCheck" Content="마우스 가운데 버튼 드래그로 바탕화면 페이지 전환"/>
                         <CheckBox x:Name="PageBothButtonsDragCheck" Content="마우스 왼쪽+오른쪽 버튼 드래그로 바탕화면 페이지 전환"/>
-                        <TextBlock Foreground="#E3B86A" Text="그룹이 갑자기 사라진 것처럼 보이면 다른 바탕화면 페이지로 이동했거나 빠른 숨김이 켜졌을 수 있습니다. 트레이 메뉴의 ‘표시 상태 복구’는 빠른 숨김을 해제하고 그룹이 있는 가까운 페이지로 돌아갑니다." TextWrapping="Wrap" Margin="0,-3,0,7"/>
-                        <TextBlock x:Name="CreateGroupSection" Text="빈 바탕화면에서 새 그룹 만들기 버튼" Margin="0,7,0,0"/>
-                        <ComboBox x:Name="CreateGroupMouseButtonCombo" Width="260" HorizontalAlignment="Left" AutomationProperties.Name="빈 바탕화면 새 그룹 생성 마우스 버튼"/>
-                        <TextBlock Foreground="#98A3B3" Text="빈 바탕화면에서 선택한 버튼으로 사각형을 그린 뒤 놓으면 새 그룹 또는 Folder Portal 생성 메뉴가 열립니다. 짧은 왼쪽 클릭과 우클릭은 기존 바탕화면 동작으로 전달되며 Alt/Ctrl/Shift/Win 조합은 생성 제스처로 사용하지 않습니다." TextWrapping="Wrap" Margin="0,-3,0,7"/>
-                        <CheckBox x:Name="UnhideOnPageSwitchCheck" Content="바탕화면 페이지 전환 시 빠른 숨김 그룹 다시 표시"/>
+                        <TextBlock Foreground="#E3B86A" Text="그룹이 갑자기 사라진 것처럼 보이면 다른 바탕화면 페이지로 이동했거나 빠른 숨김이 켜졌을 수 있습니다. 트레이 메뉴의 ‘표시 상태 복구’는 빠른 숨김을 해제하고 그룹이 있는 가까운 페이지로 돌아갑니다." TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
+                            <StackPanel>
+                        <TextBlock x:Name="CreateGroupSection" Text="빈 바탕화면에서 그룹 만들기" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock Text="바탕화면의 빈 곳을 아래에서 고른 마우스 버튼으로 누른 채 끌어 사각형을 그리고 놓으면 '여기에 새 그룹 만들기'와 '여기에 Folder Portal 만들기…' 메뉴가 열립니다. 그린 사각형의 위치와 크기 그대로 새 그룹이 만들어집니다." TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <TextBlock Text="사각형을 그릴 마우스 버튼"/>
+                        <ComboBox x:Name="CreateGroupMouseButtonCombo" Width="260" HorizontalAlignment="Left" AutomationProperties.Name="빈 바탕화면에서 사각형을 그릴 마우스 버튼"/>
+                        <TextBlock Foreground="#98A3B3" Text="짧게 누르는 왼쪽 클릭과 우클릭은 평소처럼 바탕화면으로 전달되고, 끌기 시작할 때만 그룹 만들기로 바뀝니다. Alt/Ctrl/Shift/Win 키를 누르고 있거나 왼쪽과 오른쪽 버튼을 함께 누르면 사용하지 않습니다." TextWrapping="Wrap" Margin="0,-3,0,7"/>
+                        <TextBlock Foreground="#98A3B3" Text="'왼쪽 버튼'이 포함된 방식을 고르면, 빈 바탕화면을 왼쪽 버튼으로 끌어 아이콘을 범위 선택하는 대신 그룹 만들기가 됩니다." TextWrapping="Wrap" Margin="0,0,0,7"/>
+                        <TextBlock Foreground="#98A3B3" Text="Peek·빠른 숨김·바탕화면 보기 중이거나, 안전 모드, 화면 구성이 바뀌는 중, 관리 정책으로 그룹 만들기가 막혀 있을 때는 동작하지 않습니다." TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
+                            <StackPanel>
+                        <TextBlock x:Name="SnapSection" Text="그룹 맞춤·스냅" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="SmartSnapCheck" Content="그룹 간격과 가장자리를 일정하게 맞춤"/>
-                        <TextBlock Foreground="#98A3B3" Text="Deck의 제목줄뿐 아니라 탭 오른쪽 빈 공간과 항목이 없는 본문 배경을 왼쪽 버튼으로 끌어 이동할 수 있습니다. 이 옵션을 켜면 이동 중 다른 Deck의 가장자리/간격과 모니터 작업 영역 가장자리에 실시간으로 맞춰집니다. Ctrl/Shift+자유 배치 빈 공간 드래그는 다중 선택 사각형으로 유지됩니다." TextWrapping="Wrap" Margin="0,-3,0,7"/>
+                        <TextBlock Foreground="#98A3B3" Text="그룹의 제목줄뿐 아니라 탭 오른쪽 빈 공간과 항목이 없는 본문 배경을 왼쪽 버튼으로 끌어 이동할 수 있습니다. 이 옵션을 켜면 이동 중 다른 그룹의 가장자리/간격과 모니터 작업 영역 가장자리에 실시간으로 맞춰집니다. Ctrl/Shift+자유 배치 빈 공간 드래그는 다중 선택 사각형으로 유지됩니다." TextWrapping="Wrap" Margin="0,-3,0,7"/>
                         <CheckBox x:Name="SnapGroupSizeCheck" Content="그룹 크기를 아이콘 셀 단위에 맞춰 조정"/>
                         <TextBlock Text="그룹 맞춤 간격"/>
                         <DockPanel><TextBlock x:Name="SnapGapText" DockPanel.Dock="Right"/><Slider x:Name="SnapGapSlider" Minimum="0" Maximum="64" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SnapGapSlider_ValueChanged"/></DockPanel>
@@ -209,7 +222,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="TabsSection" Text="탭 그룹" Style="{StaticResource SectionTitle}" Margin="0,18,0,10"/>
+                        <TextBlock x:Name="TabsSection" Text="탭 그룹" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="EnableTabGroupsCheck" Content="그룹을 다른 그룹에 놓아 탭으로 결합 허용"/>
                         <CheckBox x:Name="ConfirmTabGroupMergeCheck" Content="그룹을 탭 그룹으로 결합하기 전에 확인"/>
                         <TextBlock Text="탭 전환 방식" Margin="0,8,0,0"/>
@@ -218,8 +231,11 @@
                             <ComboBoxItem Content="마우스를 올리면 자동 전환"/>
                         </ComboBox>
                         <TextBlock Foreground="#98A3B3" Text="기본값은 클릭 전환입니다. 마우스를 올리기만 해서는 탭이 바뀌지 않습니다. 자동 전환은 두 번째 옵션을 직접 선택할 때만 적용되며, 탭 드래그 중에는 작동하지 않습니다." TextWrapping="Wrap" Margin="0,-3,0,7"/>
-
-                        <TextBlock x:Name="RollupSection" Text="그룹 접기" Style="{StaticResource SectionTitle}" Margin="0,18,0,10"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
+                            <StackPanel>
+                        <TextBlock x:Name="RollupSection" Text="그룹 접기" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="EnableRollupCheck" Content="그룹 접기 기능 사용"/>
                         <CheckBox x:Name="RollupDoubleClickCheck" Content="그룹 제목 표시줄을 두 번 클릭해 접기/펼치기"/>
                         <CheckBox x:Name="RollupEdgeDockCheck" Content="화면 위/아래 가장자리로 이동하면 자동으로 접기"/>
@@ -236,7 +252,7 @@
                         <TextBlock Text="Peek은 열린 창 위로 그룹을 잠시 올려 보여 주고, 빠른 숨김은 바탕화면의 그룹과 아이콘을 한 번에 숨깁니다." Foreground="#AAB9C9" TextWrapping="Wrap" Margin="0,0,0,24"/>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="PeekSection" Text="Peek 및 마우스 핫 코너" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="PeekSection" Text="Peek·핫 코너" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="PeekHotCornerCheck" Content="기본 작업 표시줄의 Peek 핫 코너 사용"/>
                         <TextBlock Text="핫 코너 왼쪽 클릭"/>
                         <ComboBox x:Name="PeekHotCornerLeftCombo" Width="260" HorizontalAlignment="Left"/>
@@ -251,6 +267,7 @@
                             <StackPanel>
                         <TextBlock x:Name="QuickHideSection" Text="빠른 숨김" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="QuickHideCheck" Content="바탕화면 빠른 숨김 사용"/>
+                        <CheckBox x:Name="UnhideOnPageSwitchCheck" Content="바탕화면 페이지를 바꾸면 빠른 숨김을 풀고 다시 표시"/>
                         <CheckBox x:Name="QuickHideStartupShowCheck" Content="프로그램 시작 시 아이콘을 항상 표시"/>
                         <TextBlock Foreground="#98A3B3" Text="이 옵션은 시작 시 빠른 숨김 상태가 남아 있으면 CyanDeck의 정상 표시 상태로 한 번 복구합니다. Windows 기본 바탕화면 아이콘을 무조건 켜지는 않습니다." TextWrapping="Wrap" Margin="0,-4,0,8"/>
                         <TextBlock Text="빠른 숨김 시 대상"/>
@@ -279,7 +296,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="GroupChromeSection" Text="그룹 제목줄·스크롤바" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="GroupChromeSection" Text="제목줄·버튼·스크롤바" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="ShowHeaderControlsCheck" Content="그룹 헤더에 제어 버튼 표시"/>
                         <CheckBox x:Name="ShowTitlebarControlsHoverCheck" Content="포인터가 그룹 위에 있을 때만 제목 표시줄 제어 버튼 표시"/>
                         <CheckBox x:Name="ShowInactiveTabControlsCheck" Content="비활성 탭에도 제목 표시줄 제어 버튼 표시"/>
@@ -289,7 +306,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="ChameleonSection" Text="카멜레온" Style="{StaticResource SectionTitle}" Margin="0,18,0,10"/>
+                        <TextBlock x:Name="ChameleonSection" Text="흐리게·투명도 (카멜레온)" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="ChameleonCheck" Content="포인터가 멀어지면 그룹 흐리게 표시"/>
                         <CheckBox x:Name="ChameleonFullColorHoverCheck" Content="마우스 오버 시 그룹을 원래 색으로 표시"/>
                         <CheckBox x:Name="ChameleonDesktopUseCheck" Content="바탕화면 사용 중 그룹을 원래 색으로 표시"/>
@@ -321,7 +338,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="ItemAnimationSection" Text="아이콘·항목 이동 효과" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="ItemAnimationSection" Text="아이콘 이동 효과" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="AnimateItemChangesCheck" Content="항목 내용 또는 배치가 바뀔 때 목록 애니메이션"/>
                         <CheckBox x:Name="AnimateIconsWhenMovedCheck" Content="아이콘이 이동할 때 위치 전환 애니메이션"/>
                         <TextBlock Foreground="#98A3B3" Text="정렬, 항목 추가/삭제, 배치 정리, 그룹 크기 조정 완료 시 실제로 위치가 바뀐 항목만 최종 위치까지 부드럽게 이동합니다. Windows의 클라이언트 영역 애니메이션 접근성 설정을 따르며 기본값은 꺼짐입니다." TextWrapping="Wrap" Margin="22,-3,0,6"/>
@@ -351,7 +368,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="LoadingPerformanceSection" Text="작업 처리·캐시" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="LoadingPerformanceSection" Text="대량 작업·캐시" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="ConfirmLargeBatchCheck" Content="대량 휴지통 작업 전에 추가 확인"/>
                         <TextBlock Text="대량 작업 확인 기준"/>
                         <DockPanel><TextBlock x:Name="BatchThresholdText" DockPanel.Dock="Right"/><Slider x:Name="BatchThresholdSlider" Minimum="5" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="BatchThresholdSlider_ValueChanged"/></DockPanel>
@@ -381,7 +398,7 @@
                         <TextBlock Text="모니터가 바뀔 때의 배치 방식, 레이아웃 스냅샷, 설정 백업을 관리합니다. 초기화 기능은 '문제 해결·초기화'에 있습니다." Foreground="#AAB9C9" TextWrapping="Wrap" Margin="0,0,0,24"/>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="SnapshotsSection" Text="레이아웃 스냅샷" Style="{StaticResource SectionTitle}" Margin="0,18,0,10"/>
+                        <TextBlock x:Name="SnapshotsSection" Text="모니터 배치·스냅샷" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="레이아웃 자동 조정"/>
                         <ComboBox x:Name="LayoutAdjustmentCombo" Width="360" HorizontalAlignment="Left"/>
                         <TextBlock Foreground="#98A3B3" Text="모니터/해상도 변경 시 레이아웃을 그대로 둘지, 기존 레이아웃을 비율 조정할지, 모니터 구성별 저장 레이아웃을 복원할지 선택합니다." TextWrapping="Wrap" Margin="0,-4,0,8"/>
@@ -404,7 +421,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="BackupSection" Text="백업 및 복원" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="BackupSection" Text="백업 내보내기·가져오기" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="그룹 배치와 CyanDeck 설정을 파일로 내보내거나, 내보낸 파일에서 되돌립니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <StackPanel Orientation="Horizontal">
                             <Button Content="레이아웃 및 설정 내보내기…" Margin="0,0,8,0" Click="Export_Click"/>
@@ -472,7 +489,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="GoogleSection" Text="Google 연결 (문제 해결용)" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="GoogleSection" Text="Google 연결" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="일반 배포본에는 Google 데스크톱 OAuth 클라이언트 정보가 내장되어 있어 보통은 비워 두면 됩니다. 로그인은 캘린더 화면의 '설정 → Google 계정 연결 / 캘린더 불러오기'에서 기본 브라우저로 진행하고, 일정 업로드·다운로드는 캘린더의 '동기화' 버튼으로 실행합니다. OAuth 클라이언트 ID가 없으면 로컬 일정만 사용합니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10"/>
                         <TextBlock Text="OAuth 데스크톱 클라이언트 ID (직접 지정할 때만)" Margin="0,0,0,4"/>
                         <TextBox x:Name="GoogleClientIdBox" Height="30" Padding="7,3" ToolTip="Google Cloud Console에서 데스크톱 OAuth 클라이언트 ID를 입력하세요."/>
@@ -515,7 +532,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="SystemGroupSection" Text="그룹 및 위치" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="SystemGroupSection" Text="Windows 기본 아이콘 그룹" Style="{StaticResource SectionTitle}"/>
                         <WrapPanel>
                             <Button x:Name="AddSystemIconGroupButton" Content="Windows 기본 아이콘 그룹 추가" Click="AddSystemIconGroup_Click" Margin="0,0,8,8"/>
                             <Button x:Name="ResetStandaloneRecycleButton" Content="단독 휴지통 위치 초기화" Click="ResetStandaloneRecycleBin_Click" Margin="0,0,0,8"/>
@@ -539,7 +556,7 @@
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10"
                                 Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                                <TextBlock x:Name="GroupEditorSection" Text="선택한 그룹 설정" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock x:Name="GroupEditorSection" Text="그룹 개별 편집" Style="{StaticResource SectionTitle}"/>
                         <ComboBox x:Name="FencePicker" Width="360" HorizontalAlignment="Left" SelectionChanged="FencePicker_SelectionChanged"/>
                         <TextBlock Text="현재 그룹 프리셋" Margin="0,4,0,4"/>
                         <CheckBox x:Name="LinkedIconSpacingCheck" Content="그룹 안팎의 아이콘 간격을 동일하게 사용" Margin="0,6,0,2" Checked="LinkedIconSpacingCheck_Changed" Unchecked="LinkedIconSpacingCheck_Changed"/>
@@ -674,7 +691,7 @@
                         <TextBlock Text="진단 도구, 안전 모드, 설정·위치 초기화와 다시 시작을 한곳에 모았습니다." Foreground="#AAB9C9" TextWrapping="Wrap" Margin="0,0,0,24"/>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="TroubleshootSection" Text="문제 해결" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="TroubleshootSection" Text="진단·복구 도구" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,10" Text="안전 모드는 바탕화면 마우스 후크, Shell 부모 연결, 파일 감시, Windows 아이콘 변경 없이 CyanDeck을 실행합니다. Explorer 연동이나 손상된 설정 때문에 정상 시작이 어려울 때 사용합니다."/>
                         <WrapPanel Margin="0,0,0,14">
                             <Button Content="자체 테스트 실행…" Margin="0,0,8,8" Click="RunSelfTest_Click"/>
@@ -689,7 +706,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="StartupSection" Text="시작 상태" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="StartupSection" Text="안전 모드·시작 보호" Style="{StaticResource SectionTitle}"/>
                         <CheckBox x:Name="CrashLoopProtectionCheck" Content="비정상 시작이 반복되면 자동으로 안전 모드 진입"/>
                         <TextBlock Text="비정상 시작 기준 횟수"/>
                         <DockPanel><TextBlock x:Name="CrashLoopThresholdText" DockPanel.Dock="Right"/><Slider x:Name="CrashLoopThresholdSlider" Minimum="2" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="CrashLoopThresholdSlider_ValueChanged"/></DockPanel>
@@ -709,7 +726,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="FactoryResetSection" Text="프로그램 초기화" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="FactoryResetSection" Text="위치·전체 초기화" Style="{StaticResource SectionTitle}"/>
                         <TextBlock Text="모든 그룹 창(데스크톱의 모든 페이지)과 캘린더 창의 위치·크기를 한 번에 기본 배치로 복원합니다. 그룹·아이콘·일정과 기타 설정은 그대로 두며, 기존 배치를 백업합니다." Foreground="#98A3B3" TextWrapping="Wrap" Margin="0,0,0,9"/>
                         <Button x:Name="ResetAllWindowGeometryButton" Content="모든 그룹·캘린더 창 위치 및 크기 초기화…" HorizontalAlignment="Left" Margin="0,0,0,18" Click="ResetAllWindowGeometry_Click"/>
                         <Separator Margin="0,0,0,12" Background="#344254"/>
@@ -734,7 +751,7 @@
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,22">
                             <StackPanel>
-                        <TextBlock x:Name="RestartSection" Text="다시 시작 모드" Style="{StaticResource SectionTitle}"/>
+                        <TextBlock x:Name="RestartSection" Text="다시 시작" Style="{StaticResource SectionTitle}"/>
                         <WrapPanel>
                             <Button Content="안전 모드로 다시 시작" Margin="0,0,8,8" Click="RestartSafeMode_Click"/>
                             <Button x:Name="RestartNormalButton" Content="일반 모드로 다시 시작" Margin="0,0,8,8" Click="RestartNormal_Click"/>

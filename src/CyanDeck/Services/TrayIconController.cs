@@ -30,7 +30,14 @@ internal sealed class TrayIconController : IDisposable
         _menu.Opening += (_, e) =>
         {
             if (_disposed) { e.Cancel = true; return; }
-            try { populateMenu(_menu); }
+            try
+            {
+                populateMenu(_menu);
+                // Dark look, also for submenus built just now. A theme failure must never
+                // keep the tray menu from opening.
+                try { DeckToolStripRenderer.Apply(_menu); }
+                catch (Exception themeEx) { DiagnosticsLog.Error("Tray menu theme failed; using the plain menu", themeEx); }
+            }
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("Failed to populate tray menu", ex);

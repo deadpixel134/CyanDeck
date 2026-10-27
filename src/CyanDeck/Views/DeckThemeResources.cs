@@ -13,9 +13,30 @@ internal static class DeckThemeResources
 {
     private const string ControlsUri = "/CyanDeck;component/Themes/DarkControls.xaml";
     private const string MenuUri = "/CyanDeck;component/Themes/DeckMenu.xaml";
+    private const string ComboBoxesUri = "/CyanDeck;component/Themes/ReadableComboBoxes.xaml";
     private static readonly Dictionary<string, ResourceDictionary?> Loaded = new(StringComparer.Ordinal);
 
     internal static Style? ControlStyle(string key) => Find(ControlsUri, key);
+
+    /// <summary>
+    /// Gives a small dialog the shared dark controls (buttons, text boxes, check boxes) with the
+    /// readable native combo boxes the Settings window uses. Returns false and leaves the window
+    /// unchanged if the theme cannot be loaded.
+    /// </summary>
+    internal static bool MergeDarkControls(ResourceDictionary target)
+    {
+        try
+        {
+            target.MergedDictionaries.Add((ResourceDictionary)Application.LoadComponent(new Uri(ControlsUri, UriKind.Relative)));
+            target.MergedDictionaries.Add((ResourceDictionary)Application.LoadComponent(new Uri(ComboBoxesUri, UriKind.Relative)));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsLog.Error("Dark controls could not be merged into a dialog", ex);
+            return false;
+        }
+    }
 
     internal static Style? MenuStyle(object key) => Find(MenuUri, key);
 
