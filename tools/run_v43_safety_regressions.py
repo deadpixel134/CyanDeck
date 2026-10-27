@@ -30,6 +30,7 @@ scripts = [
   'test_v56_group_editor_appearance_navigation.py',
   'test_v57_windows_session_fast_exit.py',
   'test_v58_calendar_rolling_mode_recentering.py',
+  'test_v59_review_hardening.py',
   'test_full_source_structure.py',
 ]
 results = []

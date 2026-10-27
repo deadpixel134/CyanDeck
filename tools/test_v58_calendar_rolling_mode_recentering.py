@@ -51,7 +51,7 @@ checks={
     "no saved calendar events or google synchronization mutated":
         all(x not in render for x in ("_store.Save", "_sync(", "_preferences.Save", "File.Delete")),
     "beta version bumped":
-        "<Version>8.0.35</Version>" in read("src/CyanDeck/CyanDeck.csproj")
+        tuple(map(int, re.search(r"<Version>(\d+\.\d+\.\d+)</Version>", read("src/CyanDeck/CyanDeck.csproj")).group(1).split("."))) >= (8, 0, 35)
 }
 for label,ok in checks.items():print(("PASS: " if ok else "FAIL: ") + label)
 print(f"RESULT {sum(checks.values())}/{len(checks)}")
