@@ -64,16 +64,17 @@ checks = {
         'case "calendar.repair": return TrayMenuSection.CalendarRepair;' in routing,
     "calendar repair routing is exercised by the compiled harness":
         '("calendar.repair", "캘린더 표시 복구", TrayMenuSection.CalendarRepair)' in harness,
+    # v8.0.41: the close button became the single primary "완료" in a fixed header.
     "calendar settings start with a title and a close button":
-        'var closeTop = MakeButton("달력으로 돌아가기");' in prefs and
+        'var closeTop = MakePrimaryButton("완료");' in prefs and
         prefs.index("closeTop") < prefs.index('AddPreferencesSectionTitle(panel, "보기")'),
     "calendar settings are split into labelled sections in a logical order":
         all(f'AddPreferencesSectionTitle(panel, "{s}")' in prefs for s in ("보기", "글자 크기", "배경", "공휴일 캘린더", "Google 캘린더")) and
-        prefs.index('"공휴일 캘린더"') < prefs.index('"Google 캘린더"') < prefs.index("자동 동기화 간격 (분)"),
+        prefs.index('"공휴일 캘린더"') < prefs.index('"Google 캘린더"') < prefs.index("자동 동기화 간격"),
     "calendar opacity sliders show their value":
         "idleOpacityValue" in prefs and "activeOpacityValue" in prefs,
-    "calendar appearance apply button still persists through the same checkpoint":
-        "var appearanceSave = MakeButton(" in prefs and "_onPositionChanged();" in prefs,
+    "calendar options persist through the same checkpoint as soon as they change":
+        "void SaveCalendarSetting(string message)" in prefs and "_onPositionChanged();" in prefs,
     "calendar, Windows icon and about pages use the same card layout as other pages":
         all(has_page_layout(t) and len(cards(t)) >= 2 for t in ("CalendarTab", "SystemIconsTab", "AboutTab")),
     "about page keeps every reset and update control":

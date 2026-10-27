@@ -439,7 +439,7 @@ Console.WriteLine($"PASS: {checkpointCases.Length} recovery checkpoint labels");
 // v8.0.41: the Properties command passes shell items by parsing name and reports, instead of
 // silently ignoring, an empty target. The native dialog itself is verified on Windows by hand.
 if (ShellPropertiesLauncher.NormalizeTarget("shell:::{20D04FE0-3AEA-1069-A2D8-08002B30309D}") != "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}" ||
-    ShellPropertiesLauncher.NormalizeTarget(" C:\Users\Public\Desktop\a.txt ") != "C:\Users\Public\Desktop\a.txt" ||
+    ShellPropertiesLauncher.NormalizeTarget(" C:/Users/Public/Desktop/a.txt ") != "C:/Users/Public/Desktop/a.txt" ||
     ShellPropertiesLauncher.NormalizeTarget("::{645FF040-5081-101B-9F08-00AA002F954E}") != "::{645FF040-5081-101B-9F08-00AA002F954E}")
     throw new Exception("Properties target normalization mismatch.");
 foreach (var empty in new[] { null, "", "   " })

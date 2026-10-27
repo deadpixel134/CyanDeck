@@ -314,6 +314,31 @@ public sealed class CalendarWindow : Window
         Foreground = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(76, 86, 105))
     };
 
+    // Button roles shared with the Settings window: primary = the one button that finishes,
+    // link = a small helper that only resets or selects a value. Plain MakeButton buttons run a
+    // command. Without the theme they fall back to the plain calendar button.
+    private static Button MakePrimaryButton(string label)
+    {
+        var style = CyanDeck.Views.DeckThemeResources.ControlStyle("DeckPrimaryButtonStyle");
+        if (style is null)
+        {
+            var plain = MakeButton(label);
+            plain.Background = new SolidColorBrush(Color.FromRgb(59, 120, 168));
+            return plain;
+        }
+        return new Button { Content = label, Style = style, MinHeight = 28,
+            Padding = new Thickness(16, 4, 16, 4), Margin = new Thickness(2, 0, 2, 0) };
+    }
+
+    private static Button MakeLinkButton(string label)
+    {
+        var style = CyanDeck.Views.DeckThemeResources.ControlStyle("DeckLinkButtonStyle");
+        return style is null
+            ? MakeButton(label)
+            : new Button { Content = label, Style = style, Margin = new Thickness(2, 0, 2, 0),
+                VerticalAlignment = VerticalAlignment.Center };
+    }
+
     public bool IsEditing => _editing;
 
     // A purely geometric operation. Called before the first Show(), on monitor
@@ -543,6 +568,7 @@ public sealed class CalendarWindow : Window
     private ContextMenu CreateEventAppearanceMenu(CalendarEvent ev)
     {
         var menu = new ContextMenu();
+        CyanDeck.Views.FenceContextMenuTheme.ApplyTheme(menu); // same look as the group menus
         var baseStyle = _eventAppearance.Get(ev.Id);
         var canEdit = !_eventAppearance.IsReadOnly;
         AddColorSubmenu(menu, ev, "배경색 변경", background: true,
@@ -1420,36 +1446,62 @@ public sealed class CalendarWindow : Window
         _showingPreferences = true;
         ApplyCalendarAppearance();
         _body.Children.Clear();
-        var panel = new StackPanel { Margin = new Thickness(6) };
-        _body.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-        // Title and a close button at the top, so leaving settings never requires scrolling.
-        var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
-        var closeTop = MakeButton("달력으로 돌아가기");
+        // Every option in this panel takes effect and is saved the moment it changes, so there is
+        // no Apply/Save button to look for. The header with the single "완료" button stays put
+        // while the options scroll; leaving re-renders the month with the new values.
+        var layout = new DockPanel { LastChildFill = true };
+        var top = new DockPanel { LastChildFill = true, Margin = new Thickness(6, 6, 6, 6) };
+        var closeTop = MakePrimaryButton("완료");
+        closeTop.ToolTip = "달력으로 돌아갑니다. 바꾼 설정은 이미 저장되어 있습니다.";
         closeTop.Click += (_, _) => RenderMonth();
         DockPanel.SetDock(closeTop, Dock.Right); top.Children.Add(closeTop);
-        top.Children.Add(new TextBlock { Text = "캘린더 설정", Foreground = TextLight, FontSize = 15,
-            FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
-        panel.Children.Add(top);
-        panel.Children.Add(new TextBlock
+        var heading = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        heading.Children.Add(new TextBlock { Text = "캘린더 설정", Foreground = TextLight, FontSize = 15,
+            FontWeight = FontWeights.Bold });
+        heading.Children.Add(new TextBlock { Text = "바꾸는 즉시 적용되고 저장됩니다. 따로 누를 저장 버튼은 없습니다.",
+            Foreground = Brushes.LightGray, FontSize = 11.5, TextWrapping = TextWrapping.Wrap });
+        top.Children.Add(heading);
+        DockPanel.SetDock(top, Dock.Top);
+        layout.Children.Add(top);
+        var panel = new StackPanel { Margin = new Thickness(6, 0, 6, 8) };
+        layout.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        _body.Children.Add(layout);
+
+        // View, text and background values live in the app settings. The callback is the same
+        // debounced persistence checkpoint used when the calendar is moved or resized.
+        void SaveCalendarSetting(string message)
         {
-            Text = "보기·글자·배경은 아래 '적용' 버튼을 눌러야 저장됩니다. 공휴일·Google 캘린더 선택과 색상은 바꾸는 즉시 저장됩니다.",
-            Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 2)
-        });
+            _onPositionChanged();
+            SetStatus(message);
+        }
+
         AddPreferencesSectionTitle(panel, "보기");
         panel.Children.Add(new TextBlock { Text = "보기 방식", Foreground = TextLight, Margin = new Thickness(0, 0, 0, 3) });
         var viewMode = new ComboBox { Width = 230, HorizontalAlignment = HorizontalAlignment.Left };
         viewMode.Items.Add(new ComboBoxItem { Content = "오늘 중심 주 단위", Tag = "Rolling" });
         viewMode.Items.Add(new ComboBoxItem { Content = "월 단위", Tag = "Month" });
         viewMode.SelectedIndex = _settings.CalendarViewMode == "Month" ? 1 : 0;
+        viewMode.SelectionChanged += (_, _) =>
+        {
+            _settings.CalendarViewMode = (viewMode.SelectedItem as ComboBoxItem)?.Tag as string ?? "Rolling";
+            SaveCalendarSetting("보기 방식을 저장했습니다. 완료를 누르면 달력에 바로 보입니다.");
+        };
         panel.Children.Add(viewMode);
         panel.Children.Add(new TextBlock { Text = "한 번에 보여줄 주 수", Foreground = TextLight, Margin = new Thickness(0, 8, 0, 3) });
         var rows = new ComboBox { Width = 230, HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 0, 0, 4) };
         for (var n = 3; n <= 8; n++) rows.Items.Add(n);
         rows.SelectedItem = Math.Clamp(_settings.CalendarVisibleWeekRows, 3, 8);
+        rows.SelectionChanged += (_, _) =>
+        {
+            if (rows.SelectedItem is not int rowCount) return;
+            _settings.CalendarVisibleWeekRows = rowCount;
+            SaveCalendarSetting($"한 번에 {rowCount}주를 보여주도록 저장했습니다.");
+        };
         panel.Children.Add(rows);
         panel.Children.Add(new TextBlock { Text = "월 단위는 한 달을 모두 표시하도록 필요한 행을 추가합니다.",
             Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap });
+
         AddPreferencesSectionTitle(panel, "글자 크기");
         panel.Children.Add(new TextBlock { Text = "날짜 · 요일 · 월 제목 (9~24)", Foreground = TextLight,
             Margin = new Thickness(0, 0, 0, 3) });
@@ -1457,7 +1509,12 @@ public sealed class CalendarWindow : Window
             IsSnapToTickEnabled = true, Value = Math.Clamp(_settings.CalendarDateFontSize, 9, 24),
             Width = 240, HorizontalAlignment = HorizontalAlignment.Left };
         var dateFontValue = new TextBlock { Foreground = Brushes.LightGray, Text = $"{dateFont.Value:0} px" };
-        dateFont.ValueChanged += (_, _) => dateFontValue.Text = $"{dateFont.Value:0} px";
+        dateFont.ValueChanged += (_, _) =>
+        {
+            dateFontValue.Text = $"{dateFont.Value:0} px";
+            _settings.CalendarDateFontSize = Math.Clamp(dateFont.Value, 9, 24);
+            SaveCalendarSetting($"날짜 글자 크기를 {dateFont.Value:0} px로 저장했습니다.");
+        };
         panel.Children.Add(dateFont); panel.Children.Add(dateFontValue);
         panel.Children.Add(new TextBlock { Text = "일정 제목 (9~24)", Foreground = TextLight,
             Margin = new Thickness(0, 8, 0, 3) });
@@ -1465,12 +1522,26 @@ public sealed class CalendarWindow : Window
             IsSnapToTickEnabled = true, Value = Math.Clamp(_settings.CalendarEventFontSize, 9, 24),
             Width = 240, HorizontalAlignment = HorizontalAlignment.Left };
         var eventFontValue = new TextBlock { Foreground = Brushes.LightGray, Text = $"{eventFont.Value:0} px" };
-        eventFont.ValueChanged += (_, _) => eventFontValue.Text = $"{eventFont.Value:0} px";
+        eventFont.ValueChanged += (_, _) =>
+        {
+            eventFontValue.Text = $"{eventFont.Value:0} px";
+            _settings.CalendarEventFontSize = Math.Clamp(eventFont.Value, 9, 24);
+            SaveCalendarSetting($"일정 제목 글자 크기를 {eventFont.Value:0} px로 저장했습니다.");
+        };
         panel.Children.Add(eventFont); panel.Children.Add(eventFontValue);
+
         AddPreferencesSectionTitle(panel, "배경");
         var chameleon = new CheckBox { Content = "사용하지 않을 때 배경을 흐리게 (캘린더 카멜레온)",
             IsChecked = _settings.CalendarChameleonEnabled, Foreground = TextLight,
             Margin = new Thickness(0, 0, 0, 6) };
+        void ChameleonChanged()
+        {
+            _settings.CalendarChameleonEnabled = chameleon.IsChecked == true;
+            ApplyCalendarAppearance();
+            SaveCalendarSetting(chameleon.IsChecked == true ? "캘린더 카멜레온을 켰습니다." : "캘린더 카멜레온을 껐습니다.");
+        }
+        chameleon.Checked += (_, _) => ChameleonChanged();
+        chameleon.Unchecked += (_, _) => ChameleonChanged();
         panel.Children.Add(chameleon);
         panel.Children.Add(new TextBlock { Text = "배경색 (#RRGGBB · 오른쪽 색 칸을 누르면 색상표에서 고를 수 있습니다)",
             Foreground = TextLight, TextWrapping = TextWrapping.Wrap });
@@ -1488,16 +1559,27 @@ public sealed class CalendarWindow : Window
         baseColorRow.Children.Add(baseColor);
         baseColorRow.Children.Add(baseColorSwatch);
         panel.Children.Add(baseColorRow);
-        // The picker edits the text box; like the other appearance values it is saved by 적용.
+        // A valid #RRGGBB (typed or picked) is applied to the frame right away and saved.
         _preferencesBackgroundPicker = new CalendarColorPicker(_settings.CalendarBackgroundColor, canEdit: true,
-            _ => { }, SetStatus, baseColor, baseColorSwatch);
+            color =>
+            {
+                _settings.CalendarBackgroundColor = color.ToUpperInvariant();
+                ApplyCalendarAppearance();
+                SaveCalendarSetting($"배경색을 {_settings.CalendarBackgroundColor}(으)로 저장했습니다.");
+            }, SetStatus, baseColor, baseColorSwatch);
         panel.Children.Add(new TextBlock { Text = "평소(사용하지 않을 때) 배경 불투명도", Foreground = TextLight,
             Margin = new Thickness(0, 7, 0, 0) });
         var idleOpacity = new Slider { Minimum = 0.15, Maximum = 1, TickFrequency = 0.05,
             Value = Math.Clamp(_settings.CalendarIdleOpacity, 0.15, 1), Width = 240,
             HorizontalAlignment = HorizontalAlignment.Left };
         var idleOpacityValue = new TextBlock { Foreground = Brushes.LightGray, Text = $"{idleOpacity.Value:P0}" };
-        idleOpacity.ValueChanged += (_, _) => idleOpacityValue.Text = $"{idleOpacity.Value:P0}";
+        idleOpacity.ValueChanged += (_, _) =>
+        {
+            idleOpacityValue.Text = $"{idleOpacity.Value:P0}";
+            _settings.CalendarIdleOpacity = idleOpacity.Value;
+            ApplyCalendarAppearance();
+            SaveCalendarSetting($"평소 배경 불투명도를 {idleOpacity.Value:P0}(으)로 저장했습니다.");
+        };
         panel.Children.Add(idleOpacity); panel.Children.Add(idleOpacityValue);
         panel.Children.Add(new TextBlock { Text = "사용 중(마우스를 올리거나 선택했을 때) 배경 불투명도", Foreground = TextLight,
             Margin = new Thickness(0, 7, 0, 0) });
@@ -1505,30 +1587,20 @@ public sealed class CalendarWindow : Window
             Value = Math.Clamp(_settings.CalendarActiveBackgroundOpacity, 0.15, 1), Width = 240,
             HorizontalAlignment = HorizontalAlignment.Left };
         var activeOpacityValue = new TextBlock { Foreground = Brushes.LightGray, Text = $"{activeOpacity.Value:P0}" };
-        activeOpacity.ValueChanged += (_, _) => activeOpacityValue.Text = $"{activeOpacity.Value:P0}";
-        panel.Children.Add(activeOpacity); panel.Children.Add(activeOpacityValue);
-        var appearanceSave = MakeButton("보기·글자·배경 설정 적용");
-        appearanceSave.Click += (_, _) =>
+        activeOpacity.ValueChanged += (_, _) =>
         {
-            if (!Regex.IsMatch(baseColor.Text.Trim(), "^#[0-9A-Fa-f]{6}$"))
-            { SetStatus("캘린더 배경색은 #RRGGBB 형식입니다."); return; }
-            _settings.CalendarViewMode = (viewMode.SelectedItem as ComboBoxItem)?.Tag as string ?? "Rolling";
-            _settings.CalendarVisibleWeekRows = rows.SelectedItem is int rowCount ? rowCount : 6;
-            _settings.CalendarDateFontSize = Math.Clamp(dateFont.Value, 9, 24);
-            _settings.CalendarEventFontSize = Math.Clamp(eventFont.Value, 9, 24);
-            _settings.CalendarChameleonEnabled = chameleon.IsChecked == true;
-            _settings.CalendarBackgroundColor = baseColor.Text.Trim().ToUpperInvariant();
-            _settings.CalendarIdleOpacity = idleOpacity.Value;
+            activeOpacityValue.Text = $"{activeOpacity.Value:P0}";
             _settings.CalendarActiveBackgroundOpacity = activeOpacity.Value;
-            _onPositionChanged(); // same settings persistence checkpoint as calendar resizing
-            _showingPreferences = false;
-            RenderMonth();
-            SetStatus("캘린더 보기·배경색·비활성 투명도 설정을 적용했습니다.");
+            ApplyCalendarAppearance();
+            SaveCalendarSetting($"사용 중 배경 불투명도를 {activeOpacity.Value:P0}(으)로 저장했습니다.");
         };
-        panel.Children.Add(appearanceSave);
+        panel.Children.Add(activeOpacity); panel.Children.Add(activeOpacityValue);
         if (_store.IsRecoveredFromBackup || _preferences.IsRecoveredFromBackup)
         {
-            var restore = MakeButton("백업에서 실제 데이터 복원 (확인 필요)");
+            panel.Children.Add(new TextBlock { Text = "백업에서 불러온 읽기 전용 상태입니다. 실제 데이터로 되돌리려면 확인 후 복원하세요.",
+                Foreground = Brushes.Khaki, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 4) });
+            var restore = MakeButton("백업에서 실제 데이터 복원… (확인 필요)");
+            restore.HorizontalAlignment = HorizontalAlignment.Left;
             restore.Click += (_, _) => ConfirmAndRestoreBackups();
             panel.Children.Add(restore);
         }
@@ -1645,30 +1717,34 @@ public sealed class CalendarWindow : Window
         };
         panel.Children.Add(new TextBlock
         {
-            Text = "자동 동기화 간격 (분)",
+            Text = "자동 동기화 간격",
             Foreground = TextLight, FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 10, 0, 4)
         });
-        var syncRow = new StackPanel { Orientation = Orientation.Horizontal };
-        var autoSyncMinutes = new TextBox
+        // A list of sensible intervals instead of a number box with its own save button.
+        // An interval set earlier that is not in the list stays selectable as "사용자 지정".
+        var syncChoices = new List<(int Minutes, string Label)>
         {
-            Text = _preferences.Data.AutoSyncIntervalMinutes.ToString(CultureInfo.InvariantCulture),
-            Width = 95, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
-            ToolTip = "1~1440분 간격 · 0은 자동 동기화 끄기 (수동 동기화는 유지)"
+            (0, "끄기 (수동 동기화만)"), (5, "5분마다"), (10, "10분마다"),
+            (CalendarSyncIntervalPolicy.DefaultMinutes, "15분마다 (기본)"), (30, "30분마다"),
+            (60, "1시간마다"), (120, "2시간마다"), (360, "6시간마다"), (1440, "하루에 한 번")
         };
-        syncRow.Children.Add(autoSyncMinutes);
-        var saveSyncInterval = MakeButton("간격 저장");
-        saveSyncInterval.Margin = new Thickness(6, 0, 2, 0);
-        saveSyncInterval.Click += (_, _) =>
+        var currentSyncMinutes = _preferences.Data.AutoSyncIntervalMinutes;
+        if (syncChoices.All(x => x.Minutes != currentSyncMinutes)
+            && CalendarSyncIntervalPolicy.IsValid(currentSyncMinutes))
+            syncChoices.Add((currentSyncMinutes, $"{currentSyncMinutes}분마다 (사용자 지정)"));
+        var autoSync = new ComboBox { Width = 230, HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = !_preferences.IsReadOnly };
+        foreach (var (minutes, label) in syncChoices)
         {
-            if (!int.TryParse(autoSyncMinutes.Text.Trim(), NumberStyles.None,
-                    CultureInfo.InvariantCulture, out var minutes)
-                || minutes < CalendarSyncIntervalPolicy.MinMinutes
-                || minutes > CalendarSyncIntervalPolicy.MaxMinutes)
-            {
-                SetStatus("자동 동기화 간격은 0~1440 사이의 정수(분)여야 합니다.");
-                return;
-            }
+            var choice = new ComboBoxItem { Content = label, Tag = minutes };
+            autoSync.Items.Add(choice);
+            if (minutes == currentSyncMinutes) autoSync.SelectedItem = choice;
+        }
+        autoSync.SelectionChanged += (_, _) =>
+        {
+            if (autoSync.SelectedItem is not ComboBoxItem { Tag: int minutes }
+                || minutes == _preferences.Data.AutoSyncIntervalMinutes) return;
             if (_preferences.IsReadOnly)
             {
                 SetStatus("읽기 전용 복구 상태에서는 동기화 설정을 저장할 수 없습니다.");
@@ -1679,15 +1755,14 @@ public sealed class CalendarWindow : Window
                 _preferences.UpdateAutoSyncInterval(minutes); // persist BEFORE changing live timer
                 _onAutoSyncIntervalChanged();
                 SetStatus(minutes == 0 ? "Google 자동 동기화를 껐습니다. 수동 동기화는 계속 사용 가능합니다."
-                    : $"Google 자동 동기화 간격을 {minutes}분으로 설정했습니다.");
+                    : $"Google 자동 동기화 간격을 {minutes}분으로 저장했습니다.");
             }
             catch (Exception ex) { SetStatus("자동 동기화 간격 저장 오류: " + ex.Message); }
         };
-        syncRow.Children.Add(saveSyncInterval);
-        panel.Children.Add(syncRow);
+        panel.Children.Add(autoSync);
         panel.Children.Add(new TextBlock
         {
-            Text = "1~1440분 (새 사용자 기본 15분) · 0은 자동 동기화 끄기. 지금 바로 맞추려면 달력의 '동기화' 버튼을 누르세요.",
+            Text = "바꾸면 바로 저장됩니다. 지금 바로 맞추려면 달력의 '동기화' 버튼을 누르세요.",
             Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0)
         });
         var targets = new ComboBox { Width = 270, HorizontalAlignment = HorizontalAlignment.Left,
@@ -1728,10 +1803,10 @@ public sealed class CalendarWindow : Window
             }
             catch (Exception ex) { SetStatus("표시 캘린더 일괄 변경 실패: " + ex.Message); }
         }
-        var showAllButton = MakeButton("전체 표시");
+        var showAllButton = MakeLinkButton("모두 표시");
         showAllButton.Click += (_, _) => ApplyBulkSelection(true);
         bulk.Children.Add(showAllButton);
-        var hideAllButton = MakeButton("전체 숨김");
+        var hideAllButton = MakeLinkButton("모두 숨김");
         hideAllButton.Click += (_, _) => ApplyBulkSelection(false);
         bulk.Children.Add(hideAllButton);
         panel.Children.Add(bulk);
@@ -1753,7 +1828,8 @@ public sealed class CalendarWindow : Window
                     SetStatus(source.Name + " 색상이 즉시 저장되었습니다.");
                 }, SetStatus);
             row.Children.Add(colorPicker);
-            var reset = MakeButton("초기화");
+            var reset = MakeLinkButton("기본색");
+            reset.ToolTip = "Google 캘린더에서 정한 원래 색으로 되돌립니다.";
             reset.IsEnabled = !_preferences.IsReadOnly;
             reset.Click += (_, _) =>
             {
@@ -1770,7 +1846,6 @@ public sealed class CalendarWindow : Window
         }
         if (_preferences.Data.Catalog.Count == 0)
             panel.Children.Add(new TextBlock { Text = "아직 가져온 Google 캘린더가 없습니다. 위의 'Google 계정 연결 / 캘린더 불러오기'를 누르세요.", Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap });
-        var back = MakeButton("달력으로 돌아가기"); back.Click += (_, _) => RenderMonth(); panel.Children.Add(back);
     }
 
     private void AddPreferencesSectionTitle(StackPanel panel, string title)
@@ -1853,7 +1928,8 @@ public sealed class CalendarWindow : Window
                     SetStatus(source.Name + " 색상이 즉시 저장되었습니다.");
                 }, SetStatus);
             colorRow.Children.Add(colorPicker);
-            var reset = MakeButton("기본색");
+            var reset = MakeLinkButton("기본색");
+            reset.ToolTip = "이 공휴일 캘린더의 기본 색으로 되돌립니다.";
             reset.IsEnabled = !_preferences.IsReadOnly;
             reset.Click += (_, _) =>
             {

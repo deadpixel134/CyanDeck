@@ -10,7 +10,9 @@ harness=read("tests/CalendarDomainHarness/Program.cs")
 module=read("src/CyanDeck/Calendar/CalendarModule.cs")
 calc=policy.split("public static DateTime AnchorAfterViewModeChange(",1)[1].split("public static DateTime Navigate(",1)[0]
 render=window.split("public void RenderMonth()",1)[1].split("var viewport = CalendarViewportPolicy.Calculate(",1)[0]
-prefs=window.split("var appearanceSave = MakeButton(",1)[1].split("panel.Children.Add(appearanceSave)",1)[0]
+# v8.0.41: calendar options save as soon as they change (no Apply button); leaving the panel
+# through "완료" re-renders the month with the saved view mode.
+prefs=window.split("private void TogglePreferences()",1)[1].split("private void AddPreferencesSectionTitle(",1)[0]
 checks={
     "pure policy supports switched old and new modes":
         "DateTime currentAnchor, string? previousMode, string? selectedMode, DateTime today" in policy,
@@ -25,11 +27,11 @@ checks={
     "render adjusts anchor before calculating viewport":
         "AnchorAfterViewModeChange(" in render and
         render.index("AnchorAfterViewModeChange(") < render.index("CancelEventMove();"),
-    "preferences apply retains the existing view persistence and render":
+    "preferences keep the existing view persistence and render on leaving":
         "_settings.CalendarViewMode = " in prefs and
         "_settings.CalendarVisibleWeekRows = " in prefs and
         "_onPositionChanged();" in prefs and
-        "RenderMonth();" in prefs,
+        "closeTop.Click += (_, _) => RenderMonth();" in prefs,
     "external environment-settings redraw continues the same logic":
         "public void ApplyViewAndAppearanceFromSettings()" in window and
         "if (!_editing && !_showingPreferences) RenderMonth();" in window and

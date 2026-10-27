@@ -113,9 +113,10 @@ checks = {
         "BuildSearchIndex()" in code and "CollectSearchText(" in code and
         'KeyDown="SettingsSearchBox_KeyDown"' in xaml and
         "private void SettingsSearchBox_KeyDown(" in code,
-    "Apply/OK/Cancel transaction controls remain intact":
-        all(f'Click="{name}"' in xaml
-            for name in ("Apply_Click", "Ok_Click", "Cancel_Click")),
+    # v8.0.41: one explicit save point ("저장") and "닫기" replace 적용/확인/취소.
+    "save and close transaction controls remain intact":
+        all(f'Click="{name}"' in xaml for name in ("Apply_Click", "Cancel_Click")) and
+        'Click="Ok_Click"' not in xaml,
     "no new state migration":
         tuple(map(int, re.search(r"<Version>(\d+\.\d+\.\d+)</Version>", project).group(1).split("."))) >= (8,0,31)
         and "Current = 35" in

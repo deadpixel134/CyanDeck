@@ -71,9 +71,9 @@ checks={
     "group editor stays fully visible at minimum settings window width":
         int(tree.get("MinWidth","0")) >= 940 and
         'Width="560"' in xaml,
-    "apply, confirm and cancel remain in unified transaction footer":
+    "save and close remain in the unified transaction footer":
         all('Click="'+action+'"' in xaml for action in
-            ["Apply_Click","Ok_Click","Cancel_Click"]),
+            ["Apply_Click","Cancel_Click"]),
     "v8.0.32 appearance navigation is data-migration free":
         tuple(map(int,re.search(r"<Version>(\d+\.\d+\.\d+)</Version>", project).group(1).split("."))) >= (8,0,32) and
         "Current = 35" in read("src/CyanDeck/Services/StateSchema.cs"),

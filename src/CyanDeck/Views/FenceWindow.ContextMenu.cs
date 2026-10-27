@@ -35,7 +35,7 @@ public partial class FenceWindow
         var canEditGroups = CapabilityAllowed("Settings.EditGroups");
         var canCreateDelete = CapabilityAllowed("Layout.CreateDeleteGroups");
 
-        menu.Items.Add(MakeItem("검색…   Ctrl+F", ShowSearch));
+        menu.Items.Add(WithGesture(MakeItem("검색…", ShowSearch), "Ctrl+F"));
         var renameGroupItem = MakeItem("그룹 이름 바꾸기…", RenameGroup);
         renameGroupItem.IsEnabled = canEditGroups;
         menu.Items.Add(renameGroupItem);
@@ -67,6 +67,7 @@ public partial class FenceWindow
         menu.Items.Add(new Separator());
         var deleteFenceItem = MakeItem("그룹 삭제…", ConfirmDeleteGroup);
         deleteFenceItem.IsEnabled = canCreateDelete;
+        deleteFenceItem.Tag = MenuDangerTag;
         menu.Items.Add(deleteFenceItem);
     }
 
@@ -111,9 +112,9 @@ public partial class FenceWindow
     private MenuItem BuildPortalMenu(DeckTab portal)
     {
         var portalMenu = new MenuItem { Header = "폴더 포털" };
-        portalMenu.Items.Add(MakeItem("뒤로   Alt+왼쪽", NavigatePortalBack));
-        portalMenu.Items.Add(MakeItem("앞으로   Alt+오른쪽", NavigatePortalForward));
-        portalMenu.Items.Add(MakeItem("상위 폴더   Alt+위쪽", NavigatePortalUp));
+        portalMenu.Items.Add(WithGesture(MakeItem("뒤로", NavigatePortalBack), "Alt+왼쪽"));
+        portalMenu.Items.Add(WithGesture(MakeItem("앞으로", NavigatePortalForward), "Alt+오른쪽"));
+        portalMenu.Items.Add(WithGesture(MakeItem("상위 폴더", NavigatePortalUp), "Alt+위쪽"));
         portalMenu.Items.Add(MakeItem("포털의 처음 폴더로", NavigatePortalHome));
         portalMenu.Items.Add(new Separator());
         portalMenu.Items.Add(MakeItem("현재 폴더를 Explorer에서 열기", () => { if (!string.IsNullOrWhiteSpace(portal.PortalPath)) Open(portal.PortalPath); }));
@@ -565,8 +566,28 @@ public partial class FenceWindow
     private static bool SameMenuText(string? value, string expected)
         => string.Equals(value?.Trim(), expected, StringComparison.OrdinalIgnoreCase);
 
+    // Tag values understood by the menu theme (Themes/DeckMenu.xaml).
+    private const string MenuSectionTag = "section";
+    private const string MenuDangerTag = "danger";
+
     private static MenuItem MakeMenuSectionHeader(string text)
-        => new() { Header = text, IsEnabled = false, FontWeight = FontWeights.SemiBold };
+        => new() { Header = text, IsEnabled = false, FontWeight = FontWeights.SemiBold, Tag = MenuSectionTag };
+
+    // Shortcut text is shown right-aligned by the menu template instead of padded into the label.
+    private static MenuItem WithGesture(MenuItem item, string gesture)
+    {
+        item.InputGestureText = gesture;
+        return item;
+    }
+
+    // Commands that delete or recycle real files are shown in the danger colour.
+    private static MenuItem MakeDangerItem(string header, string? gesture, Action action)
+    {
+        var item = MakeItem(header, action);
+        item.Tag = MenuDangerTag;
+        if (gesture is not null) item.InputGestureText = gesture;
+        return item;
+    }
 
     private static MenuItem MakeCheckItem(string header, bool isChecked, Action action)
     {
