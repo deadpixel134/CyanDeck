@@ -1183,6 +1183,7 @@ public partial class FenceWindow : Window
         _freeDragStartX = Canvas.GetLeft(border);
         _freeDragStartY = Canvas.GetTop(border);
         _freeDragging = false;
+        BeginFreeGroupDrag(tile);
         border.CaptureMouse();
         e.Handled = true;
     }
@@ -1202,7 +1203,9 @@ public partial class FenceWindow : Window
             _freeDragBorder = null;
             _freeDragItem = null;
             _freeDragging = false;
+            RestoreFreeGroupDragPositions();
             var data = new DataObject(DataFormats.FileDrop, selected);
+            AttachItemMovePayload(data, FreeDragPayloadTiles(source));
             DragDrop.DoDragDrop(source, data, DragDropEffects.Copy | DragDropEffects.Link);
             e.Handled = true;
             return;
@@ -1211,10 +1214,12 @@ public partial class FenceWindow : Window
         var dy = now.Y - _freeDragStart.Y;
         if (!_freeDragging && Math.Abs(dx) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(dy) < SystemParameters.MinimumVerticalDragDistance) return;
         _freeDragging = true;
+        (dx, dy) = ClampFreeGroupDragOffset(dx, dy);
         var x = Math.Max(0, _freeDragStartX + dx);
         var y = Math.Max(0, _freeDragStartY + dy);
         Canvas.SetLeft(_freeDragBorder, x);
         Canvas.SetTop(_freeDragBorder, y);
+        MoveFreeGroupDrag(dx, dy);
         FreeCanvas.Width = Math.Max(FreeCanvas.Width, x + _freeDragBorder.ActualWidth + 18);
         FreeCanvas.Height = Math.Max(FreeCanvas.Height, y + _freeDragBorder.ActualHeight + 18);
         e.Handled = true;
@@ -1227,8 +1232,10 @@ public partial class FenceWindow : Window
         {
             _freeDragItem.PositionX = Canvas.GetLeft(_freeDragBorder);
             _freeDragItem.PositionY = Canvas.GetTop(_freeDragBorder);
+            CommitFreeGroupDrag();
             ModelChanged?.Invoke();
         }
+        _freeGroupDragStarts.Clear();
         _freeDragBorder.ReleaseMouseCapture();
         _freeDragBorder = null;
         _freeDragItem = null;
@@ -1666,7 +1673,8 @@ public partial class FenceWindow : Window
         var detach = MakeItem("탭 분리", () => DetachTabById(tabId));
         detach.IsEnabled = Model.Tabs.Count > 1 && CapabilityAllowed("Layout.CreateDeleteGroups");
         menu.Items.Add(detach);
-        var remove = MakeItem("탭 제거", () => RemoveTabById(tabId));
+        var remove = MakeItem("탭 제거…", () => RemoveTabById(tabId));
+        remove.Tag = MenuDangerTag;
         remove.IsEnabled = Model.Tabs.Count > 1 && CapabilityAllowed("Settings.EditGroups");
         menu.Items.Add(remove);
         menu.IsOpen = true;
@@ -1705,6 +1713,12 @@ public partial class FenceWindow : Window
         if (!CapabilityAllowed("Settings.EditGroups") || Model.Tabs.Count <= 1) return;
         var current = Model.Tabs.FindIndex(t => t.Id == tabId);
         if (current < 0) return;
+        // Every path (group menu, inactive-tab menu, × button) confirms like group deletion.
+        var removedTab = Model.Tabs[current];
+        if (!ConfirmRemoveTab(removedTab)) return;
+        current = Model.Tabs.IndexOf(removedTab);
+        if (current < 0 || Model.Tabs.Count <= 1) return;
+        TabRemoving?.Invoke(this, removedTab);
         var selectedId = SelectedTab?.Id;
         Model.Tabs.RemoveAt(current);
         if (selectedId is Guid selected)
@@ -1719,6 +1733,7 @@ public partial class FenceWindow : Window
         RebuildTabs();
         RefreshItems(IconMovementAnimationContext.InitialMaterialization);
         ModelChanged?.Invoke();
+        TabRemoved?.Invoke(this, removedTab);
     }
 
     private void SelectTab(DeckTab tab)
@@ -3000,6 +3015,7 @@ public partial class FenceWindow : Window
     private void Window_Drop(object sender, DragEventArgs e)
     {
         if (TryHandleTabDrop(e, Model.Tabs.Count)) return;
+        if (TryHandleItemMoveDrop(e, SelectedTab, selectTarget: false)) return;
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var files = e.Data.GetData(DataFormats.FileDrop) as string[];
         if (files is null) return;
@@ -3023,6 +3039,7 @@ public partial class FenceWindow : Window
             if (e.GetPosition(header).X >= Math.Max(1, header.ActualWidth) / 2.0) targetIndex++;
         }
         if (TryHandleTabDrop(e, Math.Max(0, targetIndex))) return;
+        if (TryHandleItemMoveDrop(e, tab, selectTarget: true)) return;
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var files = e.Data.GetData(DataFormats.FileDrop) as string[];
         if (files is null) return;
@@ -3142,6 +3159,7 @@ public partial class FenceWindow : Window
             try { path = Path.GetFullPath(file); } catch { }
             if (tab.Items.Any(i => string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase))) continue;
             tab.Items.Add(new DeckItem { Path = path });
+            tab.Items[^1].UserPlaced = true; // dropped here by the user; automatic arrangement keeps it
             SourcePathDropped?.Invoke(path);
             changed = true;
         }
@@ -3311,6 +3329,7 @@ public partial class FenceWindow : Window
     private void Window_DragOver(object sender, DragEventArgs e)
     {
         if (e.Data.GetDataPresent(TabDragFormat)) e.Effects = DragDropEffects.Move;
+        else if (IsItemCopyDrag(e)) e.Effects = DragDropEffects.Copy; // Ctrl copies CyanDeck items
         else e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Link : DragDropEffects.None;
         e.Handled = true;
     }
@@ -3453,6 +3472,7 @@ public partial class FenceWindow : Window
                 () => RecycleActualDesktopCollectionItems(existing)));
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
+            AddItemPlacementMenuEntries(menu, tiles);
             menu.Items.Add(MakeItem("선택 항목을 바탕화면에 단독 아이콘으로 빼기", () =>
             {
                 var tab = SelectedTab;
@@ -3517,6 +3537,7 @@ public partial class FenceWindow : Window
                 ModelChanged?.Invoke();
             }));
         }
+        AddItemPlacementShellExtras(extras, tile);
 
         Func<string, bool>? verbInterceptor = verb =>
         {
@@ -3555,7 +3576,8 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("열기", () => OpenItem(tile)));
         menu.Items.Add(MakeItem("파일 탐색기에서 표시", () => Reveal(tile.Path)));
         menu.Items.Add(new Separator());
-        menu.Items.Add(MakeItem("이름 바꾸기…", () => RenameItem(tile)));
+        menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection ? "표시 이름만 바꾸기…" : "이름 바꾸기…", () => RenameItem(tile)));
+        AddFileRenameMenuEntry(menu, tile);
         menu.Items.Add(MakeItem(SelectedTab?.Kind == DeckTabKind.Collection &&
             DesktopRecycleService.IsActualDesktopItem(tile.Path)
                 ? "삭제… (휴지통 또는 그룹에서만 제거)"
@@ -3569,6 +3591,7 @@ public partial class FenceWindow : Window
         menu.Items.Add(MakeItem("경로 복사", () => Clipboard.SetText(tile.Path)));
         if (SelectedTab?.Kind == DeckTabKind.Collection)
         {
+            AddItemPlacementMenuEntries(menu, new[] { tile });
             menu.Items.Add(MakeItem("바탕화면에 단독 아이콘으로 빼기", () =>
             {
                 var tab = SelectedTab;
@@ -3602,6 +3625,7 @@ public partial class FenceWindow : Window
         _pendingSelectionCollapseItem = null;
         if (ItemsList.IsMouseCaptured) ItemsList.ReleaseMouseCapture();
         var data = new DataObject(DataFormats.FileDrop, selected);
+        AttachItemMovePayload(data, ItemsList.SelectedItems.Cast<ItemTile>());
         try { DragDrop.DoDragDrop(ItemsList, data, DragDropEffects.Copy | DragDropEffects.Link); }
         finally { _listDragStarted = false; }
     }

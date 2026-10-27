@@ -399,6 +399,10 @@ public sealed class DeckItem
     public double? PositionX { get; set; }
     public double? PositionY { get; set; }
     public long OpenCount { get; set; }
+    // Set when the user drags or menu-moves this item into its current tab (or renames an
+    // established desktop file). Automatic desktop arrangement then leaves it where it is until
+    // "자동 분류 규칙 지금 실행" or "자동 분류에 다시 맡기기". Missing in older files = false.
+    public bool UserPlaced { get; set; }
     public bool ExcludeFromQuickHide { get; set; }
     // User-pinned loose desktop icons stay outside automatic classification until the
     // user explicitly sends them back to a group (auto-classify or touch flick).

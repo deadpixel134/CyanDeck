@@ -420,6 +420,84 @@ if (!WindowsFileNamePolicy.GetProblem("..")!.Contains("예약"))
     throw new Exception("'..' must explain that it is a reserved location name.");
 Console.WriteLine("PASS: 18 Windows file name rename checks");
 
+// Icon/group preservation: user-placed items stay, unreachable desktop folders are not "deleted".
+var preservationCases = 0;
+foreach (var forceRules in new[] { false, true })
+foreach (var useRules in new[] { false, true })
+foreach (var grouped in new[] { false, true })
+foreach (var userPlaced in new[] { false, true })
+{
+    var expected = grouped && !forceRules && (userPlaced || !useRules);
+    if (DesktopItemPreservationPolicy.KeepsExistingGroupPlacement(forceRules, useRules, grouped, userPlaced) != expected)
+        throw new Exception($"Group placement keep mismatch: force={forceRules} rules={useRules} grouped={grouped} placed={userPlaced}");
+    preservationCases++;
+}
+var renameNow = new DateTime(2026, 10, 27, 12, 0, 0, DateTimeKind.Utc);
+if (DesktopItemPreservationPolicy.ShouldPinRenamedItem(renameNow.AddSeconds(-30), renameNow) ||
+    !DesktopItemPreservationPolicy.ShouldPinRenamedItem(renameNow.AddMinutes(-5), renameNow) ||
+    DesktopItemPreservationPolicy.ShouldPinRenamedItem(DateTime.MaxValue, renameNow))
+    throw new Exception("Renamed item pin age mismatch.");
+if (DesktopItemPreservationPolicy.NeedsCheckpointBeforeRemoval(9) || !DesktopItemPreservationPolicy.NeedsCheckpointBeforeRemoval(10))
+    throw new Exception("Mass removal checkpoint threshold mismatch.");
+if (DesktopItemPreservationPolicy.CanJudgeMissing(false, false) || DesktopItemPreservationPolicy.CanJudgeMissing(true, true) ||
+    !DesktopItemPreservationPolicy.CanJudgeMissing(true, false))
+    throw new Exception("Missing-item judgement mismatch.");
+preservationCases += 6;
+
+string[] netDesktop = [@"\\nas\home\Desktop", @"C:\Users\Public\Desktop"];
+string[] publicOnly = [@"C:\Users\Public\Desktop"];
+string[] redirected = [@"D:\Desktop", @"C:\Users\Public\Desktop"];
+if (!DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, publicOnly) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, redirected) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, netDesktop) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink(Array.Empty<string>(), publicOnly) ||
+    !DesktopItemPreservationPolicy.IsRootSetShrink(netDesktop, Array.Empty<string>()) ||
+    DesktopItemPreservationPolicy.IsRootSetShrink([@"C:\USERS\PUBLIC\DESKTOP"], publicOnly) ||
+    !DesktopItemPreservationPolicy.ShouldSkipReconcile(false, true, netDesktop, publicOnly) ||
+    DesktopItemPreservationPolicy.ShouldSkipReconcile(false, true, publicOnly, netDesktop))
+    throw new Exception("Desktop root shrink detection mismatch.");
+// An explicit rules run, or a gate nobody feeds any more, never blocks the reconcile.
+if (DesktopItemPreservationPolicy.ShouldSkipReconcile(true, true, netDesktop, publicOnly) ||
+    DesktopItemPreservationPolicy.ShouldSkipReconcile(false, false, netDesktop, publicOnly))
+    throw new Exception("Reconcile skip must be limited to automatic passes while the shrink gate is active.");
+// Temp-file saves (report.docx -> ~WRL0001.tmp, then report.docx is back) must not retarget.
+if (!DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: false, newPathPresent: true) ||
+    DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: true, newPathPresent: true) ||
+    DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: true, newPathPresent: false) ||
+    DesktopItemPreservationPolicy.ShouldApplyGroupedRename(oldPathPresent: false, newPathPresent: false))
+    throw new Exception("Grouped rename must apply only when the old name is gone and the new name exists.");
+if (!DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(10, DateTime.MinValue, renameNow) ||
+    DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(9, DateTime.MinValue, renameNow) ||
+    DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(50, renameNow.AddMinutes(-30), renameNow) ||
+    !DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(50, renameNow.AddMinutes(-61), renameNow) ||
+    !DesktopItemPreservationPolicy.ShouldSaveDesktopCleanupCheckpoint(50, renameNow.AddMinutes(5), renameNow))
+    throw new Exception("Desktop cleanup checkpoint throttle mismatch.");
+preservationCases += 13;
+
+var shrinkGate = new DesktopRootShrinkGate();
+var t0 = renameNow;
+if (!shrinkGate.ShouldAccept(netDesktop, redirected, t0)) throw new Exception("A replaced desktop root must be accepted at once.");
+if (shrinkGate.ShouldAccept(netDesktop, publicOnly, t0) || !shrinkGate.IsPending ||
+    shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(4)) ||
+    shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(8)))
+    throw new Exception("A brief desktop disconnect must not be accepted.");
+if (!shrinkGate.IsActivelyPending(t0.AddSeconds(10)) || shrinkGate.IsActivelyPending(t0.AddSeconds(30)))
+    throw new Exception("An unfed shrink gate must stop counting as actively pending.");
+// The folder came back for a while (no observations), then vanished again: counting restarts.
+if (shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(40)) ||
+    shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(44)))
+    throw new Exception("A gap between observations must restart the shrink gate.");
+var accepted = false;
+for (var s = 48; s <= 64 && !accepted; s += 4)
+    accepted = shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(s));
+if (!accepted || shrinkGate.IsPending) throw new Exception("A desktop folder missing for 20+ seconds must eventually be accepted.");
+if (shrinkGate.ShouldAccept(netDesktop, publicOnly, t0.AddSeconds(100)))
+    throw new Exception("A new disconnect after acceptance must start counting again.");
+if (!shrinkGate.ShouldAccept(publicOnly, publicOnly, t0.AddSeconds(104)) || shrinkGate.IsPending)
+    throw new Exception("Matching roots must reset the shrink gate.");
+preservationCases += 7;
+Console.WriteLine($"PASS: {preservationCases} icon/group preservation policy checks");
+
 var checkpointCases = new (string File, string Expected)[]
 {
     ("before-import-20261027-101500", "백업 가져오기 전"),

@@ -102,7 +102,8 @@ public partial class FenceWindow
             tabsMenu.Items.Add(moveRight);
             tabsMenu.Items.Add(MakeItem("현재 탭을 새 그룹으로 분리", DetachCurrentTab));
             tabsMenu.Items.Add(new Separator());
-            var removeTabItem = MakeItem("현재 탭 제거", RemoveCurrentTab);
+            var removeTabItem = MakeItem("현재 탭 제거…", RemoveCurrentTab);
+            removeTabItem.Tag = MenuDangerTag; // asks first, then re-places desktop files
             removeTabItem.IsEnabled = canEditGroups;
             tabsMenu.Items.Add(removeTabItem);
         }
@@ -536,7 +537,7 @@ public partial class FenceWindow
     {
         var name = string.IsNullOrWhiteSpace(Model.Title) ? "이 그룹" : $"'{Model.Title}' 그룹";
         var answer = System.Windows.MessageBox.Show(this,
-            $"{name}을(를) 삭제하시겠습니까?\n\n그룹과 그 안의 탭, 모양 설정이 삭제됩니다. 바탕화면의 실제 파일과 폴더는 삭제되지 않습니다.",
+            $"{name}을(를) 삭제하시겠습니까?\n\n그룹과 그 안의 탭, 모양 설정이 삭제됩니다. 바탕화면의 실제 파일과 폴더는 삭제되지 않습니다.\n그룹 안의 바탕화면 항목은 다른 탭이나 그룹 밖 바탕화면 아이콘으로 다시 배치됩니다.",
             "그룹 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer == MessageBoxResult.Yes) DeleteRequested?.Invoke(this);
     }

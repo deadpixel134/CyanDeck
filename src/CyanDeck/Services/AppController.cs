@@ -620,10 +620,21 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void ReorganizeDesktop(bool forceRules = false)
     {
         var useRules = forceRules || _state.Settings.KeepRulesUpdatedAtAllTimes;
-        var roots = DesktopDirectoryService.GetRoots();
-        var paths = RuleEngine.EnumerateDesktopItems()
-            .Select(DesktopDirectoryService.Normalize)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A watched desktop folder that is briefly unreachable (network/USB/other drive after
+        // resume) is not "deleted": skip the pass instead of dropping every arranged icon.
+        var desktopSnapshot = CaptureDesktopReconcileSnapshot();
+        if (DesktopItemPreservationPolicy.ShouldSkipReconcile(forceRules,
+                _desktopRootShrinkGate.IsActivelyPending(DateTime.UtcNow), _desktopWatchers.GetRoots(), desktopSnapshot.Roots))
+        {
+            DiagnosticsLog.Info("Desktop reconcile skipped: a watched desktop folder is temporarily unavailable");
+            RetryDesktopReconcileAfterSkip();
+            return;
+        }
+        // Renames seen by the watcher are applied only now, when the snapshot proves them real.
+        ApplyPendingGroupedRenames(desktopSnapshot);
+        // Only folders that were actually read in this pass may prove that an item is gone.
+        var roots = desktopSnapshot.ReadableRoots;
+        var paths = desktopSnapshot.Paths;
         var collectionTabs = _state.Fences.SelectMany(f => f.Tabs).Where(t => t.Kind == DeckTabKind.Collection).ToArray();
         var changed = false;
 
@@ -632,10 +643,14 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             .GroupBy(i => DesktopDirectoryService.Normalize(i.Path), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var stale in looseByPath.Keys.Where(path =>
+        var staleLoosePaths = looseByPath.Keys.Where(path =>
                      !paths.Contains(path)
+                     && CanJudgeDesktopItemMissing(path, desktopSnapshot)
                      && (!looseByPath[path].PinnedToDesktop
-                         || (!File.Exists(path) && !Directory.Exists(path)))).ToArray())
+                         || (!File.Exists(path) && !Directory.Exists(path)))).ToArray();
+        SaveCheckpointBeforeMassDesktopRemoval(
+            staleLoosePaths.Length + CountStaleGroupedDesktopReferences(collectionTabs, roots, paths));
+        foreach (var stale in staleLoosePaths)
         {
             _state.LooseDesktopItems.Remove(looseByPath[stale]);
             looseByPath.Remove(stale);
@@ -703,6 +718,19 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (looseByPath.TryGetValue(path, out var pinnedLoose) && pinnedLoose.PinnedToDesktop)
                 continue;
 
+            // An item the user placed (or any grouped item while continuous rule maintenance is
+            // off) stays in its tab with its position until an explicit rules run.
+            if (DesktopItemPreservationPolicy.KeepsExistingGroupPlacement(
+                    forceRules, useRules, matches.Length > 0, matches.Any(m => m.Item.UserPlaced)))
+            {
+                if (looseByPath.Remove(path, out var placedLoose))
+                {
+                    _state.LooseDesktopItems.Remove(placedLoose);
+                    changed = true;
+                }
+                continue;
+            }
+
             if (!forceRules && _state.Settings.UseDefaultDesktopPlacement)
             {
                 if (isNewlyObserved)
@@ -765,7 +793,13 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             // otherwise turning continuous maintenance off silently disables auto-group rules.
             var includeRulesForPath = useRules || isNewlyObserved;
             var desired = RuleEngine.PickTab(_state, path, includeRules: includeRulesForPath);
-            if (desired is null) continue;
+            if (desired is null)
+            {
+                // No category/"기타" tab is left (for example after a group or tab was removed):
+                // keep the file visible as a loose desktop icon instead of showing it nowhere.
+                if (matches.Length == 0) changed |= EnsureLooseDesktopReference(path, matches, looseByPath);
+                continue;
+            }
 
             if (matches.Length == 0)
             {
@@ -994,7 +1028,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
 
         var tab = RuleEngine.PickTab(_state, full);
-        if (tab is null) return;
+        if (tab is null)
+        {
+            KeepUnplaceableDesktopItemVisible(full, persist);
+            return;
+        }
         var looseItem = FindLooseDesktopItem(full);
         if (looseItem is not null)
         {
@@ -1293,8 +1331,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             System.Windows.MessageBox.Show("그룹은 최소 하나 이상 남아 있어야 합니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        var removedTabs = window.Model.Tabs.ToList();
+        var checkpointSaved = SaveRecoveryCheckpointBeforeRemoval("before-delete-group");
         RemoveFenceWindow(window);
+        var rehomed = RehomeDesktopItemsFromRemovedTabs(removedTabs);
         Persist();
+        NotifyRemovalRecoverable("그룹을 삭제했습니다.", rehomed, checkpointSaved);
     }
 
     private void RefreshTab(Guid tabId)
@@ -2426,6 +2468,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
 
         item.PinnedToDesktop = false;
+        item.UserPlaced = true; // the user flicked it into this group
         item.PositionX = null;
         item.PositionY = null;
         if (!tab.Items.Any(i => i.Id == item.Id))
@@ -2449,6 +2492,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             if (tab is null) continue;
             _state.LooseDesktopItems.Remove(item);
             item.PinnedToDesktop = false;
+            item.UserPlaced = false;
             item.PositionX = null;
             item.PositionY = null;
             if (!tab.Items.Any(i => string.Equals(DesktopDirectoryService.Normalize(i.Path), DesktopDirectoryService.Normalize(item.Path), StringComparison.OrdinalIgnoreCase)))
@@ -2467,9 +2511,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void RefreshDesktopWatchers(bool force = false, bool reconcile = true)
     {
         var roots = DesktopDirectoryService.GetRoots();
-        if (!force && _desktopWatchers.Matches(roots)) return;
+        // A watcher that failed (for example while a network desktop was briefly offline) is
+        // rebound once the same roots are reachable again.
+        if (!force && !_desktopWatcherRebindNeeded && _desktopWatchers.Matches(roots)) return;
 
         var previousRoots = _desktopWatchers.GetRoots();
+        if (!AcceptDesktopRootChange(previousRoots, roots)) return;
         if (!_desktopWatchers.Rebind(roots, dir =>
         {
             FileSystemWatcher? watcher = null;
@@ -2513,6 +2560,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                     _icons.Invalidate(e.OldFullPath);
                     _icons.Invalidate(e.FullPath);
                     _desktopFirstSeenGate?.RenameKnown(DesktopDirectoryService.Normalize(e.OldFullPath), DesktopDirectoryService.Normalize(e.FullPath));
+                    QueueGroupedDesktopRename(e.OldFullPath, e.FullPath);
                     RenameUngroupedDesktopMarker(e.OldFullPath, e.FullPath);
                     if (_state.Settings.AutoImportDesktop) ScheduleDesktopReconcile();
                 });
@@ -2523,6 +2571,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 watcher.Error += (_, e) => QueueIfCurrent(() =>
                 {
                     DiagnosticsLog.Error($"Desktop watcher overflow/error for {dir}", e.GetException());
+                    _desktopWatcherRebindNeeded = true;
                     RefreshDesktopWatchers(force: true, reconcile: true);
                 });
                 // DesktopWatcherLifetime enables the entire staged watcher set
@@ -2543,6 +2592,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             // The old watchers are still active; the next periodic refresh retries.
             return;
         }
+        _desktopWatcherRebindNeeded = false;
 
         if (previousRoots.Length > 0 && !new HashSet<string>(previousRoots, StringComparer.OrdinalIgnoreCase).SetEquals(roots))
         {
@@ -2565,6 +2615,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void MigrateDesktopRootReferences(IReadOnlyList<string> oldRoots, IReadOnlyList<string> newRoots)
     {
+        // Each old folder is probed once per migration (an offline UNC path can block per probe).
+        var oldRootReadable = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        SaveCheckpointBeforeDesktopRootMigration(oldRoots, newRoots, oldRootReadable);
         var changed = false;
         foreach (var tab in _state.Fences.SelectMany(f => f.Tabs).Where(t => t.Kind == DeckTabKind.Collection))
         {
@@ -2584,8 +2637,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                     item.Path = DesktopDirectoryService.Normalize(replacement);
                     changed = true;
                 }
-                else
+                else if (IsDesktopFolderReadable(oldRoot, oldRootReadable))
                 {
+                    // Only a readable old folder proves the file is really gone.
                     tab.Items.RemoveAt(i);
                     changed = true;
                 }
@@ -2606,7 +2660,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 item.Path = DesktopDirectoryService.Normalize(replacement);
                 changed = true;
             }
-            else
+            else if (IsDesktopFolderReadable(oldRoot, oldRootReadable))
             {
                 _state.LooseDesktopItems.Remove(item);
                 changed = true;
@@ -2706,7 +2760,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 }
             }
 
-            if (_state.Settings.TrackDesktopLocationChanges)
+            // Desktop folder changes are judged only after a display transition has settled. A failed
+            // watcher is also retried here when location tracking is off.
+            if ((_state.Settings.TrackDesktopLocationChanges || _desktopWatcherRebindNeeded) && !displayTransitionInProgress)
             {
                 try { RefreshDesktopWatchers(); } catch (Exception ex) { DiagnosticsLog.Error("Desktop directory refresh failed", ex); }
             }
@@ -4855,6 +4911,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     private void ApplyRulesNow()
     {
         if (_safeMode) return;
+        // The explicit rules run is one of the two ways to hand user-placed icons back to automation.
+        ClearUserPlacedMarkersForRulesRun();
         ReorganizeDesktop(forceRules: true);
     }
 
