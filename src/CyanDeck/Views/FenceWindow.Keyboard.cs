@@ -154,15 +154,10 @@ public partial class FenceWindow
         if (tile is null && selected.Count == 0) return;
         if (e.Key == Key.Enter)
         {
-            if (selected.Count > 1)
-            {
-                foreach (var item in selected.Take(12)) Open(item.Path);
-            }
-            else if (tile is not null && SelectedTab?.Kind == DeckTabKind.FolderPortal && Directory.Exists(tile.Path))
-            {
-                OpenPortalFolder(tile.Path);
-            }
-            else if (tile is not null) Open(tile.Path);
+            // Same open path as double-click and the menus: counted, and large
+            // selections are confirmed (or capped with a notice) instead of cut silently.
+            if (selected.Count > 1) OpenTilesFromUser(selected);
+            else if (tile is not null) OpenTilesFromUser([tile]);
             e.Handled = true;
         }
         else if (e.Key == Key.F2 && selected.Count <= 1 && tile is not null)

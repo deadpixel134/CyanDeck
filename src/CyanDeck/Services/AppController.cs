@@ -224,6 +224,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         StartDesktopTouchPageHost();
         StartDesktopFolderPortalDropHost();
         StartLooseDesktopIconHost();
+        StartRecycleBinStateMonitor();
         StartForegroundEventSource();
         StartPeekCommandSurfaces();
         CreateTray();
@@ -2192,6 +2193,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
                 _state.Settings.EnableChameleon
                     ? Math.Clamp(_state.Settings.ChameleonIdleOpacity, 0.15, 1d)
                     : 1d));
+        _looseDesktopHost.AutoPlacementObstacles = GetLooseAutoPlacementObstacles;
         RefreshLooseDesktopIconHost();
     }
 
@@ -5874,6 +5876,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _exitDuringDisplayTransition = _displayTransition?.IsStableForUserLayoutAction == false;
         _displayTransition?.Dispose();
         _displayTransition = null;
+        StopRecycleBinStateMonitor();
         _looseDesktopHost?.Dispose();
         _looseDesktopHost = null;
         _touchPageHost?.Dispose();
@@ -5972,6 +5975,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         _desktopDisplay.Dispose();
         _desktopDoubleClick?.Dispose();
         _pageGesture?.Dispose();
+        StopRecycleBinStateMonitor();
         _looseDesktopHost?.Dispose();
         _touchPageHost?.Dispose();
         _folderPortalDropHost?.Dispose();

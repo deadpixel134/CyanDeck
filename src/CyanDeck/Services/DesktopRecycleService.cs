@@ -67,6 +67,7 @@ internal static class DesktopRecycleService
                 errors.Add($"{path}: {ex.Message}");
             }
         }
+        if (recycled.Count > 0) RecycleBinStateMonitor.RequestCheck();
         return (recycled, errors);
     }
 }

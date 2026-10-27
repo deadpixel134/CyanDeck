@@ -446,3 +446,60 @@ foreach (var empty in new[] { null, "", "   " })
     if (ShellPropertiesLauncher.TryShow(empty, out var emptyError) || string.IsNullOrEmpty(emptyError))
         throw new Exception("Empty properties target must fail with a reason.");
 Console.WriteLine("PASS: 6 properties target checks");
+
+// v70: opening many group items is confirmed (or capped with a notice), never silently cut.
+var v70OpenCases = new (int Total, bool Confirm, int Threshold, BatchOpenDecision Decision, int Open)[]
+{
+    (5, true, 20, BatchOpenDecision.OpenAll, 5),
+    (12, false, 20, BatchOpenDecision.OpenAll, 12),
+    (13, false, 20, BatchOpenDecision.OpenFirstAndNotify, 12),
+    (13, true, 20, BatchOpenDecision.OpenAll, 13),
+    (25, true, 20, BatchOpenDecision.ConfirmThenOpenAll, 25),
+    (13, true, 1, BatchOpenDecision.ConfirmThenOpenAll, 13),
+    (10, true, 5, BatchOpenDecision.ConfirmThenOpenAll, 10),
+    (10, false, 5, BatchOpenDecision.OpenAll, 10),
+    (-3, true, 20, BatchOpenDecision.OpenAll, 0),
+};
+foreach (var v70Case in v70OpenCases)
+{
+    var v70Plan = BatchOpenPolicy.Plan(v70Case.Total, v70Case.Confirm, v70Case.Threshold);
+    if (v70Plan.Decision != v70Case.Decision || v70Plan.OpenCount != v70Case.Open || v70Plan.TotalCount != Math.Max(0, v70Case.Total))
+        throw new Exception($"Batch open mismatch: total={v70Case.Total} confirm={v70Case.Confirm} threshold={v70Case.Threshold} -> {v70Plan}");
+}
+Console.WriteLine($"PASS: {v70OpenCases.Length} batch open checks");
+
+// v70: Folder Portal change bursts refresh after a quiet period, but at most 2 s after the first change.
+var v70T = new DateTime(2026, 10, 27, 12, 0, 0, DateTimeKind.Utc);
+if (FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T, v70T) != TimeSpan.FromMilliseconds(400) ||
+    FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T.AddMilliseconds(1900), v70T.AddMilliseconds(1900)) != TimeSpan.FromMilliseconds(100) ||
+    FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T.AddSeconds(3), v70T.AddSeconds(3)) != TimeSpan.Zero ||
+    FolderPortalRefreshCoalescingPolicy.NextDelay(v70T, v70T, v70T.AddSeconds(10)) != TimeSpan.Zero)
+    throw new Exception("Folder Portal refresh coalescing mismatch.");
+Console.WriteLine("PASS: 4 Folder Portal refresh coalescing checks");
+
+// v70: automatic loose icon slots are DPI-scaled and skip occupied cells (icons and groups).
+var v70Area = new System.Drawing.Rectangle(0, 0, 3840, 2160);
+var v70None = Array.Empty<System.Drawing.Rectangle>();
+var v70First = LooseDesktopAutoPlacementPlanner.FindSlot(v70Area, 2d, v70None, 0);
+if (v70First != new System.Drawing.Point(24, 24))
+    throw new Exception($"First 200% slot mismatch: {v70First}");
+var v70Second = LooseDesktopAutoPlacementPlanner.FindSlot(v70Area, 2d,
+    new[] { new System.Drawing.Rectangle(24, 24, 176, 208) }, 1);
+if (v70Second != new System.Drawing.Point(24, 24 + 324))
+    throw new Exception($"Second 200% slot mismatch: {v70Second}");
+var v70Gap = LooseDesktopAutoPlacementPlanner.FindSlot(new System.Drawing.Rectangle(0, 0, 1920, 1080), 1d,
+    new[] { new System.Drawing.Rectangle(12, 12, 88, 104), new System.Drawing.Rectangle(12, 12 + 162 * 2, 88, 104) }, 2);
+if (v70Gap != new System.Drawing.Point(12, 12 + 162))
+    throw new Exception($"Gap slot was not reused: {v70Gap}");
+var v70Group = LooseDesktopAutoPlacementPlanner.FindSlot(new System.Drawing.Rectangle(0, 0, 1920, 1080), 1d,
+    new[] { new System.Drawing.Rectangle(0, 0, 130, 1080) }, 0);
+if (v70Group != new System.Drawing.Point(12 + 136, 12))
+    throw new Exception($"Group window was not avoided: {v70Group}");
+var v70Tiny = new System.Drawing.Rectangle(0, 0, 200, 200);
+var v70Full = LooseDesktopAutoPlacementPlanner.FindSlot(v70Tiny, 1d, new[] { v70Tiny }, 5);
+if (v70Full != new System.Drawing.Point(12, 12))
+    throw new Exception($"Full-grid fallback mismatch: {v70Full}");
+if (LooseDesktopAutoPlacementPlanner.NormalizeScale(double.NaN) != 1d ||
+    LooseDesktopAutoPlacementPlanner.ScaleDip(LooseDesktopIconLayoutProfile.ItemWidthDip, 1.75) != 154)
+    throw new Exception("Loose icon DPI scaling mismatch.");
+Console.WriteLine("PASS: 6 loose icon auto-placement checks");

@@ -17,6 +17,12 @@ zone=f[f.index('private void DeleteItems('): f.index('private void OpenItem(')]
 remove=f[f.index('private void RemoveCollectionReferences('): f.index('private void DeleteItems(')]
 rename=f[f.index('private void RenameItem('):f.index('private void DeleteItem(')]
 reset=a[a.index('private bool ResetCyanDeckToDefaults()'):a.index('private void ReplaceState(')]
+# v70: groups show the Windows Shell menu only for REAL Desktop children
+# (same rule as loose desktop icons); external Collection references stay CyanDeck-only.
+items_shell=read('src/CyanDeck/Views/FenceWindow.ItemsShell.cs')
+shell_gate=items_shell[items_shell.index('private bool CanShowNativeShellMenu('):items_shell.index('private bool TryHandleNativeShellVerb(')]
+collection_shell_gated=('if (tab.Kind != DeckTabKind.Collection) return true;' in shell_gate and
+    'list.All(DesktopRecycleService.IsActualDesktopItem)' in shell_gate)
 checks={
 'collection Delete routed to ref removal before File IO':zone.index('RemoveCollectionReferences(tiles)')<zone.index('FileSystem.DeleteFile'),
 'collection deletion remains guarded from Portal and other paths': 'if (SelectedTab?.Kind == DeckTabKind.Collection)' in zone and 'if (SelectedTab?.Kind != DeckTabKind.FolderPortal) return;' in zone and 'return;' in zone,
@@ -24,8 +30,8 @@ checks={
 'collection uses source IDs not path-based delete': 'var ids = tiles.Select(t => t.Source.Id).ToHashSet();' in remove,
 'removal solely changes Tab.Items': 'tab.Items.RemoveAll(i => ids.Contains(i.Id));' in remove,
 'confirmation says originals preserved': '실제 원본 파일·폴더는 삭제하거나 이동하지 않습니다.' in remove,
-'collection no shell for single context menu': 'SelectedTab?.Kind != DeckTabKind.Collection &&\n            !IsProtectedDeletionTarget(tile.Path) &&\n            ShellContextMenuService.TryShow(this, tile.Path' in f,
-'collection no shell for multi context menu': 'SelectedTab?.Kind != DeckTabKind.Collection &&\n            existing.All(t => !IsProtectedDeletionTarget(t.Path)) &&\n            ShellContextMenuService.TryShow(this, existing.Select' in f,
+'collection external refs no shell for single context menu': collection_shell_gated and 'CanShowNativeShellMenu([tile.Path]) &&\n            !IsProtectedDeletionTarget(tile.Path) &&\n            ShellContextMenuService.TryShow(this, tile.Path' in f,
+'collection external refs no shell for multi context menu': collection_shell_gated and 'CanShowNativeShellMenu(existing.Select(t => t.Path)) &&\n            existing.All(t => !IsProtectedDeletionTarget(t.Path)) &&\n            ShellContextMenuService.TryShow(this, existing.Select' in f,
 'single UI explicitly group-only': '그룹에서만 제거 (원본 유지)' in f,
 'batch UI explicitly group-only': '선택 항목을 그룹에서만 제거 (원본 유지)' in f,
 'Delete and Shift Delete both go through guarded method': 'e.Key == Key.Delete' in k and ('DeleteItems(selected.Count > 0 ? selected' in k or 'DeleteItems(deleting);' in k),
@@ -40,7 +46,7 @@ checks={
 'collection rename touches UI label only': 'tile.Source.DisplayNameOverride = newLabel;' in rename,
 'collection rename returns before filesystem rename': rename.index('return;\n        }') < rename.index('File.Move('),
 'drop into collection stores DeckItem reference': 'tab.Items.Add(new DeckItem { Path = path });' in f,
-'source filesystem context menu invoked only for Portal': 'SelectedTab?.Kind != DeckTabKind.Collection &&' in f,
+'source filesystem context menu invoked only for Portal or real Desktop children': collection_shell_gated and f.count('CanShowNativeShellMenu(') >= 2,
 'factory reset button present': 'x:Name="FactoryResetButton"' in x,
 'factory reset button handler present': 'Click="FactoryReset_Click"' in x and 'private void FactoryReset_Click(' in c,
 'factory reset navigation present': 'Tag="AboutTab|FactoryResetSection"' in x,
