@@ -480,7 +480,7 @@
                             <TextBlock DockPanel.Dock="Right" MinWidth="44" TextAlignment="Right" Text="{Binding Value, ElementName=CalendarIdleOpacitySlider, StringFormat='{}{0:P0}'}"/>
                             <Slider x:Name="CalendarIdleOpacitySlider" Minimum="0.15" Maximum="1" Value="0.38"/>
                         </DockPanel>
-                        <TextBlock Text="사용 중(마우스를 올리거나 선택했을 때) 배경 불투명도" Margin="0,6,0,3"/>
+                        <TextBlock Text="사용 중(마우스를 올렸을 때·편집 중) 배경 불투명도" Margin="0,6,0,3"/>
                         <DockPanel Width="280" HorizontalAlignment="Left">
                             <TextBlock DockPanel.Dock="Right" MinWidth="44" TextAlignment="Right" Text="{Binding Value, ElementName=CalendarActiveOpacitySlider, StringFormat='{}{0:P0}'}"/>
                             <Slider x:Name="CalendarActiveOpacitySlider" Minimum="0.15" Maximum="1" Value="0.86"/>
