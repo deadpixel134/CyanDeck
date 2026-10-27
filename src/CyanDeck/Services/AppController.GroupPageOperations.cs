@@ -37,6 +37,10 @@ public sealed partial class AppController
         {
             if (_peek) SetPeek(false);
         };
+        // One-step layout undo from the group menu (same command as the tray arrange submenu).
+        window.LatestLayoutUndoLabelProvider = () => _safeMode || _compatibilityReadOnly ? null : DescribeLatestUndoCommand();
+        window.LayoutUndoRequested += () =>
+            _dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(UndoLastLayoutChange));
         if (!_launchPeekHookInstalled)
         {
             _launchPeekHookInstalled = true;

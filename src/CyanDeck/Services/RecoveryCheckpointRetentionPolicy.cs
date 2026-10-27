@@ -39,7 +39,10 @@ internal static class RecoveryCheckpointRetentionPolicy
         "unclean-session", "before-import", "before-factory-reset", "before-update",
         "before-github-auto-update", "before-startup-auto-update", "before-app-rollback",
         "before-recovery-restore", "before-automatic-layout", "before-geometry-reset",
-        "before-integrity-check", "before-delete", "before-remove"
+        "before-integrity-check", "before-delete", "before-remove",
+        // Group deletion / tab removal match "before-delete" / "before-remove" above; a bulk
+        // desktop cleanup (at most one per hour) is just as important to keep.
+        "before-desktop-cleanup"
     };
 
     internal static RecoveryCheckpointBucket Classify(string? fileNameWithoutExtension)

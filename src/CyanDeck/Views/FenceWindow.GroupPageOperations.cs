@@ -40,12 +40,15 @@ public partial class FenceWindow
     internal Func<FenceWindow, int>? NewPageTargetProvider { get; set; }
     /// <summary>-1/+1 while the pointer dragging this group rests on a page-switching screen edge.</summary>
     internal Func<FenceWindow, int>? PageEdgeDropDirectionResolver { get; set; }
+    /// <summary>"마지막 배치 변경 되돌리기 (…)" label, or null when there is nothing to undo.</summary>
+    internal Func<string?>? LatestLayoutUndoLabelProvider { get; set; }
 
     public event Action<FenceWindow, int>? SendToPageRequested;
     public event Action<FenceWindow, Guid>? RenameTemplateRequested;
     public event Action<FenceWindow, Guid>? DeleteTemplateRequested;
     public event Action? GlobalSearchRequested;
     public event Action? PeekEndRequested;
+    public event Action? LayoutUndoRequested;
 
     // In a Folder Portal tab every item shares the portal's current folder, so that part is
     // left out too; only the name, the path below that folder and the type are searched.

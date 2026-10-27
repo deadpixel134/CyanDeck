@@ -95,7 +95,10 @@ public sealed partial class GoogleCalendarSync
             return "conflict";
         }
         if (!probe.IsSuccessStatusCode)
+        {
+            await ThrowIfEventRejectedAsync(probe);
             throw new HttpRequestException($"Google 반복 일정 조회 실패 {(int)probe.StatusCode}");
+        }
         using var series = JsonDocument.Parse(await probe.Content.ReadAsStringAsync());
         var root = series.RootElement;
         var seriesTag = root.TryGetProperty("etag", out var tagProperty) ? tagProperty.GetString() : null;
@@ -144,7 +147,12 @@ public sealed partial class GoogleCalendarSync
                 return "conflict";
             }
             if (!response.IsSuccessStatusCode)
+            {
+                // Like single events: a reply about this series only (e.g. 400 invalid) marks
+                // this event instead of failing the whole sync on every run.
+                await ThrowIfEventRejectedAsync(response);
                 throw new HttpRequestException($"Google 반복 일정 변경 실패 {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+            }
         }
         _store.CommitEventChange(id, current =>
         {

@@ -136,5 +136,12 @@ public static class GoogleDisconnectPolicy
         ev.Dirty = false;
         ev.Conflict = false;
         ev.SyncError = null;
+        // Google series links (recurrence support): a kept copy is a plain local event and must
+        // not be edited or pushed as an instance of the old account's series. A local repeat
+        // rule (Recurrence / RecurrenceExceptions) is kept.
+        ev.RecurringEventId = null;
+        ev.SeriesEditPending = false;
+        ev.SeriesBaseStartAt = null;
+        ev.RemoteOrganizerOnly = false;
     }
 }

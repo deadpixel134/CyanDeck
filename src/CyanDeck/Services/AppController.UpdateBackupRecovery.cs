@@ -46,9 +46,21 @@ public sealed partial class AppController
             return $"되돌리기를 취소하고 CyanDeck v{heldText}을(를) 다시 설치하시겠습니까?\n\n" +
                 "자동 설치 보류도 해제됩니다. %APPDATA%의 레이아웃과 설정은 교체되지 않습니다.";
         }
-        return "마지막 CyanDeck 업데이트 전에 저장한 프로그램 파일로 되돌리시겠습니까? %APPDATA%의 레이아웃과 설정은 교체되지 않습니다.\n\n" +
-            $"되돌린 v{current}은(는) 더 새 버전이 나오거나 직접 업데이트할 때까지 자동으로 다시 설치하지 않습니다.";
+        var intro = "마지막 CyanDeck 업데이트 전에 저장한 프로그램 파일로 되돌리시겠습니까? %APPDATA%의 레이아웃과 설정은 교체되지 않습니다.\n\n";
+        if (!_state.Settings.InstallUpdatesAutomatically)
+            return intro + $"'시작할 때 새 버전 자동 설치'가 꺼져 있어 되돌린 v{current}은(는) 자동으로 다시 설치되지 않습니다.";
+        if (!RollbackTargetIgnoresHold())
+            return intro + $"되돌린 v{current}은(는) 더 새 버전이 나오거나 직접 업데이트할 때까지 자동으로 다시 설치하지 않습니다.";
+        if (_compatibilityReadOnly)
+            return intro + $"되돌릴 버전은 자동 설치 보류를 지원하지 않아 다음 시작 때 v{current}을(를) 자동으로 다시 설치할 수 있습니다. 먼저 '시작할 때 새 버전 자동 설치'를 끄세요.";
+        return intro + "되돌릴 버전은 자동 설치 보류를 지원하지 않으므로 '시작할 때 새 버전 자동 설치'를 끕니다.\n" +
+            $"v{current} 이상으로 다시 업데이트하면 이 설정이 다시 켜집니다.";
     }
+
+    // The rollback snapshot predates the hold (or its version is unknown): that build would
+    // reinstall the held version through its own automatic install.
+    private static bool RollbackTargetIgnoresHold() =>
+        !UpdateRollbackHold.HonorsHold(UpdateRollbackHold.ReadSnapshotVersion(UpdateService.GetLatestRollbackDirectory()));
 
     // Called right before the rollback installer starts.
     private void ApplyRollbackHoldBeforeLaunch(bool undo)
@@ -64,6 +76,33 @@ public sealed partial class AppController
             DiagnosticsLog.Info($"Automatic install held for v{UpdateRollbackHold.Format(version)} after rollback request.");
         else
             DiagnosticsLog.Warn("Could not record the automatic-install hold before rollback.");
+        // An older target build ignores the hold file but honours the setting.
+        if (_state.Settings.InstallUpdatesAutomatically && !_compatibilityReadOnly && RollbackTargetIgnoresHold())
+        {
+            if (!UpdateRollbackHold.RecordAutoInstallPause(DataRootPaths.ActiveLocal))
+            {
+                DiagnosticsLog.Warn("Could not record the automatic-install pause marker; automatic install left unchanged.");
+                return;
+            }
+            _state.Settings.InstallUpdatesAutomatically = false;
+            _persistDirty = true;
+            PersistNow(force: true, bypassDisplayTransition: true);
+            DiagnosticsLog.Info("Rollback target predates the automatic-install hold; automatic install turned off until a hold-aware build starts.");
+        }
+    }
+
+    // A hold-aware build is running again: undo the setting change made for an older rollback target.
+    private void RestoreAutoInstallPausedByRollback()
+    {
+        // Safe Mode does not rewrite preferences; the marker waits for the next normal start.
+        if (_safeMode || _compatibilityReadOnly || !UpdateRollbackHold.HasAutoInstallPause(DataRootPaths.ActiveLocal)) return;
+        if (!_state.Settings.InstallUpdatesAutomatically)
+        {
+            _state.Settings.InstallUpdatesAutomatically = true;
+            Persist();
+        }
+        UpdateRollbackHold.ClearAutoInstallPause(DataRootPaths.ActiveLocal);
+        DiagnosticsLog.Info("Automatic install turned back on after the rollback-era pause.");
     }
 
     // Background (non-interactive) install path: true when the release must be skipped.
@@ -102,6 +141,7 @@ public sealed partial class AppController
             UpdateRollbackHold.Clear(DataRootPaths.ActiveLocal);
             DiagnosticsLog.Info("Stale automatic-install hold cleared at startup.");
         }
+        RestoreAutoInstallPausedByRollback();
         // Safe Mode keeps side effects minimal; the next normal start does the housekeeping.
         if (_safeMode || UpdateService.HasPendingRecovery()) return;
         _ = Task.Run(() =>
@@ -201,7 +241,7 @@ public sealed partial class AppController
         var when = LayoutSnapshotNamePolicy.FormatShortDateTime(undo.CreatedUtc.ToLocalTime());
         if (System.Windows.MessageBox.Show(
                 $"'{action}' 전 배치({when})로 그룹 위치·크기·페이지와 항목 위치를 되돌리시겠습니까?\n\n" +
-                "지금 배치는 먼저 복구 지점으로 저장하므로 트레이의 '백업 / 복원 > 복구 체크포인트'에서 다시 되돌릴 수 있습니다.",
+                "지금 배치는 먼저 복구 지점으로 저장하므로 트레이 → 백업 및 복구 → 백업 / 복원 → 복구 체크포인트에서 다시 되돌릴 수 있습니다.",
                 "CyanDeck 배치 되돌리기", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
         // The state may have changed while the dialog was open.
@@ -245,7 +285,7 @@ public sealed partial class AppController
         if (!_layoutUnreadableProtection) return false;
         System.Windows.MessageBox.Show(
             "레이아웃 파일을 읽지 못한 보호 모드에서는 내보낼 레이아웃이 없습니다. 기존 백업 파일을 빈 내용으로 덮어쓰지 않도록 내보내기를 멈췄습니다.\n\n" +
-            "먼저 트레이의 '레이아웃 파일 복구…'에서 복원하거나 설정에서 백업을 가져오세요.",
+            "먼저 트레이 → 백업 및 복구 → 레이아웃 파일 복구…에서 복원하거나 설정에서 백업을 가져오세요.",
             "CyanDeck 내보내기", MessageBoxButton.OK, MessageBoxImage.Information);
         return true;
     }
@@ -352,7 +392,7 @@ public sealed partial class AppController
     {
         var message = restartRequired
             ? "백업을 가져왔습니다. CyanDeck을 일반 모드로 다시 시작합니다."
-            : "백업을 가져왔습니다. 이전 상태는 트레이의 '백업 / 복원 > 복구 체크포인트'에서 되돌릴 수 있습니다.";
+            : "백업을 가져왔습니다. 이전 상태는 트레이 → 백업 및 복구 → 백업 / 복원 → 복구 체크포인트에서 되돌릴 수 있습니다.";
         System.Windows.MessageBox.Show(message, "CyanDeck 가져오기 완료", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
@@ -390,7 +430,7 @@ public sealed partial class AppController
             MessageBoxButton.YesNoCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
         if (answer == MessageBoxResult.Yes && candidate is not null) RecoverUnreadableLayoutFrom(candidate);
         else if (answer == MessageBoxResult.Yes)
-            System.Windows.MessageBox.Show("사용할 수 있는 복구 지점이 없습니다. 트레이의 '레이아웃 파일 복구…'에서 다른 방법을 선택하거나 설정에서 백업을 가져오세요.",
+            System.Windows.MessageBox.Show("사용할 수 있는 복구 지점이 없습니다. 트레이 → 백업 및 복구 → 레이아웃 파일 복구…에서 다른 방법을 선택하거나 설정에서 백업을 가져오세요.",
                 "CyanDeck 복구", MessageBoxButton.OK, MessageBoxImage.Information);
         else if (answer == MessageBoxResult.No) StartFreshAfterUnreadableLayout();
         else if (answer == MessageBoxResult.Cancel) OpenSettingsFolder();
@@ -479,7 +519,7 @@ public sealed partial class AppController
             else
             {
                 _trayController.ShowBalloonTip(9000, "CyanDeck 이전 세션 복구",
-                    "지난번에 CyanDeck이 정상 종료되지 않았습니다. 트레이 메뉴의 '이전 세션 복구 데이터 사용 가능…'에서 그때 상태로 되돌릴 수 있습니다.",
+                    "지난번에 CyanDeck이 정상 종료되지 않았습니다. 트레이 → 백업 및 복구 → 이전 세션 복구 데이터 사용 가능…에서 그때 상태로 되돌릴 수 있습니다.",
                     Forms.ToolTipIcon.Info);
             }
         }));

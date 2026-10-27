@@ -85,6 +85,9 @@ public sealed partial class GoogleCalendarSync
         {
             current.Conflict = true;
             current.SyncError = reason;
+            // A refused "모든 반복 일정" delete is undone like other series conflicts, so a later
+            // retry cannot turn it into a series title/time change.
+            if (CalendarRecurrenceExpander.UndoConflictedSeriesDelete(current)) return true;
             if (current.Deleted && current.RemoteId is not null)
                 current.Deleted = false;
             return true;

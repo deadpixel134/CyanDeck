@@ -1320,7 +1320,8 @@ finally { Directory.Delete(appearanceScratch, recursive: true); }
     {
         v68LocalOnly,
         new() { Title = "clean google", RemoteId = "g1", RemoteETag = "e1", Dirty = false, CalendarId = "me@example.com" },
-        new() { Title = "unsent edit", RemoteId = "g2", RemoteETag = "e2", Dirty = true, CalendarId = "me@example.com" },
+        new() { Title = "unsent edit", RemoteId = "g2", RemoteETag = "e2", Dirty = true, CalendarId = "me@example.com",
+            RecurringEventId = "series1", SeriesEditPending = true, SeriesBaseStartAt = DateTimeOffset.UtcNow, RemoteOrganizerOnly = true },
         new() { Title = "pending create", RemoteId = "ddabc", RemoteCreatePending = true, Dirty = true, CalendarId = "me@example.com" },
         new() { Title = "never uploaded", Dirty = true, CalendarId = "me@example.com" },
         new() { Title = "pending delete", RemoteId = "g3", RemoteETag = "e3", Dirty = true, Deleted = true, CalendarId = "me@example.com" }
@@ -1332,7 +1333,8 @@ finally { Directory.Delete(appearanceScratch, recursive: true); }
     Assert.That(v68Disconnect.Removed == 2 && v68Disconnect.ConvertedToLocal == 3 && v68Disconnect.KeptLocal == 1 &&
         v68Events.Count == 4 &&
         v68Events.All(e => e.LocalOnly && e.RemoteId is null && e.RemoteETag is null && !e.RemoteCreatePending && !e.Dirty &&
-            e.CalendarId == CalendarEventStore.LocalCalendarId),
+            e.CalendarId == CalendarEventStore.LocalCalendarId &&
+            e.RecurringEventId is null && !e.SeriesEditPending && e.SeriesBaseStartAt is null && !e.RemoteOrganizerOnly),
         "disconnect leaves no event that could be pushed to a different account");
 
     var v68Credentials = new VerifiedCredentialCheckpoint<string>();
@@ -1394,6 +1396,22 @@ finally { Directory.Delete(appearanceScratch, recursive: true); }
         Assert.That(new CalendarEventAppearanceStore(Path.Combine(v68Scratch, "fresh-appearance.json"))
                 .Get(v68Plan.Added[0].Id).BackgroundColor == "#26B7A9",
             "imported colors are saved in one checkpoint");
+
+        // A local repeating series keeps its rule and removed occurrences through export/import.
+        var v68Series = new CalendarEvent { Title = "반복 로컬", Date = new DateTime(2026, 6, 1), LocalOnly = true, Dirty = false,
+            CalendarId = CalendarEventStore.LocalCalendarId, Recurrence = "FREQ=DAILY;COUNT=5",
+            RecurrenceExceptions = [new DateTime(2026, 6, 3)] };
+        var v68SeriesPath = Path.Combine(v68Scratch, "series-backup.json");
+        Assert.That(CalendarEventBackup.Export(new[] { v68Series }, _ => new CalendarEventAppearance(), v68SeriesPath) == 1,
+            "a local series is exported");
+        var v68SeriesPlan = CalendarEventBackup.PlanImport(new List<CalendarEvent>(), CalendarEventBackup.Read(v68SeriesPath));
+        Assert.That(v68SeriesPlan.Added.Single() is { Recurrence: "FREQ=DAILY;COUNT=5" } seriesCopy &&
+            seriesCopy.RecurrenceExceptions?.SequenceEqual(new[] { new DateTime(2026, 6, 3) }) == true,
+            "export/import keeps the repeat rule and the removed occurrences");
+        var v68OneOff = new CalendarEvent { Title = "반복 로컬", Date = new DateTime(2026, 6, 1), LocalOnly = true, Dirty = false,
+            CalendarId = CalendarEventStore.LocalCalendarId };
+        Assert.That(CalendarEventBackup.PlanImport(new List<CalendarEvent> { v68OneOff }, CalendarEventBackup.Read(v68SeriesPath)).Added.Count == 1,
+            "a series is not skipped as a duplicate of a one-off event on its first date");
 
         var v68NotBackup = Path.Combine(v68Scratch, "layout-export.json");
         File.WriteAllText(v68NotBackup, "{\"Settings\":{},\"Fences\":[]}");

@@ -28,6 +28,8 @@ fence_project = read("tests/FenceVisibilityHarness/FenceVisibilityHarness.csproj
 reset_harness = read("tests/CompleteResetHarness/Program.cs")
 reset_project = read("tests/CompleteResetHarness/CompleteResetHarness.csproj")
 schema = read("src/CyanDeck/Services/StateSchema.cs")
+group_menu = read("src/CyanDeck/Views/FenceWindow.ContextMenu.cs")
+page_ops = read("src/CyanDeck/Services/AppController.GroupPageOperations.cs")
 
 preflight = startup.split("private async Task<(bool ExitForUpdate, bool Attempted)> RunStartupUpdatePreflightAsync(", 1)[1].split("private static string? GetOptionValue(", 1)[0]
 rollback = app.split("private void RollbackLastUpdate()", 1)[1].split("private void RepairDesktopAttachment()", 1)[0]
@@ -74,6 +76,15 @@ checks = {
         'TrayMenuRoutingPolicy.Route("recovery.app-rollback", "되돌리기 취소 (v8.0.43 다시 설치)…")' in fence_harness,
     "stale hold is cleared at startup":
         "UpdateRollbackHold.IsStale(held, version)" in part and "StartUpdateStorageMaintenance();" in start,
+    # Fixer: a rollback target older than the hold ignores it, so auto-install is paused and restored.
+    "rolling back to a pre-hold build pauses auto-install; the next hold-aware start restores it":
+        "public static readonly Version FirstHoldAwareVersion = new(8, 0, 44);" in hold and
+        "FileVersionInfo.GetVersionInfo(exe)" in hold and
+        "UpdateRollbackHold.RecordAutoInstallPause(DataRootPaths.ActiveLocal)" in part and
+        "_state.Settings.InstallUpdatesAutomatically = false;" in part and
+        "RestoreAutoInstallPausedByRollback();" in part,
+    "a protected start keeps the previous session marker on exit":
+        app.count("if (!_layoutUnreadableProtection) _store.EndSession();") == 2,
     # #16 undo snapshots
     "undo checkpoints are flagged and kept in their own bucket of 5":
         "snapshot.IsUndoCheckpoint = true;" in app and
@@ -177,7 +188,9 @@ checks = {
     "stale background payload never overwrites a newer save":
         "if (prepared.Sequence <= _committedSequence) return false;" in store and
         "_persistChangeGeneration++;" in app and
-        "if (generation == _persistChangeGeneration) _persistDirty = false;" in background,
+        "if (generation == _persistChangeGeneration) _persistDirty = false;" in background and
+        # Fixer: failed or synchronous saves also bump it, so a completion never acknowledges them.
+        app.count("_persistChangeGeneration++;") >= 3,
     "background save failures keep the existing backoff and reporting":
         "DeferPersistAfterFileError(failure);" in background and
         "if (_backgroundPersistInFlight) return;" in background,
@@ -213,6 +226,15 @@ checks = {
         "Production/UpdateRollbackHold.cs" in reset_project and "Production/UpdateStorageMaintenance.cs" in reset_project and
         "UpdateRollbackHold.ShouldSkipAutomaticInstall(mockLocal" in reset_harness and
         "UpdateStorageMaintenance.Prune(mockLocal" in reset_harness,
+    # Cross-batch: the group menu offers the same one-step undo (policy-gated like its
+    # neighbours), and removal checkpoints from the preservation batch are kept as important.
+    "group menu offers the same one-step undo as the tray":
+        "LatestLayoutUndoLabelProvider?.Invoke() is { } undoLabel" in group_menu and
+        'undoItem.IsEnabled = CapabilityAllowed("Layout.MoveResizeGroups");' in group_menu and
+        "window.LatestLayoutUndoLabelProvider = " in page_ops and
+        "new Action(UndoLastLayoutChange)" in page_ops,
+    "group/tab removal and desktop cleanup checkpoints use the important retention bucket":
+        '"before-delete", "before-remove",' in retention and '"before-desktop-cleanup"' in retention,
     "state schema stays 35":
         "Current = 35" in schema,
 }

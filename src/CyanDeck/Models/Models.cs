@@ -248,7 +248,8 @@ public sealed class DeckSettings
 
     public string UpdateManifestSource { get; set; } = "";
     public DateTime? LastUpdateCheckUtc { get; set; }
-    public bool RequireSignedUpdateManifests { get; set; } = true;
+    // Manifest signature verification is always on. The retired always-true signing toggle
+    // may still appear in older layout.json files; unknown JSON members are skipped on load.
     public string UpdatePublicKeyPath { get; set; } = "";
 }
 

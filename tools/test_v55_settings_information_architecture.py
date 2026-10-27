@@ -8,7 +8,10 @@ v8.0.43 settings redesign: the route count is derived (one leaf per section card
 of a fixed number, desktop-icon rendering moved to the desktop icon page, page gestures
 joined the page transition on "바탕화면 페이지", icon movement joined "그룹 모양" and the
 folder portal / multi-select options joined "그룹 동작". Every page still inherits the
-Settings.EditGeneral read-only gate."""
+Settings.EditGeneral read-only gate.
+
+v8.0.44: the input/Peek/page options added by the improvement batches sit on their owning
+pages (so they keep those pages' policy gates) and use the shared load/save/reset paths."""
 import re
 from collections import Counter
 from pathlib import Path
@@ -107,7 +110,22 @@ checks = {
             "LoadingPerformanceSection", "AsyncItemLoadingCheck", "IconCacheSlider"),
     "layout and backup page owns snapshots and import/export":
         has("LayoutTab", "SnapshotsSection", "LayoutAdjustmentCombo",
-            "BackupSection", "ImportConfigurationButton"),
+            "BackupSection", "ImportConfigurationButton", "RecoveryPointsSection", "RecoveryPointList"),
+    # v8.0.44: new options live on their owning (policy-gated) pages and share load/save/reset.
+    "v8.0.44 input, Peek and page options sit on their pages and are loaded, saved and reset":
+        has("PeekTab", "DesktopDoubleClickQuickHideCheck", "TrayDoubleClickActionCombo",
+            "PeekHotCornerThicknessSlider", "PeekTaskbarIconPathBox", "EndPeekAfterLaunchCheck",
+            "CreateCommandShortcutsButton") and
+        has("AnimationTab", "FollowGroupSentToPageCheck", "PageKeyboardCommandsCheck") and
+        all(f"{c}.IsChecked = state.Settings.{p};" in code and f"s.{p} = {c}.IsChecked == true;" in code
+            and f"{c}.IsChecked = d.{p};" in code for c, p in (
+                ("FollowGroupSentToPageCheck", "FollowGroupSentToPage"),
+                ("PageKeyboardCommandsCheck", "EnablePageKeyboardNavigation"),
+                ("EndPeekAfterLaunchCheck", "EndPeekAfterLaunch"),
+                ("DesktopDoubleClickQuickHideCheck", "EnableDesktopDoubleClickQuickHide"))) and
+        all(f"s.{p} = " in code for p in ("TrayDoubleClickAction", "PeekHotCornerHitThicknessPx",
+                                          "PeekTaskbarCustomIconPath")) and
+        "PeekTaskbarButtonIconResolver.DescribeCustomIconProblem(dialog.FileName)" in code,
     "settings default restore sits with the other resets and keeps the general-settings policy":
         has("AboutTab", "ResetSection", "ResetGeneralButton", "FactoryResetSection") and
         "ResetGeneralButton.IsEnabled = GeneralTab.IsEnabled;" in code,

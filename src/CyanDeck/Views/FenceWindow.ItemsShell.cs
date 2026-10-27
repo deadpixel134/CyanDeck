@@ -84,8 +84,8 @@ public partial class FenceWindow
         if (plan.Decision == BatchOpenDecision.OpenFirstAndNotify)
         {
             var notice = $"선택한 {plan.TotalCount}개 중 처음 {plan.OpenCount}개만 열었습니다.\n" +
-                // Names the existing Settings checkbox (성능 > 대량 작업·캐시) so the user can find it.
-                "모두 열려면 설정 > 대량 작업·캐시에서 '대량 휴지통 작업 전에 추가 확인'을 켜 주세요. 켜 두면 열기 전에 한 번 묻고 모두 엽니다.";
+                // Names the redesigned Settings checkbox (그룹 동작 > 대량 작업 확인) so the user can find it.
+                "모두 열려면 설정 > 그룹 동작 > 대량 작업 확인에서 '많은 항목을 열거나 휴지통으로 보낼 때 확인'을 켜 주세요. 켜 두면 열기 전에 한 번 묻고 모두 엽니다.";
             System.Windows.MessageBox.Show(this, notice, "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }

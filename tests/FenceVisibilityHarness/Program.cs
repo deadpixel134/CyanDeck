@@ -592,6 +592,8 @@ var checkpointCases = new (string File, string Expected)[]
     ("before-monitor-profile-restore-0123456789abcdef0123456789abcdef-20261027-101500", "모니터 배치를 복원하기 전"),
     ("before-github-auto-update-8-0-36-20261027-101500", "자동 업데이트 설치 전 (v8.0.36)"),
     ("before-update-20261027-101500", "업데이트 설치 전"),
+    ("before-desktop-cleanup-20261027-101500", "바탕화면 항목 정리 전"),
+    ("Before-swapping-screen-contents-20261027-101500", "화면 내용 교환 전"),
     ("before-importer-20261027-101500", "before-importer"),
     ("custom-0123456789abcdef0123456789abcdef-20261027-101500", "custom"),
     ("", "복구 지점")
@@ -675,6 +677,9 @@ if (RecoveryCheckpointRetentionPolicy.Classify("before-monitor-profile-restore-0
     RecoveryCheckpointRetentionPolicy.Classify("before-import-20261027-101500") != RecoveryCheckpointBucket.Important ||
     RecoveryCheckpointRetentionPolicy.Classify("unclean-session-20261027-101500") != RecoveryCheckpointBucket.Important ||
     RecoveryCheckpointRetentionPolicy.Classify("before-update-8-0-42-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-delete-group-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-remove-tab-20261027-101500") != RecoveryCheckpointBucket.Important ||
+    RecoveryCheckpointRetentionPolicy.Classify("before-desktop-cleanup-20261027-101500") != RecoveryCheckpointBucket.Important ||
     RecoveryCheckpointRetentionPolicy.Classify("before-importer-20261027-101500") != RecoveryCheckpointBucket.Other)
     throw new Exception("Recovery checkpoint retention bucket mismatch.");
 var retentionNow = new DateTime(2026, 10, 27, 12, 0, 0, DateTimeKind.Utc);

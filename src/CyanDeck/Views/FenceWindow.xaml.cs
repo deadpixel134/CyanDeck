@@ -3473,6 +3473,7 @@ public partial class FenceWindow : Window
                 RefreshItems(IconMovementAnimationContext.ItemSetChanged);
                 ModelChanged?.Invoke();
             }));
+            AddBatchItemPlacementShellExtras(extras, existing);
         }
 
         // open/rename/group delete are routed to CyanDeck's own commands (see TryHandleNativeShellVerb).

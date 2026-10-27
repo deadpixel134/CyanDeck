@@ -13,9 +13,16 @@ public sealed partial class AppController
     {
         try
         {
-            var written = _calendar is not null
-                ? _calendar.ExportLocalEventsCompanion(configurationPath)
-                : CalendarEventBackup.ExportCompanion(new CalendarEventStore().Events, configurationPath);
+            int written;
+            if (_calendar is not null)
+                written = _calendar.ExportLocalEventsCompanion(configurationPath);
+            else
+            {
+                // A store that could not read its files must not empty an existing companion.
+                var events = new CalendarEventStore();
+                written = CalendarEventBackup.ExportCompanion(events.Events, configurationPath,
+                    eventsUnavailable: events.IsReadOnly && !events.IsRecoveredFromBackup);
+            }
             if (written > 0)
                 DiagnosticsLog.Info($"Exported {written} local calendar events next to the configuration backup");
             return written;

@@ -100,6 +100,11 @@ checks = {
         'new MenuItem { Header = "다른 그룹/탭으로 이동" }' in fence_pres and
         "AddItemPlacementMenuEntries(menu, tiles);" in fence and
         "AddItemPlacementMenuEntries(menu, new[] { tile });" in fence,
+    # Cross-batch (v70): desktop files in a group now get the Windows menu, which keeps the move.
+    "the Windows menu for desktop files in a group still offers 다른 그룹/탭으로 이동":
+        'extras.Add(new("다른 그룹/탭으로 이동…"' in fence_pres and
+        "AddItemMoveShellExtra(extras, tab, new[] { tile.Source.Id });" in fence_pres and
+        "AddBatchItemPlacementShellExtras(extras, existing);" in fence,
     # 2: tab/group removal
     "every tab removal path confirms first and defaults to No":
         "if (!ConfirmRemoveTab(removedTab)) return;" in remove_tab and
@@ -169,7 +174,11 @@ checks = {
         "RenameGroupedDesktopReferences(rename.OldPath, rename.NewPath);" in apply_renames and
         "=> !oldPathPresent && newPathPresent;" in policy and
         "item.Path = newNormalized;" in rename_refs and
-        "DesktopItemPreservationPolicy.ShouldPinRenamedItem(item.AddedUtc, now)" in rename_refs,
+        "DesktopItemPreservationPolicy.ShouldPinRenamedItem(item.AddedUtc, now)" in rename_refs and
+        # Fixer: an automatic reconcile waits until queued renames are older than the settle delay.
+        "if (DeferReconcileForUnsettledRenames(forceRules)) return;" in reorganize and
+        reorganize.index("DeferReconcileForUnsettledRenames(") < reorganize.index("ApplyPendingGroupedRenames(desktopSnapshot);") and
+        "if (age >= GroupedRenameSettleDelay)" in pres,
     "desktop files get a real rename next to the display-name-only rename":
         '"표시 이름만 바꾸기…"' in fence and "AddFileRenameMenuEntry(menu, tile);" in fence and
         'MakeItem("파일 이름 바꾸기…"' in fence_pres and

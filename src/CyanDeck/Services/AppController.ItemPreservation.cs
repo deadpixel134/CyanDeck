@@ -22,10 +22,15 @@ public sealed partial class AppController
     private static readonly TimeSpan GroupedRenameSettleDelay = TimeSpan.FromMilliseconds(1500);
     private const int MaxPendingGroupedRenames = 256;
 
+    // An automatic reconcile waits for young renames to settle, but never longer than this in a row.
+    private static readonly TimeSpan MaxRenameReconcileDeferral = TimeSpan.FromSeconds(6);
+    private DateTime? _renameReconcileDeferredSinceUtc;
+
     private sealed class PendingGroupedRename
     {
         public string OldPath = "";
         public string NewPath = "";
+        public DateTime QueuedUtc = DateTime.UtcNow;
     }
 
     private sealed record DesktopReconcileSnapshot(
@@ -240,7 +245,8 @@ public sealed partial class AppController
         if (rehomed > 0) parts.Add($"바탕화면 항목 {rehomed}개는 다른 탭이나 그룹 밖 아이콘으로 옮겼습니다.");
         if (checkpointSaved)
         {
-            parts.Add("되돌리려면 트레이 메뉴의 '백업 / 복원 > 복구 체크포인트'를 사용하세요.");
+            // Same path as the tray menu (CompactTrayMenu nests "백업 / 복원" under "백업 및 복구").
+            parts.Add("되돌리려면 트레이 → 백업 및 복구 → 백업 / 복원 → 복구 체크포인트를 사용하세요.");
             RebuildTrayMenu();
         }
         if (parts.Count == 1) return;
@@ -282,7 +288,10 @@ public sealed partial class AppController
         foreach (var earlier in _pendingGroupedRenames)
         {
             if (string.Equals(earlier.NewPath, oldNormalized, StringComparison.OrdinalIgnoreCase))
+            {
                 earlier.NewPath = newNormalized;
+                earlier.QueuedUtc = DateTime.UtcNow; // The chain is still moving; settle again.
+            }
         }
         if (_pendingGroupedRenames.Count >= MaxPendingGroupedRenames) _pendingGroupedRenames.RemoveAt(0);
         _pendingGroupedRenames.Add(new PendingGroupedRename { OldPath = oldNormalized, NewPath = newNormalized });
@@ -298,6 +307,39 @@ public sealed partial class AppController
         _groupedRenameTimer.Stop();
         _groupedRenameTimer.Interval = GroupedRenameSettleDelay;
         _groupedRenameTimer.Start();
+    }
+
+    /// <summary>
+    /// An automatic reconcile that runs while a rename is younger than the settle delay would see
+    /// the temp-file state of a program saving through a temp file (original name gone, temp name
+    /// present) and repoint or drop the grouped item. It is pushed back until the renames settle,
+    /// at most MaxRenameReconcileDeferral in a row. Explicit rules runs are never deferred.
+    /// </summary>
+    private bool DeferReconcileForUnsettledRenames(bool forceRules)
+    {
+        if (forceRules || _pendingGroupedRenames.Count == 0 ||
+            !_desktopRuntimeStarted || !_state.Settings.AutoImportDesktop)
+        {
+            _renameReconcileDeferredSinceUtc = null;
+            return false;
+        }
+        var now = DateTime.UtcNow;
+        var youngest = _pendingGroupedRenames.Max(r => r.QueuedUtc);
+        var age = now - youngest;
+        if (age >= GroupedRenameSettleDelay)
+        {
+            _renameReconcileDeferredSinceUtc = null;
+            return false;
+        }
+        _renameReconcileDeferredSinceUtc ??= now;
+        if (now - _renameReconcileDeferredSinceUtc.Value > MaxRenameReconcileDeferral)
+        {
+            _renameReconcileDeferredSinceUtc = null;
+            return false;
+        }
+        var waitMs = (int)Math.Ceiling((GroupedRenameSettleDelay - age).TotalMilliseconds) + 50;
+        ScheduleDesktopReconcile(waitMs);
+        return true;
     }
 
     private void GroupedRenameTimer_Tick(object? sender, EventArgs e)
@@ -444,8 +486,26 @@ public sealed partial class AppController
     /// <summary>A skipped automatic reconcile is retried shortly so changes are not held until the next event.</summary>
     private void RetryDesktopReconcileAfterSkip()
     {
+        _desktopReconcileSkipCount++;
         if (_disposed || !_desktopRuntimeStarted || !_state.Settings.AutoImportDesktop) return;
         ScheduleDesktopReconcile(3000);
+    }
+
+    private int _desktopReconcileSkipCount;
+
+    // Tray "바탕화면 항목 지금 다시 검색": a pass skipped because a desktop folder is briefly
+    // unreachable says so instead of silently doing nothing.
+    private void RescanDesktopFromTray()
+    {
+        RefreshDesktopWatchers(force: true, reconcile: false);
+        var skipsBefore = _desktopReconcileSkipCount;
+        ReorganizeDesktop();
+        if (_desktopReconcileSkipCount == skipsBefore) return;
+        _trayController?.ShowBalloonTip(5000, "CyanDeck",
+            _state.Settings.AutoImportDesktop
+                ? "바탕화면 폴더 하나에 잠시 연결할 수 없어 다시 검색을 미뤘습니다. 다시 연결되면 자동으로 검색합니다."
+                : "바탕화면 폴더 하나에 잠시 연결할 수 없어 다시 검색하지 않았습니다. 잠시 뒤 다시 시도하세요.",
+            Forms.ToolTipIcon.Info);
     }
 
     /// <summary>Probes each folder once per pass; an offline network folder can block for seconds per probe.</summary>

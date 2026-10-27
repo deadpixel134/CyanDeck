@@ -198,7 +198,11 @@ checks = {
         'public string Format { get; set; } = "";' in backup and 'FormatName = "CyanDeck.CalendarEvents"' in backup,
     "never-confirmed creates are backed up and a stale companion is emptied":
         "=> !ev.Deleted && (ev.RemoteId is null || ev.RemoteCreatePending);" in backup and
-        "if (File.Exists(companion)) Export(local, _ => new CalendarEventAppearance(), companion);" in backup,
+        "if (File.Exists(companion)) Export(local, _ => new CalendarEventAppearance(), companion);" in backup and
+        # Fixer: an unreadable calendar store never empties an existing companion.
+        "if (local.Count == 0 && eventsUnavailable) return -1;" in backup and
+        "eventsUnavailable: _events.IsReadOnly && !_events.IsRecoveredFromBackup" in module_sync and
+        "eventsUnavailable: events.IsReadOnly && !events.IsRecoveredFromBackup" in app_backup,
     "layout/settings export also saves local events and the complete reset points to both exports":
         "_store.Export(_state, dialog.FileName);" in export_config and
         export_config.index("_store.Export(_state, dialog.FileName);") < export_config.index("ExportCalendarCompanion(dialog.FileName);") and
@@ -206,6 +210,15 @@ checks = {
         "'로컬 일정 내보내기'" in complete_reset and "'레이아웃 및 설정 내보내기'" in complete_reset and
         "필요한 자료는 먼저 다른 폴더에 내보내세요" not in complete_reset and
         "calendar-events.json" in readme and "Google 연결 해제…" in readme,
+    # Cross-batch with recurrence (v73): disconnect drops Google series links, a refused series
+    # change no longer fails the whole sync, and the local backup keeps repeat rules.
+    "disconnect clears Google series fields and local backups keep repeat rules":
+        "ev.RecurringEventId = null;" in policies and "ev.SeriesEditPending = false;" in policies and
+        "ev.SeriesBaseStartAt = null;" in policies and "ev.RemoteOrganizerOnly = false;" in policies and
+        "Recurrence = ev.Recurrence," in backup and
+        "CalendarRecurrenceRule.TryParse(source.Recurrence, out var rule)" in backup and
+        "if (CalendarRecurrenceExpander.UndoConflictedSeriesDelete(current)) return true;" in account and
+        '"export/import keeps the repeat rule and the removed occurrences"' in harness,
     # Merge-friendly structure and tests.
     "new logic lives in partial classes and harness-tested policy files":
         "public sealed partial class CalendarWindow : Window" in window and

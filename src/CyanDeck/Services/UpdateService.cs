@@ -64,7 +64,7 @@ public static class UpdateService
         return File.Exists(adjacent) ? adjacent : GitHubReleaseSource.DefaultChannel;
     }
 
-    public static async Task<CyanDeckUpdateCheck> CheckAsync(string configuredSource, bool requireSignature = true, string configuredPublicKeyPath = "", CancellationToken cancellationToken = default)
+    public static async Task<CyanDeckUpdateCheck> CheckAsync(string configuredSource, string configuredPublicKeyPath = "", CancellationToken cancellationToken = default)
     {
         var source = ResolveManifestSource(configuredSource);
         if (string.IsNullOrWhiteSpace(source))
@@ -83,8 +83,8 @@ public static class UpdateService
         if (!string.IsNullOrWhiteSpace(manifest.Runtime) && !string.Equals(manifest.Runtime, RuntimeId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"The update manifest is for {manifest.Runtime}, but this process is {RuntimeId}.");
 
-        // All installation-capable update channels must be signed, regardless of legacy v35 settings.
-        var signatureVerified = VerifyManifestSignature(manifest, true, configuredPublicKeyPath, out var keyId);
+        // All installation-capable update channels must be signed; there is no opt-out.
+        var signatureVerified = VerifyManifestSignature(manifest, configuredPublicKeyPath, out var keyId);
         var current = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0, 0);
         return new CyanDeckUpdateCheck(manifest, current, latest!, source, latest! > current, signatureVerified, keyId);
     }
@@ -131,15 +131,11 @@ public static class UpdateService
         });
     }
 
-    private static bool VerifyManifestSignature(CyanDeckUpdateManifest manifest, bool requireSignature, string configuredPublicKeyPath, out string keyId)
+    private static bool VerifyManifestSignature(CyanDeckUpdateManifest manifest, string configuredPublicKeyPath, out string keyId)
     {
         keyId = "";
-        var hasSignature = !string.IsNullOrWhiteSpace(manifest.Signature);
-        if (!hasSignature)
-        {
-            if (requireSignature) throw new InvalidDataException("This update channel requires a signed manifest, but the manifest is unsigned.");
-            return false;
-        }
+        if (string.IsNullOrWhiteSpace(manifest.Signature))
+            throw new InvalidDataException("This update channel requires a signed manifest, but the manifest is unsigned.");
         if (!string.Equals(manifest.SignatureAlgorithm, "RSA-PSS-SHA256", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Unsupported update signature algorithm: '{manifest.SignatureAlgorithm}'. Expected RSA-PSS-SHA256.");
 

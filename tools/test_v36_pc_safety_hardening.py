@@ -27,13 +27,20 @@ checks = {
     'updater checks package hash before expansion': up.index('Get-FileHash -LiteralPath $Package') < up.index('Expand-Archive'),
     'updater prevalidates ZIP path components': "'Unsafe path in update ZIP.'" in up,
     'updater prevents zip bomb size': 'expanded size limit exceeded' in up,
-    'C# checks always require verified manifest': 'VerifyManifestSignature(manifest, true' in svc,
+    # v8.0.44: the always-true requireSignature parameter was removed; unsigned manifests always throw.
+    'C# checks always require verified manifest':
+        'VerifyManifestSignature(manifest, configuredPublicKeyPath, out var keyId)' in svc and
+        'requireSignature' not in svc and
+        'if (string.IsNullOrWhiteSpace(manifest.Signature))\n            throw new InvalidDataException("This update channel requires a signed manifest' in svc.replace('\r\n', '\n'),
     'C# stage rejects unsigned package': 'if (!check.SignatureVerified)' in svc,
     'C# rejects HTTP manifest and package': 'Insecure HTTP update sources are forbidden' in svc and 'HTTP update packages are forbidden' in svc,
     'HTTPS never redirects to HTTP': 'AllowAutoRedirect = false' in svc and 'response.EnsureSuccessStatusCode()' in svc,
     'C# passes hash to install': '-ExpectedSha256 {Quote(expectedSha256)}' in svc,
     'controller forwards signed hash': 'TryLaunchInstall(staged, check.Manifest.Sha256' in ctl,
-    'legacy settings default signed': 'RequireSignedUpdateManifests { get; set; } = true;' in model,
+    # v8.0.44: the retired always-true toggle is gone from the model and every update caller.
+    'signature verification has no settings opt-out':
+        'RequireSignedUpdateManifests' not in model and 'RequireSignedUpdateManifests' not in ctl and
+        'UpdateService.CheckAsync(channelSource, _state.Settings.UpdatePublicKeyPath)' in ctl,
     'signing cannot be disabled in UI': 'IsEnabled="False" IsChecked="True"' in xaml,
     'portal prevents source-in-destination cycle': 'destination.StartsWith(sourceFull.TrimEnd(Path.DirectorySeparatorChar)' in fence,
     'portal prevents protected destination': 'if (IsProtectedDeletionTarget(destination))' in fence,

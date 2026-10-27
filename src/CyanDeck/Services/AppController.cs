@@ -630,6 +630,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void ReorganizeDesktop(bool forceRules = false)
     {
+        // A rename seen moments ago may still be a program's temp-file save in progress.
+        if (DeferReconcileForUnsettledRenames(forceRules)) return;
         var useRules = forceRules || _state.Settings.KeepRulesUpdatedAtAllTimes;
         // A watched desktop folder that is briefly unreachable (network/USB/other drive after
         // resume) is not "deleted": skip the pass instead of dropping every arranged icon.
@@ -3294,7 +3296,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         RebuildTrayMenu();
         _ = CaptureSnapshotScreenPreviewAsync(snapshot, SnapshotScreenPreviewCaptureReason.ManualSnapshot);
         _trayController?.ShowBalloonTip(4000, "레이아웃 스냅샷 저장",
-            $"'{name}' 스냅샷을 저장했습니다. 트레이의 '레이아웃 스냅샷'에서 복원할 수 있습니다.", Forms.ToolTipIcon.Info);
+            $"'{name}' 스냅샷을 저장했습니다. 트레이 → 그룹 및 화면 → 레이아웃 스냅샷에서 복원할 수 있습니다.", Forms.ToolTipIcon.Info);
     }
 
     // v8.0.44: reason is the Korean action label (LayoutSnapshotNamePolicy). Undo checkpoints
@@ -4599,7 +4601,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             // v8.0.44: after a rollback the same command reinstalls the held version.
             menu.Items.Add(UpdateRollbackHold.DescribeRollbackCommand(DataRootPaths.ActiveLocal, RunningAppVersion), null,
                 (_, _) => _dispatcher.Invoke(RollbackLastUpdate)).Tag = "recovery.app-rollback";
-        menu.Items.Add("바탕화면 항목 지금 다시 검색", null, (_, _) => _dispatcher.Invoke(() => { RefreshDesktopWatchers(force: true, reconcile: false); ReorganizeDesktop(); }));
+        menu.Items.Add("바탕화면 항목 지금 다시 검색", null, (_, _) => _dispatcher.Invoke(RescanDesktopFromTray));
         menu.Items.Add("자동 분류 규칙 지금 적용", null, (_, _) => _dispatcher.Invoke(ApplyRulesNow));
         menu.Items.Add("설정 검사 / 복구", null, (_, _) => _dispatcher.Invoke(ValidateAndRepairConfiguration));
         menu.Items.Add("바탕화면 연결 / 레이아웃 복구", null, (_, _) => _dispatcher.Invoke(RepairDesktopAttachment));
@@ -5572,7 +5574,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             _state.Settings.LastUpdateCheckUtc = DateTime.UtcNow;
             Persist();
             var channelSource = UpdateService.ResolveManifestSource(_state.Settings.UpdateManifestSource, _state.Settings.EnableBetaUpdateChannel);
-            var check = await UpdateService.CheckAsync(channelSource, _state.Settings.RequireSignedUpdateManifests, _state.Settings.UpdatePublicKeyPath);
+            var check = await UpdateService.CheckAsync(channelSource, _state.Settings.UpdatePublicKeyPath);
             DiagnosticsLog.Info($"Update check completed: channel={(_state.Settings.EnableBetaUpdateChannel ? "beta" : "stable")}, current={check.CurrentVersion}, latest={check.LatestVersion}, available={check.UpdateAvailable}, signatureVerified={check.SignatureVerified}");
             if (!check.UpdateAvailable)
             {
@@ -5804,6 +5806,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_disposed || _compatibilityReadOnly) return;
         _persistDirty = true; // Never acknowledge a save that did not succeed.
+        _persistChangeGeneration++; // ...not even through a background save completing later.
         _persistStorageRetryCount = Math.Min(_persistStorageRetryCount + 1, 6);
         if (_persistStorageRetryCount is 1 or 3 or 6)
             DiagnosticsLog.Warn($"Layout auto-save deferred: {ex.GetType().Name}, HRESULT 0x{ex.HResult:X8}; retry in {GetPersistDelay().TotalSeconds:0}s. Current layout remains in memory.");
@@ -5833,6 +5836,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_compatibilityReadOnly) return;
         if (!force && !_persistDirty) return;
+        // A background save already in flight must not acknowledge whatever this call saves (or fails to save).
+        _persistChangeGeneration++;
         if (!bypassDisplayTransition && _displayTransition?.DeferLayoutSaveIfTransitioning() == true)
         {
             _persistDirty = true;
@@ -6015,7 +6020,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             // Only two small local bookkeeping updates; absolutely no forced
             // layout serialization or shell/window disposal under PC shutdown.
-            _store.EndSession();
+            // A protected start keeps the previous session's marker (see Dispose).
+            if (!_layoutUnreadableProtection) _store.EndSession();
             StartupHealthService.MarkCleanExit();
         }
         // If there were uncommitted changes, leave session.active and its
@@ -6051,7 +6057,9 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         }
         if (!_abnormalTermination && shutdownSaveSucceeded)
         {
-            _store.EndSession();
+            // A protected start skipped BeginSession: the previous session's marker and baseline
+            // stay as the recovery source for the next start.
+            if (!_layoutUnreadableProtection) _store.EndSession();
             StartupHealthService.MarkCleanExit();
         }
         _disposed = true;

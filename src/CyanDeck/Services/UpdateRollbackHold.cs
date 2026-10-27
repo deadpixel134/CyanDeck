@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 
 namespace CyanDeck.Services;
@@ -15,6 +16,73 @@ public static class UpdateRollbackHold
 {
     public static string HoldPath(string localRoot) =>
         Path.Combine(localRoot, "updates", "auto-install-hold.txt");
+
+    // Builds before this one ignore the hold file. Rolling back to such a build would let its
+    // start-time preflight reinstall the held version, so the rollback also turns off
+    // InstallUpdatesAutomatically (which every build honours) and leaves this marker; the next
+    // hold-aware start turns the setting back on and removes the marker.
+    public static readonly Version FirstHoldAwareVersion = new(8, 0, 44);
+
+    public static string AutoInstallPausePath(string localRoot) =>
+        Path.Combine(localRoot, "updates", "auto-install-paused-by-rollback.txt");
+
+    public static bool HonorsHold(Version? target) =>
+        target is not null && Normalize(target) >= FirstHoldAwareVersion;
+
+    // Program version inside an application-owned rollback snapshot; null when unknown.
+    public static Version? ReadSnapshotVersion(string? snapshotDirectory)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(snapshotDirectory)) return null;
+            var exe = Path.Combine(snapshotDirectory, "CyanDeck.exe");
+            if (!File.Exists(exe)) return null;
+            var info = FileVersionInfo.GetVersionInfo(exe);
+            if (info.FileMajorPart <= 0 && info.FileMinorPart <= 0 && info.FileBuildPart <= 0) return null;
+            return new Version(info.FileMajorPart, info.FileMinorPart, Math.Max(0, info.FileBuildPart));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    public static bool HasAutoInstallPause(string localRoot)
+    {
+        try { return File.Exists(AutoInstallPausePath(localRoot)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+    }
+
+    public static bool RecordAutoInstallPause(string localRoot)
+    {
+        try
+        {
+            var path = AutoInstallPausePath(localRoot);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            if (File.Exists(path) && (new FileInfo(path).Attributes & FileAttributes.ReparsePoint) != 0)
+                return false;
+            File.WriteAllText(path, "InstallUpdatesAutomatically was turned off by an app rollback.");
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    public static bool ClearAutoInstallPause(string localRoot)
+    {
+        try
+        {
+            var path = AutoInstallPausePath(localRoot);
+            if (File.Exists(path)) File.Delete(path);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     public static Version Normalize(Version version) =>
         new(Math.Max(0, version.Major), Math.Max(0, version.Minor), Math.Max(0, version.Build));

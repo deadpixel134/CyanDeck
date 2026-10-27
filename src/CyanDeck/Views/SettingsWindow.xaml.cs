@@ -127,6 +127,8 @@ public partial class SettingsWindow : Window
             ? $"마지막 업데이트 확인: {lastUpdate.ToLocalTime():g}"
             : "마지막 업데이트 확인: 없음";
         RefreshUpdateDiagnostics();
+        RefreshRollbackHoldUi();
+        RefreshUpdateStorageUi();
         CrashLoopProtectionCheck.IsChecked = state.Settings.EnableCrashLoopProtection;
         CrashLoopThresholdSlider.Value = state.Settings.CrashLoopThreshold;
         CrashLoopWindowSlider.Value = state.Settings.CrashLoopWindowMinutes;
@@ -162,8 +164,10 @@ public partial class SettingsWindow : Window
         StartupCheck.IsChecked = state.Settings.StartWithWindows;
         EdgeGesturesCheck.IsChecked = state.Settings.EnableEdgePageGestures;
         InteriorSeamGesturesCheck.IsChecked = state.Settings.AllowInteriorMonitorSeamPageNavigation;
+        FollowGroupSentToPageCheck.IsChecked = state.Settings.FollowGroupSentToPage;
         TouchPageGesturesCheck.IsChecked = state.Settings.EnableTouchPageGestures;
         TouchIconFlickCheck.IsChecked = state.Settings.EnableTouchIconFlick;
+        PageKeyboardCommandsCheck.IsChecked = state.Settings.EnablePageKeyboardNavigation;
         PageAltWheelCheck.IsChecked = state.Settings.EnablePageAltMouseWheel;
         PageMiddleDragCheck.IsChecked = state.Settings.EnablePageMiddleDrag;
         PageBothButtonsDragCheck.IsChecked = state.Settings.EnablePageBothButtonsDrag;
@@ -217,6 +221,7 @@ public partial class SettingsWindow : Window
         };
         LayoutAdjustmentCombo.SelectedIndex = (int)state.Settings.LayoutAdjustmentMode;
         PeekWorkAreaCheck.IsChecked = state.Settings.PeekRespectWorkingArea;
+        EndPeekAfterLaunchCheck.IsChecked = state.Settings.EndPeekAfterLaunch;
         SaveDebounceSlider.Value = state.Settings.PersistDebounceMs;
         ProtectMultiSelectionCheck.IsChecked = state.Settings.ProtectMultiSelectionDuringDrag;
         ShowHeaderControlsCheck.IsChecked = state.Settings.ShowControlsInGroupHeaders;
@@ -243,6 +248,10 @@ public partial class SettingsWindow : Window
             "그룹만 숨기기"
         };
         QuickHideModeCombo.SelectedIndex = (int)state.Settings.QuickHideMode;
+        DesktopDoubleClickQuickHideCheck.IsChecked = state.Settings.EnableDesktopDoubleClickQuickHide;
+        // Item order follows DeckTrayDoubleClickAction { QuickHide, OpenSettings, None }.
+        TrayDoubleClickActionCombo.ItemsSource = new[] { "빠른 숨김 켜기/끄기", "설정 열기", "동작 없음 (숨김 중이면 다시 표시)" };
+        TrayDoubleClickActionCombo.SelectedIndex = TrayDoubleClickActionIndex(state.Settings.TrayDoubleClickAction);
 
         PeekHotCornerLeftCombo.ItemsSource = new[] { "동작 없음", "Peek: 창 위로 그룹 보기", "바탕화면 보기 (모든 창 최소화)" };
         PeekHotCornerLeftCombo.SelectedIndex = (int)state.Settings.PeekHotCornerLeftAction;
@@ -250,6 +259,10 @@ public partial class SettingsWindow : Window
         PeekHotCornerRightCombo.SelectedIndex = (int)state.Settings.PeekHotCornerRightAction;
         PeekHotCornerCheck.IsChecked = state.Settings.PeekHotCornerEnabled;
         PeekTaskbarButtonCheck.IsChecked = state.Settings.PeekTaskbarButtonEnabled;
+        PeekHotCornerThicknessSlider.Value = Math.Clamp(state.Settings.PeekHotCornerHitThicknessPx, 4, 32);
+        PeekTaskbarIconPathBox.Text = state.Settings.PeekTaskbarCustomIconPath ?? "";
+        UpdatePeekTaskbarIconDisplay();
+        RefreshRecoveryPointList();
 
         LinkedIconSpacingCheck.IsChecked = state.Settings.UseSameSpacingInsideAndOutsideGroups;
         IconLayoutCombo.ItemsSource = new[] { "격자", "자유 배치" };
@@ -325,6 +338,8 @@ public partial class SettingsWindow : Window
             _loading = wasLoading;
         }
         ApplyManagedPolicyRestrictions();
+        // The restore buttons follow the ImportExport.Import capability.
+        RefreshRecoveryPointList();
         if (_currentFence is not null && _drafts.TryGetValue(_currentFence.Id, out var managedDraft)) ApplySpacingEditorValues(managedDraft);
         UpdateManagedPolicyStatus();
         foreach (var (key, value) in ReadSettingsSignature())
@@ -407,6 +422,8 @@ public partial class SettingsWindow : Window
         IconCacheSlider.IsEnabled = !_isManagedSettingLocked("Performance.IconCacheCapacity");
         BatchThresholdSlider.IsEnabled = !_isManagedSettingLocked("Safety.LargeRecycleConfirmThreshold");
         QuickHideCheck.IsEnabled = !_isManagedSettingLocked("QuickHide.Enabled");
+        // A trigger of the policy-controlled quick hide: locked together with it.
+        DesktopDoubleClickQuickHideCheck.IsEnabled = QuickHideCheck.IsEnabled;
         QuickHideStartupShowCheck.IsEnabled = !_isManagedSettingLocked("QuickHide.AlwaysShowIconsAtStartup");
         QuickHideModeCombo.IsEnabled = !_isManagedSettingLocked("General.QuickHideMode");
         ShowInactiveTabControlsCheck.IsEnabled = !_isManagedSettingLocked("Appearance.ShowTitlebarControlsInInactiveTabs")
@@ -632,8 +649,10 @@ public partial class SettingsWindow : Window
         s.StartWithWindows = StartupCheck.IsChecked == true;
         s.EnableEdgePageGestures = EdgeGesturesCheck.IsChecked == true;
         s.AllowInteriorMonitorSeamPageNavigation = InteriorSeamGesturesCheck.IsChecked == true;
+        s.FollowGroupSentToPage = FollowGroupSentToPageCheck.IsChecked == true;
         s.EnableTouchPageGestures = TouchPageGesturesCheck.IsChecked == true;
         s.EnableTouchIconFlick = TouchIconFlickCheck.IsChecked == true;
+        s.EnablePageKeyboardNavigation = PageKeyboardCommandsCheck.IsChecked == true;
         s.EnablePageAltMouseWheel = PageAltWheelCheck.IsChecked == true;
         s.EnablePageMiddleDrag = PageMiddleDragCheck.IsChecked == true;
         s.EnablePageBothButtonsDrag = PageBothButtonsDragCheck.IsChecked == true;
@@ -696,7 +715,10 @@ public partial class SettingsWindow : Window
         s.PeekHotCornerLeftAction = Enum.IsDefined(typeof(PeekHotCornerAction), PeekHotCornerLeftCombo.SelectedIndex) ? (PeekHotCornerAction)PeekHotCornerLeftCombo.SelectedIndex : PeekHotCornerAction.ShowFences;
         s.PeekHotCornerRightAction = Enum.IsDefined(typeof(PeekHotCornerAction), PeekHotCornerRightCombo.SelectedIndex) ? (PeekHotCornerAction)PeekHotCornerRightCombo.SelectedIndex : PeekHotCornerAction.ShowFullDesktop;
         s.PeekTaskbarButtonEnabled = PeekTaskbarButtonCheck.IsChecked == true;
+        s.PeekHotCornerHitThicknessPx = Math.Clamp((int)Math.Round(PeekHotCornerThicknessSlider.Value), 4, 32);
+        s.PeekTaskbarCustomIconPath = (PeekTaskbarIconPathBox.Text ?? "").Trim();
         s.PeekRespectWorkingArea = PeekWorkAreaCheck.IsChecked == true;
+        s.EndPeekAfterLaunch = EndPeekAfterLaunchCheck.IsChecked == true;
         s.PersistDebounceMs = (int)Math.Round(SaveDebounceSlider.Value);
         s.ProtectMultiSelectionDuringDrag = ProtectMultiSelectionCheck.IsChecked == true;
         s.ShowControlsInGroupHeaders = ShowHeaderControlsCheck.IsChecked == true;
@@ -722,6 +744,10 @@ public partial class SettingsWindow : Window
             2 => DeckQuickHideMode.GroupsOnly,
             _ => DeckQuickHideMode.AllDesktop
         };
+        s.EnableDesktopDoubleClickQuickHide = DesktopDoubleClickQuickHideCheck.IsChecked == true;
+        s.TrayDoubleClickAction = Enum.IsDefined(typeof(DeckTrayDoubleClickAction), TrayDoubleClickActionCombo.SelectedIndex)
+            ? (DeckTrayDoubleClickAction)TrayDoubleClickActionCombo.SelectedIndex
+            : DeckTrayDoubleClickAction.QuickHide;
         s.EnableCrashLoopProtection = CrashLoopProtectionCheck.IsChecked == true;
         s.CrashLoopThreshold = (int)Math.Round(CrashLoopThresholdSlider.Value);
         s.CrashLoopWindowMinutes = (int)Math.Round(CrashLoopWindowSlider.Value);
@@ -729,7 +755,6 @@ public partial class SettingsWindow : Window
         s.InstallUpdatesAutomatically = AutomaticUpdateCheck.IsChecked == true && InstallUpdatesAutomaticallyCheck.IsChecked == true;
         s.EnableBetaUpdateChannel = BetaUpdateChannelCheck.IsChecked == true;
         s.UpdateManifestSource = UpdateManifestSourceBox.Text.Trim();
-        s.RequireSignedUpdateManifests = true;
         s.UpdatePublicKeyPath = UpdatePublicKeyPathBox.Text.Trim();
 
         // The fence objects are bound to running windows, so preserve their
@@ -999,13 +1024,14 @@ public partial class SettingsWindow : Window
         ["SnapSection"] = "스냅 맞춤 자석 간격 끌기 이동 크기 아이콘 칸 다중 선택 여러 아이콘 드래그",
         ["TabsSection"] = "탭 전환 클릭 포인터 호버 결합 합치기 탭 합치기 결합 전환 마우스 올리면",
         ["RollupSection"] = "접기 롤업 펼치기 가장자리 제목 두 번 클릭 접기 롤업 두 번 클릭 가장자리",
-        ["FolderPortalSection"] = "폴더 포털 folder portal 대량 삭제 휴지통 확인 기준 뒤로 앞으로 기록",
+        ["FolderPortalSection"] = "폴더 포털 folder portal 뒤로 앞으로 기록 이동 기록",
+        ["BatchConfirmSection"] = "대량 작업 확인 많은 항목 여러 항목 열기 한꺼번에 휴지통 삭제 확인 기준 개수 12개",
         // 바탕화면 페이지
-        ["GesturesSection"] = "페이지 넘기기 제스처 alt 휠 가운데 버튼 드래그 가장자리 스와이프 터치 두 손가락 모니터 경계 마우스·터치 조작 마우스 터치 조작",
+        ["GesturesSection"] = "페이지 넘기기 제스처 alt 휠 가운데 버튼 드래그 가장자리 스와이프 터치 두 손가락 모니터 경계 마우스·터치 조작 마우스 터치 조작 다른 페이지로 보내기 그룹 옮기기 따라가기 단축키 바로 가기 키 키보드 다음 페이지 이전 페이지",
         ["PageAnimationSection"] = "애니메이션 페이지 전환 효과 이징 움직임 곡선 시간 부드럽게 바운스 튕기기",
         // Peek·빠른 숨김
-        ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 숨기기 quick hide 더블클릭 페이지 전환 다시 표시 두 번 클릭 숨길 대상 시작 시 표시 남은 숨김",
-        ["PeekSection"] = "peek 핫코너 작업 표시줄 버튼 창 위로 그룹 보기 작업 영역 핫 코너 바탕화면 보기 모든 창 최소화",
+        ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 숨기기 quick hide 더블클릭 페이지 전환 다시 표시 두 번 클릭 숨길 대상 시작 시 표시 남은 숨김 트레이 아이콘 더블클릭 설정 열기 단축키 키보드",
+        ["PeekSection"] = "peek 핫코너 작업 표시줄 버튼 창 위로 그룹 보기 작업 영역 핫 코너 바탕화면 보기 모든 창 최소화 감지 두께 아이콘 ico 자동 끝내기 esc 단축키 바로 가기 키 키보드 시작 메뉴",
         // 캘린더
         ["CalendarSection"] = "달력 캘린더 calendar 사용 켜기 끄기 크기 너비 높이 보기 방식 월 주",
         ["CalendarAppearanceSection"] = "달력 캘린더 글자 크기 날짜 일정 폰트 배경색 색상",
@@ -1013,8 +1039,9 @@ public partial class SettingsWindow : Window
         ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
         // 모니터·백업
         ["MonitorLayoutSection"] = "모니터 해상도 레이아웃 자동 조정 화면 내용 교환 모니터별 배치 지우기 프로필",
-        ["SnapshotsSection"] = "스냅샷 자동 백업 일일 보관 개수 미리보기 화면 이미지 수동",
-        ["BackupSection"] = "백업 내보내기 가져오기 복원 파일 기본 그룹 다시 만들기 자동 레이아웃 레이아웃·백업",
+        ["SnapshotsSection"] = "스냅샷 자동 백업 일일 하루 보관 개수 미리보기 화면 이미지 수동 위치 크기",
+        ["BackupSection"] = "백업 내보내기 가져오기 복원 파일 기본 그룹 다시 만들기 자동 레이아웃 레이아웃·백업 캘린더 일정 로컬 일정 calendar-events",
+        ["RecoveryPointsSection"] = "복구 지점 복구 체크포인트 checkpoint recovery 되살리기 복원 이전 상태 지운 그룹 복구 폴더",
         // 성능
         ["LoadingPerformanceSection"] = "성능 로딩 백그라운드 불러오기 큰 목록 기준 숨겨진 페이지 렌더링 지연 캐시 아이콘 캐시 비우기 메모리",
         ["PerformanceSection"] = "성능 저장 지연 대기 시간 디스크",
@@ -1022,9 +1049,9 @@ public partial class SettingsWindow : Window
         ["AboutSection"] = "버전 정보 업데이트 확인 설치 마지막 확인",
         ["UpdatesSection"] = "자동 업데이트 설치 베타 시험판 채널 배포 릴리스",
         ["UpdateSourceSection"] = "매니페스트 manifest 업데이트 주소 공개 키 pem 서명 rsa 관리자",
-        ["UpdateRecoverySection"] = "업데이트 오류 실패 로그 진단 새로고침 되돌리기 롤백 이전 버전 복구",
+        ["UpdateRecoverySection"] = "업데이트 오류 실패 로그 진단 새로고침 되돌리기 롤백 이전 버전 복구 되돌리기 취소 자동 설치 보류 해제 업데이트 백업 용량 정리 디스크",
         // 문제 해결·초기화
-        ["TroubleshootSection"] = "문제 해결 진단 로그 복구 자체 테스트 설정 폴더 자체 검사 데이터 검사 진단 파일 zip 번들 설정 변경 기록 데이터 폴더",
+        ["TroubleshootSection"] = "문제 해결 진단 로그 복구 자체 테스트 설정 폴더 자체 검사 데이터 검사 진단 파일 zip 번들 설정 변경 기록 데이터 폴더 도움말 단축키 제스처 안내 사용법",
         ["RestartSection"] = "다시 시작 재시작 안전 모드 일반 모드 실행 모드 호환성 스키마",
         ["StartupSection"] = "시작 충돌 반복 안전 모드 보호 자동 안전 모드 비정상 시작 횟수 기록 지우기",
         ["PolicySection"] = "관리 정책 회사 관리자 잠금",
@@ -1629,8 +1656,10 @@ public partial class SettingsWindow : Window
         StartupCheck.IsChecked = d.StartWithWindows;
         EdgeGesturesCheck.IsChecked = d.EnableEdgePageGestures;
         InteriorSeamGesturesCheck.IsChecked = d.AllowInteriorMonitorSeamPageNavigation;
+        FollowGroupSentToPageCheck.IsChecked = d.FollowGroupSentToPage;
         TouchPageGesturesCheck.IsChecked = d.EnableTouchPageGestures;
         TouchIconFlickCheck.IsChecked = d.EnableTouchIconFlick;
+        PageKeyboardCommandsCheck.IsChecked = d.EnablePageKeyboardNavigation;
         PageAltWheelCheck.IsChecked = d.EnablePageAltMouseWheel;
         PageMiddleDragCheck.IsChecked = d.EnablePageMiddleDrag;
         PageBothButtonsDragCheck.IsChecked = d.EnablePageBothButtonsDrag;
@@ -1677,6 +1706,7 @@ public partial class SettingsWindow : Window
         AutoSnapshotDaysSlider.Value = d.AutomaticSnapshotRetentionDays;
         LayoutAdjustmentCombo.SelectedIndex = (int)d.LayoutAdjustmentMode;
         PeekWorkAreaCheck.IsChecked = d.PeekRespectWorkingArea;
+        EndPeekAfterLaunchCheck.IsChecked = d.EndPeekAfterLaunch;
         SaveDebounceSlider.Value = d.PersistDebounceMs;
         ProtectMultiSelectionCheck.IsChecked = d.ProtectMultiSelectionDuringDrag;
         ShowHeaderControlsCheck.IsChecked = d.ShowControlsInGroupHeaders;
@@ -1706,10 +1736,14 @@ public partial class SettingsWindow : Window
         QuickHideCheck.IsChecked = d.EnableQuickHide;
         QuickHideStartupShowCheck.IsChecked = d.QuickHideAlwaysShowIconsAtStartup;
         QuickHideModeCombo.SelectedIndex = (int)d.QuickHideMode;
+        DesktopDoubleClickQuickHideCheck.IsChecked = d.EnableDesktopDoubleClickQuickHide;
+        TrayDoubleClickActionCombo.SelectedIndex = TrayDoubleClickActionIndex(d.TrayDoubleClickAction);
         PeekHotCornerCheck.IsChecked = d.PeekHotCornerEnabled;
         PeekHotCornerLeftCombo.SelectedIndex = (int)d.PeekHotCornerLeftAction;
         PeekHotCornerRightCombo.SelectedIndex = (int)d.PeekHotCornerRightAction;
+        PeekHotCornerThicknessSlider.Value = Math.Clamp(d.PeekHotCornerHitThicknessPx, 4, 32);
         PeekTaskbarButtonCheck.IsChecked = d.PeekTaskbarButtonEnabled;
+        PeekTaskbarIconPathBox.Text = d.PeekTaskbarCustomIconPath ?? "";
         UpdateLabels();
     }
 
@@ -1768,7 +1802,174 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void RollbackUpdate_Click(object sender, RoutedEventArgs e) => _rollbackLastUpdate();
+    // Rolling back (or undoing a rollback) restarts CyanDeck, so unsaved edits are offered for saving first.
+    private void RollbackUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        // Name the action the button currently shows (rollback, or undoing an active rollback hold).
+        var actionName = (RollbackUpdateButton.Content as string)?.TrimEnd('…', ' ');
+        if (string.IsNullOrWhiteSpace(actionName)) actionName = "마지막 앱 업데이트 되돌리기";
+        if (!PrepareSavedStateForAction(actionName, closesWindow: true)) return;
+        _rollbackLastUpdate();
+        RefreshRollbackHoldUi();
+    }
+
+    // ---- v8.0.44 update rollback hold and update storage ---------------------------------
+
+    private static Version RunningAppVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+
+    // The button names what the command will do (rollback or undo), like the tray item.
+    private void RefreshRollbackHoldUi()
+    {
+        var version = RunningAppVersion;
+        RollbackUpdateButton.Content = UpdateRollbackHold.DescribeRollbackCommand(DataRootPaths.ActiveLocal, version);
+        var hold = UpdateRollbackHold.DescribeHold(DataRootPaths.ActiveLocal, version);
+        RollbackHoldText.Text = hold;
+        RollbackHoldPanel.Visibility = string.IsNullOrEmpty(hold) ? Visibility.Collapsed : Visibility.Visible;
+        ReleaseRollbackHoldButton.IsEnabled = BackupRecoveryCommands.ReleaseRollbackHold is not null;
+    }
+
+    // The hold only steers automatic installs; it is not part of the settings draft.
+    private void ReleaseRollbackHold_Click(object sender, RoutedEventArgs e)
+    {
+        if (BackupRecoveryCommands.ReleaseRollbackHold?.Invoke() == true) RefreshRollbackHoldUi();
+    }
+
+    private void RefreshUpdateStorageUi()
+    {
+        UpdateStorageText.Text = UpdateStorageMaintenance.Measure(DataRootPaths.ActiveLocal).ToDisplayString();
+        // Safe Mode keeps side effects minimal; the start-up housekeeping skips it as well.
+        CleanUpdateBackupsButton.IsEnabled = !_safeMode && BackupRecoveryCommands.CleanUpdateBackups is not null;
+    }
+
+    // The command confirms, refuses while an update recovery is pending and reports the result itself.
+    private void CleanUpdateBackups_Click(object sender, RoutedEventArgs e)
+    {
+        if (_safeMode) return;
+        BackupRecoveryCommands.CleanUpdateBackups?.Invoke();
+        RefreshUpdateStorageUi();
+    }
+
+    // ---- v8.0.44 recovery points ---------------------------------------------------------
+
+    private static string RecoveryFolderPath => System.IO.Path.Combine(DataRootPaths.ActiveRoaming, "recovery");
+
+    // Rows are built in code because the entries are internal records. Restoring replaces the whole
+    // state, so it follows the import rules: never in compatibility protection, and only when the
+    // ImportExport.Import capability is allowed.
+    private void RefreshRecoveryPointList()
+    {
+        if (RecoveryPointList is null) return;
+        RecoveryPointList.Children.Clear();
+        var entries = RecoveryCheckpointCatalog.List(RecoveryFolderPath);
+        var dim = new SolidColorBrush(Color.FromRgb(0x98, 0xA3, 0xB3));
+        if (entries.Count == 0)
+        {
+            RecoveryPointList.Children.Add(new TextBlock { Text = "저장된 복구 지점이 없습니다.", Foreground = dim, TextWrapping = TextWrapping.Wrap });
+            return;
+        }
+        var canRestore = !_compatibilityReadOnly
+            && _isManagedCapabilityAllowed("ImportExport.Import")
+            && BackupRecoveryCommands.RestoreRecoveryCheckpoint is not null;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var row = new Grid { Margin = new Thickness(0, i == 0 ? 0 : 8, 0, 0) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = entry.DisplayText, TextWrapping = TextWrapping.Wrap, FontSize = 13 });
+            text.Children.Add(new TextBlock { Text = entry.BucketLabel, FontSize = 11, Foreground = dim, Margin = new Thickness(0, 2, 0, 0) });
+            var restore = new Button
+            {
+                Content = "복원…",
+                Tag = entry.Path,
+                Margin = new Thickness(12, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                IsEnabled = canRestore,
+                ToolTip = System.IO.Path.GetFileName(entry.Path)
+            };
+            restore.SetResourceReference(StyleProperty, "DeckWarningButtonStyle");
+            restore.Click += RestoreRecoveryPoint_Click;
+            Grid.SetColumn(restore, 1);
+            row.Children.Add(text);
+            row.Children.Add(restore);
+            RecoveryPointList.Children.Add(row);
+        }
+    }
+
+    private void RestoreRecoveryPoint_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string path) return;
+        if (_compatibilityReadOnly || !_isManagedCapabilityAllowed("ImportExport.Import")) return;
+        var restore = BackupRecoveryCommands.RestoreRecoveryCheckpoint;
+        if (restore is null) return;
+        // The whole state is replaced and this window closes, like an import. Pending edits are
+        // offered for saving first so the "before-recovery-restore" point keeps them.
+        if (!PrepareSavedStateForAction("복구 지점 복원", closesWindow: true)) return;
+        if (restore(path)) CloseWithoutPrompt();
+        else RefreshRecoveryPointList();
+    }
+
+    private void RefreshRecoveryPoints_Click(object sender, RoutedEventArgs e) => RefreshRecoveryPointList();
+
+    private void OpenRecoveryFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var folder = RecoveryFolderPath;
+            System.IO.Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            MessageBox.Show(this, "복구 폴더를 열지 못했습니다." + Environment.NewLine + ex.Message,
+                "CyanDeck 복구 지점", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // ---- v8.0.44 keyboard shortcuts, input guide and Peek taskbar icon -------------------
+
+    // Creates Start menu shortcuts only; no settings draft or controller callback is involved.
+    private void CreateCommandShortcuts_Click(object sender, RoutedEventArgs e) => CommandShortcutService.CreateInteractive(this);
+
+    private void OpenInputGuide_Click(object sender, RoutedEventArgs e) => InputGuideWindow.ShowGuide(this);
+
+    private static int TrayDoubleClickActionIndex(DeckTrayDoubleClickAction action)
+        => Enum.IsDefined(typeof(DeckTrayDoubleClickAction), action) ? (int)action : 0;
+
+    // The chosen path lives in the hidden PeekTaskbarIconPathBox, so the save path and the
+    // unsaved-change signature track it like any other text field.
+    private void PeekTaskbarIconPathBox_TextChanged(object sender, TextChangedEventArgs e) => UpdatePeekTaskbarIconDisplay();
+
+    private void UpdatePeekTaskbarIconDisplay()
+    {
+        if (PeekTaskbarIconPathBox is null || PeekTaskbarIconPathText is null || ResetPeekTaskbarIconButton is null) return;
+        var path = (PeekTaskbarIconPathBox.Text ?? "").Trim();
+        var isDefault = string.IsNullOrWhiteSpace(path);
+        PeekTaskbarIconPathText.Text = isDefault ? "기본 아이콘" : "사용 중: " + System.IO.Path.GetFileName(path);
+        PeekTaskbarIconPathText.ToolTip = isDefault ? null : path;
+        ResetPeekTaskbarIconButton.IsEnabled = !isDefault;
+    }
+
+    private void ChoosePeekTaskbarIcon_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Peek 작업 표시줄 버튼 아이콘",
+            Filter = "아이콘 파일 (*.ico)|*.ico",
+            CheckFileExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        var problem = PeekTaskbarButtonIconResolver.DescribeCustomIconProblem(dialog.FileName);
+        if (problem is not null)
+        {
+            MessageBox.Show(this, problem, "Peek 작업 표시줄 버튼 아이콘", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        PeekTaskbarIconPathBox.Text = dialog.FileName;
+    }
+
+    private void ResetPeekTaskbarIcon_Click(object sender, RoutedEventArgs e) => PeekTaskbarIconPathBox.Text = "";
     private void ResetStartupHealth_Click(object sender, RoutedEventArgs e)
     {
         StartupHealthService.Reset();
@@ -2111,6 +2312,7 @@ public partial class SettingsWindow : Window
         MessageBox.Show(this, "메모리의 아이콘/미리보기 캐시를 비웠습니다. 표시 중인 그룹은 필요할 때 다시 채웁니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
     }
     private void PageDurationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
+    private void PeekHotCornerThicknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
     private void IdleOpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
     private void StandaloneIconOpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
     private void SnapshotCountSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
@@ -2158,6 +2360,8 @@ public partial class SettingsWindow : Window
         BackgroundSaturationText.Text = $"{Math.Round(BackgroundSaturationSlider.Value):0}%";
         BackgroundBrightnessText.Text = $"{Math.Round(BackgroundBrightnessSlider.Value):0}%";
         BackgroundTransparencyText.Text = $"{Math.Round(BackgroundTransparencySlider.Value):0}%";
+        if (PeekHotCornerThicknessText is not null && PeekHotCornerThicknessSlider is not null)
+            PeekHotCornerThicknessText.Text = $"{Math.Round(PeekHotCornerThicknessSlider.Value):0} px";
     }
 
     private sealed record GroupDraft(

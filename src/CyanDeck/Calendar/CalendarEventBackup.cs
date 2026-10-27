@@ -62,7 +62,10 @@ public static class CalendarEventBackup
             file.Events.Add(new CalendarEvent
             {
                 Id = ev.Id, Date = ev.Date, EndDate = ev.EndDate, StartAt = ev.StartAt, EndAt = ev.EndAt,
-                Title = ev.Title, CalendarId = ev.CalendarId, LocalOnly = ev.LocalOnly, Dirty = ev.Dirty
+                Title = ev.Title, CalendarId = ev.CalendarId, LocalOnly = ev.LocalOnly, Dirty = ev.Dirty,
+                // A local repeating series keeps its rule and the occurrences removed from it.
+                Recurrence = ev.Recurrence,
+                RecurrenceExceptions = ev.RecurrenceExceptions is null ? null : new List<DateTime>(ev.RecurrenceExceptions)
             });
             var style = appearance(ev.Id);
             if (style is not null && (style.BackgroundColor is not null || style.TextColor is not null))
@@ -80,10 +83,13 @@ public static class CalendarEventBackup
     // when there is no local event to protect, except that an older companion with the
     // same name is overwritten by an empty backup so it cannot be paired with this
     // export and later restore events the user has since deleted.
-    public static int ExportCompanion(IEnumerable<CalendarEvent> events, string configurationPath)
+    // eventsUnavailable: the calendar store could not read its files, so "no events" is not
+    // known; -1 is returned and an existing companion (maybe the only copy) is left alone.
+    public static int ExportCompanion(IEnumerable<CalendarEvent> events, string configurationPath, bool eventsUnavailable = false)
     {
         var local = events.Where(IsLocalEvent).ToList();
         var companion = CompanionPathFor(configurationPath);
+        if (local.Count == 0 && eventsUnavailable) return -1;
         if (local.Count == 0)
         {
             if (File.Exists(companion)) Export(local, _ => new CalendarEventAppearance(), companion);
@@ -137,11 +143,16 @@ public static class CalendarEventBackup
             var start = source.Date.Date;
             var end = source.EndDate?.Date ?? start;
             if (end < start) end = start;
+            // Only a rule this version can expand is kept; anything else imports as a single event.
+            var recurrence = CalendarRecurrenceRule.TryParse(source.Recurrence, out var rule) ? rule.ToString() : null;
             plan.Added.Add(new CalendarEvent
             {
                 Id = id, Date = start, EndDate = end, StartAt = source.StartAt, EndAt = source.EndAt,
                 Title = source.Title.Trim(), CalendarId = CalendarEventStore.LocalCalendarId,
-                LocalOnly = true, Dirty = false
+                LocalOnly = true, Dirty = false,
+                Recurrence = recurrence,
+                RecurrenceExceptions = recurrence is null || source.RecurrenceExceptions is not { Count: > 0 } exceptions
+                    ? null : exceptions.Select(d => d.Date).Distinct().OrderBy(d => d).ToList()
             });
             if (backup.Appearance.TryGetValue(source.Id.ToString("N"), out var style) && style is not null
                 && (style.BackgroundColor is not null || style.TextColor is not null)
@@ -158,5 +169,7 @@ public static class CalendarEventBackup
             ev.Date.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ev.EffectiveEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ev.StartAt?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "",
-            ev.EndAt?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "");
+            ev.EndAt?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "",
+            // A repeating series is not a duplicate of a one-off event on its first date.
+            (ev.Recurrence ?? "").Trim());
 }

@@ -104,5 +104,6 @@ public sealed partial class CalendarModule
 
     // Companion copy of the local-only events for a layout/settings export.
     public int ExportLocalEventsCompanion(string configurationPath)
-        => CalendarEventBackup.ExportCompanion(_events.Events, configurationPath);
+        => CalendarEventBackup.ExportCompanion(_events.Events, configurationPath,
+            eventsUnavailable: _events.IsReadOnly && !_events.IsRecoveredFromBackup);
 }

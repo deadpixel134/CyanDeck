@@ -5,7 +5,10 @@ rule editor, tray/desktop menus, calendar buttons, dialogs and the date picker u
 Non-destructive static checks; visual verification happens on Windows.
 
 v8.0.43: the sidebar grew to 46 leaves (one per section card); the leaf count is now derived
-from the section cards instead of fixed, with every per-leaf rule unchanged."""
+from the section cards instead of fixed, with every per-leaf rule unchanged.
+
+v8.0.44: "대량 작업 확인" and "복구 지점" are new leaves with their own cards (48 leaves);
+the per-leaf rules apply to them unchanged."""
 from pathlib import Path
 from xml.etree import ElementTree as ET
 import re
@@ -93,6 +96,14 @@ checks = {
         {"CreateGroupSection", "CreateGroupMouseButtonCombo"} <= create_names and
         "사각형을 그릴 마우스 버튼" in create_text and "범위 선택" in create_text and
         "관리 정책" in create_text and "UnhideOnPageSwitchCheck" not in create_names,
+    # v8.0.44: the batch confirmation covers opening group items too, so it left the folder
+    # portal card; recovery points are listed in Settings and restore like an import.
+    "large-batch confirmation and recovery points have their own cards and searchable entries":
+        {"BatchConfirmSection", "RecoveryPointsSection"} <= anchors and
+        in_tab("InteractionTab", "BatchThresholdSlider") and in_tab("LayoutTab", "RecoveryPointList") and
+        '["BatchConfirmSection"]' in settings and '["RecoveryPointsSection"]' in settings and
+        "var canRestore = !_compatibilityReadOnly" in settings and
+        "if (restore(path)) CloseWithoutPrompt();" in settings,
     "group snapping is its own section and the quick-hide option lives on the quick-hide page":
         in_tab("InteractionTab", "SnapSection") and in_tab("PeekTab", "UnhideOnPageSwitchCheck") and
         not in_tab("InteractionTab", "UnhideOnPageSwitchCheck") and

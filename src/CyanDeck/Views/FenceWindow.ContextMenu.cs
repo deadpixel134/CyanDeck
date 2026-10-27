@@ -63,6 +63,14 @@ public partial class FenceWindow
         newFenceItem.IsEnabled = canCreateDelete;
         menu.Items.Add(newFenceItem);
         menu.Items.Add(BuildSendToPageMenu());
+        // v8.0.44: same one-step undo as the tray "현재 페이지 정렬" submenu (shown only when an
+        // align/distribute/pack/restore undo checkpoint exists).
+        if (LatestLayoutUndoLabelProvider?.Invoke() is { } undoLabel)
+        {
+            var undoItem = MakeItem(undoLabel, () => LayoutUndoRequested?.Invoke());
+            undoItem.IsEnabled = CapabilityAllowed("Layout.MoveResizeGroups");
+            menu.Items.Add(undoItem);
+        }
         menu.Items.Add(BuildGroupToolsMenu(canCreateDelete));
         menu.Items.Add(MakeItem("CyanDeck 설정…", () => SettingsRequested?.Invoke()));
 

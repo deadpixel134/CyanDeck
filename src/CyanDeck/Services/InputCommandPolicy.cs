@@ -146,8 +146,8 @@ internal static class InputGuideContent
     {
         new InputGuideSection("바탕화면", new[]
         {
-            new InputGuideRow("빈 바탕화면에 마우스로 사각형 그리기", "새 그룹 또는 Folder Portal 만들기 (사용할 버튼은 설정에서 선택)"),
-            new InputGuideRow("탐색기의 폴더를 Alt를 누른 채 빈 바탕화면에 놓기", "그 폴더의 Folder Portal 바로 만들기"),
+            new InputGuideRow("빈 바탕화면에 마우스로 사각형 그리기", "새 그룹 또는 폴더 포털 만들기 (사용할 버튼은 설정에서 선택)"),
+            new InputGuideRow("탐색기의 폴더를 Alt를 누른 채 빈 바탕화면에 놓기", "그 폴더의 폴더 포털 바로 만들기"),
             new InputGuideRow("빈 바탕화면 더블클릭", "빠른 숨김 켜기 / 끄기 (설정에서 끌 수 있음)"),
             new InputGuideRow("트레이 아이콘 더블클릭", "빠른 숨김 켜기 / 끄기 (설정에서 동작 변경)"),
         }),
@@ -157,12 +157,16 @@ internal static class InputGuideContent
             new InputGuideRow("바탕화면에서 Alt + 마우스 휠", "이전 / 다음 페이지"),
             new InputGuideRow("가운데 버튼 또는 양쪽 버튼을 누른 채 좌우로 끌기", "이전 / 다음 페이지"),
             new InputGuideRow("터치: 두 손가락으로 좌우로 밀기", "이전 / 다음 페이지"),
+            new InputGuideRow("그룹을 끌어 화면 왼쪽·오른쪽 끝에 잠시 머문 뒤 놓기", "그 그룹을 이전 / 다음 페이지로 보내기"),
         }),
         new InputGuideSection("그룹 안", new[]
         {
             new InputGuideRow("Ctrl+C / Ctrl+X / Ctrl+V", "파일 복사 · 잘라내기 · 붙여넣기 (오른쪽 클릭 메뉴에도 있음)"),
             new InputGuideRow("F2", "선택한 항목 이름 바꾸기"),
             new InputGuideRow("Ctrl+F", "그룹 안에서 검색"),
+            new InputGuideRow("Ctrl+Shift+F", "모든 그룹·탭·페이지에서 항목 찾기"),
+            new InputGuideRow("아이콘을 다른 탭이나 그룹으로 끌어 놓기", "그 아이콘 옮기기 (Ctrl을 누른 채 놓으면 복사)"),
+            new InputGuideRow("Esc", "Peek로 띄운 그룹에서 Peek 끝내기"),
             new InputGuideRow("Ctrl+Tab / Ctrl+1~9", "다음 탭 / 해당 번호의 탭으로 이동"),
             new InputGuideRow("Ctrl+마우스 휠", "아이콘 크기 바꾸기"),
             new InputGuideRow("Ctrl+A · Enter · Delete", "모두 선택 · 열기 · 삭제(확인 후)"),

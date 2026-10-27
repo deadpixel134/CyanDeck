@@ -92,7 +92,8 @@ checks = {
         "internal const int UnconfirmedOpenLimit = 12;" in open_policy and "Math.Clamp(largeBatchThreshold, 5, 500)" in open_policy and
         # the user's threshold is checked before the 12-item auto-open limit
         open_policy.index("if (confirmLargeBatches && total >= threshold)") < open_policy.index("if (total <= UnconfirmedOpenLimit)") and
-        "설정 > 대량 작업·캐시에서 '대량 휴지통 작업 전에 추가 확인'을 켜 주세요." in open_path,
+        # The notice names the redesigned Settings location and checkbox label.
+        "설정 > 그룹 동작 > 대량 작업 확인에서 '많은 항목을 열거나 휴지통으로 보낼 때 확인'을 켜 주세요." in open_path,
     "Enter and double-click use the same counted open path":
         "if (selected.Count > 1) OpenTilesFromUser(selected);" in keyboard and
         "else if (tile is not null) OpenTilesFromUser([tile]);" in keyboard and

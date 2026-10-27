@@ -14,7 +14,11 @@ def read(path):
 pointer = read("src/CyanDeck/Appearance/DesktopPointerHover.cs")
 fence = read("src/CyanDeck/Views/FenceWindow.xaml.cs")
 chameleon = read("src/CyanDeck/Appearance/WpfChameleonActivationBridge.cs")
-hidden_header = read("src/CyanDeck/Appearance/WpfHiddenHeaderHoverBridge.cs")
+# v8.0.44: the unused WpfHiddenHeaderHoverBridge was removed; the real hidden-header reveal is
+# FenceWindow.ApplyTitlebarMode, fed only by the guarded DesktopPointerHover enter/move path.
+titlebar_mode = fence.split("private void ApplyTitlebarMode(bool pointerInside)", 1)[-1].split("private void SetTitlebarExtent(", 1)[0]
+hover_move = fence.split("private void Fence_HoverMouseMove(", 1)[-1].split("private void ApplyPointerEnteredPresentation()", 1)[0]
+mouse_enter = fence.split("private void Window_MouseEnter(", 1)[-1].split("private void Fence_HoverMouseMove(", 1)[0]
 calendar = read("src/CyanDeck/Calendar/CalendarWindow.cs")
 project = read("src/CyanDeck/CyanDeck.csproj")
 
@@ -44,7 +48,15 @@ checks = {
         "ApplyItemScrollbars(IsMouseOver)" not in fence,
     "chameleon and hidden group header both use guarded hover":
         "IsPointerOverGroup = DesktopPointerHover.IsActuallyOver(_groupRoot)" in chameleon and
-        "&& DesktopPointerHover.IsActuallyOver(_groupRoot)" in hidden_header,
+        "case DeckTitlebarMode.Hidden:" in titlebar_mode and
+        "&& (pointerInside || HeaderContent.IsKeyboardFocusWithin);" in titlebar_mode and
+        "IsMouseOver" not in titlebar_mode and
+        "if (!DesktopPointerHover.IsActuallyOver(this)) return;" in hover_move and
+        "ApplyPointerEnteredPresentation();" in hover_move and
+        "if (!DesktopPointerHover.IsActuallyOver(this))" in mouse_enter and
+        "ApplyPointerEnteredPresentation();" in mouse_enter and
+        "ApplyTitlebarMode(true);" in fence and
+        "ApplyTitlebarMode(DesktopPointerHover.IsActuallyOver(this));" in fence,
     "calendar re-evaluates opacity at idle after placement":
         "new Action(ApplyCalendarAppearance)" in calendar and
         "DispatcherPriority.ContextIdle" in calendar and

@@ -37,7 +37,9 @@ def handler(name):
 
 ASKING_COMMANDS = ("ApplyRulesNow_Click", "AutomaticLayout_Click", "SwapScreenContents_Click",
                    "AddSystemIconGroup_Click", "ResetStandaloneRecycleBin_Click", "CheckForUpdates_Click",
-                   "Export_Click", "RestartSafeMode_Click", "RestartNormal_Click")
+                   "Export_Click", "RestartSafeMode_Click", "RestartNormal_Click",
+                   # v8.0.44: rollback restarts the app; restoring a recovery point replaces the state.
+                   "RollbackUpdate_Click", "RestoreRecoveryPoint_Click")
 
 delete_click = calendar.split('var delete = MakeButton("일정 삭제");', 1)[1].split("actions.Children.Add(delete);", 1)[0]
 editor_keys = calendar.split("string EditorSignature()", 1)[1].split("void FocusInput()", 1)[0]

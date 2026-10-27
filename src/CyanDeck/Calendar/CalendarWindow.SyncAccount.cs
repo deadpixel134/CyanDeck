@@ -80,8 +80,10 @@ public sealed partial class CalendarWindow
         }
     }
 
+    // The bar's ↻ marker is explained here too, next to the ⚠ / ⇡ sync state.
     private string DescribeEventForTooltip(CalendarEvent ev)
-        => CalendarEventStatusText.Tooltip(ev, CalendarDisplayName(ev), _renderGoogleConnected);
+        => CalendarEventStatusText.Tooltip(ev, CalendarDisplayName(ev), _renderGoogleConnected)
+            + (IsRecurringForDisplay(ev) ? " · 반복 일정" : "");
 
     private string? CalendarDisplayName(CalendarEvent ev)
     {

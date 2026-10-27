@@ -170,6 +170,7 @@ public partial class FenceWindow
     {
         var tab = SelectedTab;
         if (tab?.Kind != DeckTabKind.Collection) return;
+        AddItemMoveShellExtra(extras, tab, new[] { tile.Source.Id });
         if (tile.Source.UserPlaced)
         {
             var sourceTabId = tab.Id;
@@ -178,6 +179,44 @@ public partial class FenceWindow
         }
         if (DesktopRecycleService.IsActualDesktopItem(tile.Path))
             extras.Add(new("파일 이름 바꾸기…", () => RenameActualDesktopFile(tile)));
+    }
+
+    /// <summary>Multi-selection counterpart of AddItemPlacementShellExtras.</summary>
+    private void AddBatchItemPlacementShellExtras(List<ShellContextMenuService.ExtraCommand> extras, IReadOnlyList<ItemTile> tiles)
+    {
+        var tab = SelectedTab;
+        if (tab?.Kind != DeckTabKind.Collection || tiles.Count == 0) return;
+        var ids = tiles.Select(t => t.Source.Id).Distinct().ToArray();
+        AddItemMoveShellExtra(extras, tab, ids);
+        if (tiles.Any(t => t.Source.UserPlaced))
+        {
+            var sourceTabId = tab.Id;
+            extras.Add(new("자동 분류에 다시 맡기기", () => ItemsReturnToAutoRequested?.Invoke(sourceTabId, ids)));
+        }
+    }
+
+    // Real desktop files inside a group get the Windows menu, which only takes flat entries.
+    // "다른 그룹/탭으로 이동…" therefore opens the same group/tab list as a CyanDeck menu.
+    private void AddItemMoveShellExtra(List<ShellContextMenuService.ExtraCommand> extras, DeckTab tab, IReadOnlyList<Guid> ids)
+    {
+        if (BuildMoveToTabMenu(tab, ids) is null) return;
+        var sourceTabId = tab.Id;
+        extras.Add(new("다른 그룹/탭으로 이동…", () =>
+            Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => ShowMoveToTabPopup(sourceTabId, ids)))));
+    }
+
+    private void ShowMoveToTabPopup(Guid sourceTabId, IReadOnlyList<Guid> ids)
+    {
+        var tab = SelectedTab;
+        if (tab is null || tab.Id != sourceTabId || BuildMoveToTabMenu(tab, ids) is not { } moveMenu) return;
+        var entries = moveMenu.Items.Cast<object>().ToList();
+        moveMenu.Items.Clear();
+        var menu = CreateThemedContextMenu();
+        menu.Items.Add(MakeMenuSectionHeader("다른 그룹/탭으로 이동"));
+        foreach (var entry in entries) menu.Items.Add(entry);
+        menu.PlacementTarget = this;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        menu.IsOpen = true;
     }
 
     private MenuItem? BuildMoveToTabMenu(DeckTab current, IReadOnlyList<Guid> ids)

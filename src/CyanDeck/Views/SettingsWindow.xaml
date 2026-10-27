@@ -370,6 +370,7 @@
                             <TreeViewItem Header="탭으로 합치기·전환" Tag="InteractionTab|TabsSection"/>
                             <TreeViewItem Header="그룹 접기" Tag="InteractionTab|RollupSection"/>
                             <TreeViewItem Header="폴더 포털" Tag="InteractionTab|FolderPortalSection"/>
+                            <TreeViewItem Header="대량 작업 확인" Tag="InteractionTab|BatchConfirmSection"/>
                         </TreeViewItem>
                         <TreeViewItem Header="바탕화면 페이지" Tag="AnimationTab|GesturesSection">
                             <TreeViewItem Header="페이지 넘기기 제스처" Tag="AnimationTab|GesturesSection"/>
@@ -389,6 +390,7 @@
                             <TreeViewItem Header="모니터가 바뀔 때" Tag="LayoutTab|MonitorLayoutSection"/>
                             <TreeViewItem Header="레이아웃 스냅샷" Tag="LayoutTab|SnapshotsSection"/>
                             <TreeViewItem Header="백업·복원" Tag="LayoutTab|BackupSection"/>
+                            <TreeViewItem Header="복구 지점" Tag="LayoutTab|RecoveryPointsSection"/>
                         </TreeViewItem>
                         <TreeViewItem Header="성능" Tag="PerformanceTab|LoadingPerformanceSection">
                             <TreeViewItem Header="불러오기·캐시" Tag="PerformanceTab|LoadingPerformanceSection"/>
@@ -511,9 +513,10 @@
                                 <Border Style="{StaticResource SettingRow}">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="바탕화면에 고정한 항목을 뺀 모든 항목을 규칙과 파일 종류로 지금 다시 정리합니다. 그룹 밖에 둔 항목도 규칙에 맞으면 그룹으로 옮겨집니다."/>
+                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="바탕화면에 고정한 항목을 뺀 모든 항목을 규칙과 파일 종류로 지금 다시 정리합니다. 그룹 밖에 둔 항목도 규칙에 맞으면 그룹으로 옮겨지고, 직접 옮겨 둔 아이콘도 다시 분류됩니다."/>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <Button Content="자동 분류 규칙 지금 실행" Margin="0" Click="ApplyRulesNow_Click"/>
+                                            <Button Content="자동 분류 규칙 지금 실행" Margin="0" Click="ApplyRulesNow_Click"
+                                                    ToolTip="저장된 자동 분류 규칙으로 바탕화면 항목을 지금 정리합니다. 직접 옮겨 둔 아이콘도 다시 규칙에 따라 분류됩니다."/>
                                             <TextBlock Style="{StaticResource RowCaption}" Text="즉시 실행"/>
                                         </StackPanel>
                                     </Grid>
@@ -1317,24 +1320,6 @@
                                 <TextBlock x:Name="FolderPortalSection" Text="폴더 포털" Style="{StaticResource SectionTitle}"/>
                                 <TextBlock Style="{StaticResource SectionDescription}" Text="실제 폴더를 보여 주는 폴더 포털 탭에만 적용됩니다."/>
                                 <Border Style="{StaticResource SettingRow}" BorderThickness="0">
-                                    <StackPanel>
-                                        <CheckBox x:Name="ConfirmLargeBatchCheck" Content="많은 파일을 휴지통으로 보낼 때 한 번 더 확인"/>
-                                        <TextBlock Style="{StaticResource RowDescription}" Text="폴더 포털에서 실제 파일을 지울 때만 적용됩니다."/>
-                                    </StackPanel>
-                                </Border>
-                                <StackPanel Margin="28,0,0,0" IsEnabled="{Binding IsChecked, ElementName=ConfirmLargeBatchCheck}">
-                                    <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <TextBlock Style="{StaticResource RowTitle}" VerticalAlignment="Center" Text="추가 확인 기준 (항목 수)"/>
-                                            <DockPanel Grid.Column="2" Width="260" VerticalAlignment="Center">
-                                                <TextBlock x:Name="BatchThresholdText" DockPanel.Dock="Right" MinWidth="52" TextAlignment="Right" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                                                <Slider x:Name="BatchThresholdSlider" AutomationProperties.Name="추가 확인 기준 (항목 수)" Minimum="5" Maximum="200" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="BatchThresholdSlider_ValueChanged"/>
-                                            </DockPanel>
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                                <Border Style="{StaticResource SettingRow}">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <StackPanel VerticalAlignment="Center">
@@ -1347,6 +1332,38 @@
                                         </DockPanel>
                                     </Grid>
                                 </Border>
+                                <Border Style="{StaticResource SettingRow}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource RowNote}" Text="많은 파일을 휴지통으로 보낼 때의 확인은 '대량 작업 확인'에 있습니다"/>
+                                        <Button Content="대량 작업 확인 →" Style="{StaticResource DeckLinkButtonStyle}" Tag="InteractionTab|BatchConfirmSection" Click="SettingsLink_Click" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                        <!-- v8.0.44: the large-batch confirmation now also covers opening many group items at once,
+                             so it has its own card instead of living under folder portals. -->
+                        <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock x:Name="BatchConfirmSection" Text="대량 작업 확인" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Style="{StaticResource SectionDescription}" Text="그룹이나 폴더 포털에서 많은 항목을 한 번에 다룰 때 적용됩니다."/>
+                                <Border Style="{StaticResource SettingRow}" BorderThickness="0">
+                                    <StackPanel>
+                                        <CheckBox x:Name="ConfirmLargeBatchCheck" Content="많은 항목을 열거나 휴지통으로 보낼 때 확인"/>
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="켜면 아래 기준 개수 이상을 한 번에 열거나 폴더 포털에서 휴지통으로 보낼 때 먼저 묻습니다. 끄면 여러 항목 열기는 처음 12개까지만 엽니다."/>
+                                    </StackPanel>
+                                </Border>
+                                <StackPanel Margin="28,0,0,0" IsEnabled="{Binding IsChecked, ElementName=ConfirmLargeBatchCheck}">
+                                    <Border Style="{StaticResource SettingRow}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <TextBlock Style="{StaticResource RowTitle}" VerticalAlignment="Center" Text="확인 기준 (항목 수)"/>
+                                            <DockPanel Grid.Column="2" Width="260" VerticalAlignment="Center">
+                                                <TextBlock x:Name="BatchThresholdText" DockPanel.Dock="Right" MinWidth="52" TextAlignment="Right" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                                <Slider x:Name="BatchThresholdSlider" AutomationProperties.Name="확인 기준 (항목 수)" Minimum="5" Maximum="500" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="BatchThresholdSlider_ValueChanged"/>
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -1390,17 +1407,24 @@
                                 <Border Style="{StaticResource SettingRow}">
                                     <StackPanel>
                                         <CheckBox x:Name="EdgeGesturesCheck" Content="화면 가장자리에서 끌어 페이지 넘기기"/>
-                                        <TextBlock Style="{StaticResource RowDescription}" Text="바깥쪽 모니터 가장자리에서 안쪽으로 끌면 페이지가 바뀝니다. 그룹을 가장자리로 끌면 다음 페이지로 옮겨집니다."/>
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="바깥쪽 모니터 가장자리에서 안쪽으로 끌면 페이지가 바뀝니다. 그룹을 화면 바깥쪽 끝까지 끌고 잠시 멈추면 '놓으면 페이지 N로 이동' 안내가 나오고, 그때 놓으면 옆 페이지로 옮겨집니다. 모니터 사이 경계에서는 아래 설정을 켰을 때만 옮겨집니다."/>
                                     </StackPanel>
                                 </Border>
                                 <StackPanel Margin="28,0,0,0" IsEnabled="{Binding IsChecked, ElementName=EdgeGesturesCheck}">
                                     <Border Style="{StaticResource SettingRow}">
                                         <StackPanel>
                                             <CheckBox x:Name="InteriorSeamGesturesCheck" Content="모니터 사이 경계에서도 허용"/>
-                                            <TextBlock Style="{StaticResource RowDescription}" Text="맞닿은 두 모니터 사이의 가장자리에서도 페이지를 넘깁니다."/>
+                                            <TextBlock Style="{StaticResource RowDescription}" Text="맞닿은 두 모니터 사이의 가장자리에서도 페이지를 넘기고 그룹을 옆 페이지로 옮깁니다."/>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
+                                <!-- Not under the edge switch: the group menu '다른 페이지로 보내기' uses it too. -->
+                                <Border Style="{StaticResource SettingRow}">
+                                    <StackPanel>
+                                        <CheckBox x:Name="FollowGroupSentToPageCheck" Content="그룹을 다른 페이지로 보낸 뒤 그 페이지로 이동"/>
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="그룹 메뉴의 '다른 페이지로 보내기'에 적용됩니다. 끄면 보낸 그룹만 사라지고 지금 페이지에 머뭅니다. 지금 페이지가 비게 되면 항상 따라갑니다."/>
+                                    </StackPanel>
+                                </Border>
                                 <Border Style="{StaticResource SettingRow}">
                                     <StackPanel>
                                         <CheckBox x:Name="TouchPageGesturesCheck" Content="두 손가락으로 밀어 페이지 넘기기"/>
@@ -1419,6 +1443,13 @@
                                             <TextBlock Style="{StaticResource RowNote}" Text="참고: 지금은 Windows 아이콘 숨기기가 꺼져 있어 동작하지 않습니다"/>
                                             <Button Content="Windows 아이콘 숨기기 →" Style="{StaticResource DeckLinkButtonStyle}" Tag="SystemIconsTab|StandaloneSection" Click="SettingsLink_Click" Margin="6,0,0,0"/>
                                         </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingRow}">
+                                    <StackPanel>
+                                        <CheckBox x:Name="PageKeyboardCommandsCheck" Content="단축키용 바로 가기로 페이지 이동 허용"/>
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="'CyanDeck 다음 페이지 / 이전 페이지' 바로 가기(--page-next, --page-previous)에 쓰입니다. CyanDeck은 키 입력을 감시하지 않으며, 바로 가기 키는 바로 가기 속성에서 지정합니다."/>
+                                        <Button Content="단축키용 바로 가기 만들기 →" Style="{StaticResource DeckLinkButtonStyle}" Tag="PeekTab|PeekSection" Click="SettingsLink_Click" HorizontalAlignment="Left" Margin="-5,2,0,0"/>
                                     </StackPanel>
                                 </Border>
                                 <Separator Style="{StaticResource AdvancedDividerStyle}"/>
@@ -1512,10 +1543,16 @@
                                 <Border Style="{StaticResource SettingRow}" BorderThickness="0">
                                     <StackPanel>
                                         <CheckBox x:Name="QuickHideCheck" Content="빠른 숨김 사용"/>
-                                        <TextBlock Style="{StaticResource RowDescription}" Text="빈 바탕화면이나 트레이 아이콘을 두 번 클릭하면 숨기고, 다시 두 번 클릭하면 표시합니다."/>
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="실행 방법: 트레이 메뉴의 '빠른 숨김', 빈 바탕화면 또는 트레이 아이콘 더블클릭, 단축키용 바로 가기. 숨김 중에는 트레이 아이콘이 흐리게 표시됩니다."/>
                                     </StackPanel>
                                 </Border>
                                 <StackPanel Margin="28,0,0,0" IsEnabled="{Binding IsChecked, ElementName=QuickHideCheck}">
+                                    <Border Style="{StaticResource SettingRow}">
+                                        <StackPanel>
+                                            <CheckBox x:Name="DesktopDoubleClickQuickHideCheck" Content="빈 바탕화면 더블클릭으로 빠른 숨김"/>
+                                            <TextBlock Style="{StaticResource RowDescription}" Text="다시 더블클릭하면 다시 표시됩니다. 꺼 두어도 숨김 중에는 더블클릭으로 다시 표시할 수 있습니다."/>
+                                        </StackPanel>
+                                    </Border>
                                     <Border Style="{StaticResource SettingRow}">
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -1537,12 +1574,29 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
+                                <!-- Not under the quick-hide switch: '설정 열기' works while quick hide is off. -->
+                                <Border Style="{StaticResource SettingRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Style="{StaticResource RowTitle}" Text="트레이 아이콘 더블클릭"/>
+                                            <TextBlock Style="{StaticResource RowDescription}" Margin="0,2,0,0" Text="안전 모드와 캘린더 전용 모드에서는 항상 설정을 엽니다. '빠른 숨김 켜기/끄기'는 위의 '빠른 숨김 사용'이 켜져 있을 때만 작동합니다. '동작 없음'이어도 숨김 중이면 다시 표시합니다."/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="TrayDoubleClickActionCombo" Grid.Column="2" Style="{StaticResource RowCombo}" Width="280" AutomationProperties.Name="트레이 아이콘 더블클릭"/>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingRow}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource RowNote}" Text="키보드로 쓰려면 단축키용 바로 가기를 만드세요"/>
+                                        <Button Content="단축키용 바로 가기 →" Style="{StaticResource DeckLinkButtonStyle}" Tag="PeekTab|PeekSection" Click="SettingsLink_Click" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,16">
                             <StackPanel>
                                 <TextBlock x:Name="PeekSection" Text="Peek (창 위로 보기)" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Style="{StaticResource SectionDescription}" Text="Peek은 열린 창은 그대로 두고 그룹만 창 위로 잠시 보여 줍니다. 트레이 메뉴에서도 켤 수 있습니다."/>
+                                <TextBlock Style="{StaticResource SectionDescription}" Text="Peek은 열린 창은 그대로 두고 그룹만 창 위로 잠시 보여 줍니다. 트레이 메뉴, 핫 코너, 작업 표시줄 버튼, 단축키용 바로 가기로 켤 수 있습니다. Peek 중 그룹에서 Esc를 누르면 끝납니다."/>
                                 <Border Style="{StaticResource SettingRow}" BorderThickness="0">
                                     <StackPanel>
                                         <CheckBox x:Name="PeekHotCornerCheck" Content="작업 표시줄 끝(핫 코너) 클릭으로 실행"/>
@@ -1564,12 +1618,60 @@
                                             <ComboBox x:Name="PeekHotCornerRightCombo" Grid.Column="2" Style="{StaticResource RowCombo}" AutomationProperties.Name="오른쪽 클릭"/>
                                         </Grid>
                                     </Border>
+                                    <Border Style="{StaticResource SettingRow}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource RowTitle}" Text="핫 코너 감지 두께"/>
+                                                <TextBlock Style="{StaticResource RowDescription}" Margin="0,2,0,0" Text="고해상도나 터치 화면에서 누르기 어렵다면 두껍게 하세요. 기본 10px."/>
+                                            </StackPanel>
+                                            <DockPanel Grid.Column="2" Width="260" VerticalAlignment="Center">
+                                                <TextBlock x:Name="PeekHotCornerThicknessText" DockPanel.Dock="Right" MinWidth="52" TextAlignment="Right" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                                <Slider x:Name="PeekHotCornerThicknessSlider" AutomationProperties.Name="핫 코너 감지 두께" Minimum="4" Maximum="32" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="PeekHotCornerThicknessSlider_ValueChanged"/>
+                                            </DockPanel>
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                                 <Border Style="{StaticResource SettingRow}">
                                     <StackPanel>
                                         <CheckBox x:Name="PeekTaskbarButtonCheck" Content="작업 표시줄에 Peek 버튼 추가"/>
                                         <TextBlock Style="{StaticResource RowDescription}" Text="누르면 Peek을 켜고 끕니다."/>
                                     </StackPanel>
+                                </Border>
+                                <StackPanel Margin="28,0,0,0" IsEnabled="{Binding IsChecked, ElementName=PeekTaskbarButtonCheck}">
+                                    <Border Style="{StaticResource SettingRow}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource RowTitle}" Text="작업 표시줄 버튼 아이콘"/>
+                                                <TextBlock x:Name="PeekTaskbarIconPathText" Style="{StaticResource RowNote}" Margin="0,2,0,0" Text="기본 아이콘"/>
+                                                <TextBlock Style="{StaticResource RowDescription}" Margin="0,2,0,0" Text="이 PC에 있는 4MB 이하 .ico 파일만 쓸 수 있습니다(네트워크 경로는 안 됨). 파일을 읽을 수 없으면 기본 아이콘을 씁니다."/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Content="아이콘 선택…" Margin="0" Click="ChoosePeekTaskbarIcon_Click"/>
+                                                <Button x:Name="ResetPeekTaskbarIconButton" Content="기본 아이콘으로" Margin="8,0,0,0" Click="ResetPeekTaskbarIcon_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Holds the chosen path for save and the unsaved-change signature; never shown or searched. -->
+                                    <TextBox x:Name="PeekTaskbarIconPathBox" Visibility="Collapsed" IsHitTestVisible="False" Focusable="False" IsTabStop="False"
+                                             TextChanged="PeekTaskbarIconPathBox_TextChanged"/>
+                                </StackPanel>
+                                <Border Style="{StaticResource SettingRow}">
+                                    <StackPanel>
+                                        <CheckBox x:Name="EndPeekAfterLaunchCheck" Content="Peek에서 항목을 열면 Peek 자동으로 끝내기"/>
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="Peek으로 꺼낸 그룹에서 프로그램이나 파일을 열면 그룹이 새 창을 가리지 않도록 Peek을 끝냅니다."/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SettingRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="CyanDeck은 시스템 전체 키 입력을 감시하지 않습니다. 키보드로 쓰려면 시작 메뉴에 바로 가기(Peek·빠른 숨김·바탕화면 보기·다음/이전 페이지)를 만든 뒤, 바로 가기 속성의 '바로 가기 키'에 원하는 조합을 지정하세요."/>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <Button x:Name="CreateCommandShortcutsButton" Content="단축키용 바로 가기 만들기…" Margin="0" Click="CreateCommandShortcuts_Click"/>
+                                            <TextBlock Style="{StaticResource RowCaption}" Text="즉시 실행"/>
+                                        </StackPanel>
+                                    </Grid>
                                 </Border>
                                 <Separator Style="{StaticResource AdvancedDividerStyle}"/>
                                 <Border Style="{StaticResource SettingRow}" BorderThickness="0">
@@ -1798,9 +1900,12 @@
                         <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,16">
                             <StackPanel>
                                 <TextBlock x:Name="SnapshotsSection" Text="레이아웃 스냅샷" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Style="{StaticResource SectionDescription}" Text="스냅샷은 트레이 메뉴 > 레이아웃 스냅샷에서 만들고 복원합니다. 보관 개수를 줄이고 저장하면 오래된 것부터 바로 지워집니다."/>
+                                <TextBlock Style="{StaticResource SectionDescription}" Text="스냅샷은 트레이 → 그룹 및 화면 → 레이아웃 스냅샷에서 만들고 복원합니다. 보관 개수를 줄이고 저장하면 오래된 것부터 바로 지워집니다."/>
                                 <Border Style="{StaticResource SettingRow}" BorderThickness="0">
-                                    <CheckBox x:Name="AutomaticSnapshotsCheck" Content="매일 자동 스냅샷 만들기"/>
+                                    <StackPanel>
+                                        <CheckBox x:Name="AutomaticSnapshotsCheck" Content="하루 한 번 자동 배치 스냅샷 만들기 (위치·크기만)"/>
+                                        <TextBlock Style="{StaticResource RowDescription}" Text="그룹 위치와 크기만 저장합니다. 지운 그룹이나 탭은 아래 '복구 지점'이나 트레이 → 백업 및 복구 → 백업 / 복원 → 복구 체크포인트에서 되살리세요."/>
+                                    </StackPanel>
                                 </Border>
                                 <StackPanel Margin="28,0,0,0" IsEnabled="{Binding IsChecked, ElementName=AutomaticSnapshotsCheck}">
                                     <Border Style="{StaticResource SettingRow}">
@@ -1842,17 +1947,18 @@
                                 <Border Style="{StaticResource SettingRow}" BorderThickness="0">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="그룹 배치와 CyanDeck 설정을 파일로 저장합니다."/>
+                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="그룹 배치와 CyanDeck 설정을 파일로 저장합니다. 임시 파일에 먼저 쓰고 다시 읽어 확인한 뒤 기존 파일과 바꿉니다."/>
                                         <Button Grid.Column="2" Content="레이아웃 및 설정 내보내기…" Margin="0" VerticalAlignment="Center" Click="Export_Click"/>
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingRow}">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="현재 그룹과 설정을 파일 내용으로 바꾸고 이 창을 닫습니다. 실행 전에 복구 지점을 저장합니다."/>
+                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="현재 그룹과 설정을 파일 내용으로 바꾸고 이 창을 닫습니다. 바뀌는 내용을 먼저 보여 주고, 실행 전에 복구 지점을 저장하며, 현재 스냅샷은 지우지 않고 함께 보관합니다."/>
                                         <Button x:Name="ImportConfigurationButton" Grid.Column="2" Content="레이아웃 및 설정 가져오기…" Style="{StaticResource DeckWarningButtonStyle}" Margin="0" VerticalAlignment="Center" Click="Import_Click"/>
                                     </Grid>
                                 </Border>
+                                <TextBlock Style="{StaticResource RowDescription}" Margin="0,2,0,0" Text="Google에 올리지 않은 로컬 캘린더 일정은 백업 파일 옆에 .calendar-events.json 파일로 함께 저장되며, 캘린더 설정의 '일정 가져오기…'로 되살립니다. Google 캘린더 일정(Google에 보관됨)과 Google 로그인 정보는 백업에 들어 있지 않습니다."/>
                                 <Border CornerRadius="8" Background="#261E21" BorderBrush="#5A3438" BorderThickness="1" Padding="12" Margin="0,12,0,0">
                                     <StackPanel>
                                         <TextBlock Text="되돌리기 어려운 작업" FontSize="13" FontWeight="SemiBold" Foreground="#E39A9A"/>
@@ -1865,6 +1971,25 @@
                                             </Grid>
                                         </Border>
                                     </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                        <!-- v8.0.44: every recovery checkpoint, newest first. Rows are built in code
+                             (RefreshRecoveryPointList); restoring replaces the whole state and closes this window. -->
+                        <Border Background="#222831" BorderBrush="#394352" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock x:Name="RecoveryPointsSection" Text="복구 지점" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Style="{StaticResource SectionDescription}" Text="업데이트·가져오기·초기화·삭제·비정상 종료 전과 모니터가 바뀔 때 CyanDeck이 자동으로 저장한 상태입니다. 중요 작업 전 복구 지점은 최근 20개 또는 30일치, 모니터 변경 자동 복구 지점은 최근 5개, 기타 복구 지점은 최근 12개를 보관합니다. 복원하면 바뀌는 내용을 먼저 보여 주고, 지금 상태도 복구 지점으로 남깁니다."/>
+                                <Border Style="{StaticResource StatusBox}">
+                                    <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel x:Name="RecoveryPointList"/>
+                                    </ScrollViewer>
+                                </Border>
+                                <Border Style="{StaticResource SettingRow}" BorderThickness="0">
+                                    <WrapPanel>
+                                        <Button Content="복구 폴더 열기" Margin="0,0,8,4" Click="OpenRecoveryFolder_Click"/>
+                                        <Button Content="목록 새로 고침" Margin="0,0,8,4" Click="RefreshRecoveryPoints_Click"/>
+                                    </WrapPanel>
                                 </Border>
                             </StackPanel>
                         </Border>
@@ -2085,11 +2210,38 @@
                                 <Border Style="{StaticResource SettingRow}">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="이전 프로그램 파일로 되돌린 뒤 다시 시작합니다. 레이아웃과 설정은 그대로입니다."/>
+                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="이전 프로그램 파일로 되돌린 뒤 다시 시작합니다. 레이아웃과 설정은 그대로입니다. 되돌린 버전은 더 새 버전이 나오거나 직접 업데이트할 때까지 자동으로 다시 설치하지 않습니다."/>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <Button Content="마지막 앱 업데이트 되돌리기…" Margin="0" Click="RollbackUpdate_Click"
+                                            <!-- Content follows UpdateRollbackHold.DescribeRollbackCommand (rollback or undo), like the tray item. -->
+                                            <Button x:Name="RollbackUpdateButton" Content="마지막 앱 업데이트 되돌리기…" Margin="0" Click="RollbackUpdate_Click"
                                                     Style="{StaticResource DeckDangerButtonStyle}"/>
                                             <TextBlock Style="{StaticResource RowCaption}" Text="실행 후 다시 시작"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border x:Name="RollbackHoldPanel" Style="{StaticResource SettingRow}" Visibility="Collapsed">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="RollbackHoldText" Style="{StaticResource RowNote}"/>
+                                            <TextBlock Style="{StaticResource RowDescription}" Margin="0,2,0,0" Text="보류를 해제하면 자동 업데이트가 켜져 있을 때 다음 시작부터 이 버전을 다시 설치할 수 있습니다."/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <Button x:Name="ReleaseRollbackHoldButton" Content="보류 해제…" Margin="0" Click="ReleaseRollbackHold_Click"/>
+                                            <TextBlock Style="{StaticResource RowCaption}" Text="즉시 실행"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="UpdateStorageText" Style="{StaticResource RowEffect}"/>
+                                            <TextBlock Style="{StaticResource RowDescription}" Margin="0,2,0,0" Text="되돌리기에 쓰는 이전 버전 백업과 그다음 최신 백업 1개, 아직 설치하지 않은 최신 다운로드는 남깁니다. 앱을 시작할 때도 자동으로 정리합니다."/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <Button x:Name="CleanUpdateBackupsButton" Content="업데이트 백업 정리…" Margin="0" Click="CleanUpdateBackups_Click"/>
+                                            <TextBlock Style="{StaticResource RowCaption}" Text="즉시 실행"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -2143,6 +2295,14 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                         <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="레이아웃, 백업, 스냅샷이 저장된 폴더를 엽니다."/>
                                         <Button Grid.Column="2" Content="데이터 폴더 열기" Margin="0" VerticalAlignment="Center" Click="OpenSettingsFolder_Click"/>
+                                    </Grid>
+                                </Border>
+                                <TextBlock Style="{StaticResource SubsectionTitle}" Text="도움말"/>
+                                <Border Style="{StaticResource SettingRow}" BorderThickness="0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource RowEffect}" VerticalAlignment="Center" Text="사각형으로 그룹 만들기, Alt+폴더 끌어 놓기, 페이지 제스처, 빠른 숨김 더블클릭, 그룹 단축키를 한눈에 봅니다."/>
+                                        <Button x:Name="OpenInputGuideButton" Grid.Column="2" Content="단축키·제스처 안내…" Margin="0" VerticalAlignment="Center" Click="OpenInputGuide_Click"/>
                                     </Grid>
                                 </Border>
                                 <Border CornerRadius="8" Background="#2A2416" BorderBrush="#5C4A22" BorderThickness="1" Padding="12" Margin="0,10,0,0">
@@ -2296,6 +2456,7 @@
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Style="{StaticResource RowEffect}" Text="이 PC의 CyanDeck 설정·그룹·로컬 일정·Google 로그인 토큰·연결 정보·백업·스냅샷·로그를 삭제하고 첫 실행 설정부터 다시 시작합니다. Google 서버 일정, 바탕화면 원본 파일, 설치된 프로그램은 삭제하지 않습니다."/>
                                             <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="#E39A9A" TextWrapping="Wrap" Margin="0,4,0,0" Text="복구용 백업을 자동으로 만들지 않으므로 되돌릴 수 없습니다."/>
+                                            <TextBlock Style="{StaticResource RowDescription}" Margin="0,4,0,0" Text="로컬 일정은 캘린더 설정 → 일정 백업 → '로컬 일정 내보내기'로, 또는 '레이아웃 및 설정 내보내기'로 함께 백업할 수 있습니다."/>
                                         </StackPanel>
                                         <Button x:Name="CompleteLocalResetButton" Grid.Column="2" Content="모든 CyanDeck 사용자 데이터 완전 초기화…" Margin="0" VerticalAlignment="Center" Click="CompleteLocalReset_Click"
                                                 Style="{StaticResource DeckDangerButtonStyle}"/>

@@ -217,7 +217,7 @@ public partial class App : Application
             // Fast up-to-date starts should not create a transient top-level
             // progress window at all. Only display status if network checking
             // exceeds the grace period; all desktop/Calendar HWNDs still wait.
-            var checkTask = UpdateService.CheckAsync(source, true,
+            var checkTask = UpdateService.CheckAsync(source,
                 settings.UpdatePublicKeyPath, checkTimeout.Token);
             var graceTask = Task.Delay(StartupUpdatePresentationPolicy.CheckingGraceMilliseconds);
             if (await Task.WhenAny(checkTask, graceTask) != checkTask &&
