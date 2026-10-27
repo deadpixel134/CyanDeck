@@ -49,6 +49,7 @@ public sealed partial class AppController
             else Persist();
         };
         window.SourcePathDropped += path => ImportDroppedIntoFence(window, path);
+        WireItemPreservationEvents(window);
         window.ItemsDetachToDesktopRequested += OnItemsDetachToDesktopRequested;
         window.MoveCompleted += OnFenceMoveCompleted;
         window.TabTransferRequested += OnTabTransferRequested;

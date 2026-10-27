@@ -134,6 +134,7 @@ public static class FenceFactory
             DisplayNameOverride = source.DisplayNameOverride,
             AddedUtc = source.AddedUtc,
             PositionX = source.PositionX,
-            PositionY = source.PositionY
+            PositionY = source.PositionY,
+            UserPlaced = source.UserPlaced
         };
 }
