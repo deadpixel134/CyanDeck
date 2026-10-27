@@ -2,7 +2,10 @@
 """v8.0.42: every Settings sidebar entry opens its own card titled like the entry and scrolls
 that card into full view; the blank-desktop group creation settings have their own section;
 rule editor, tray/desktop menus, calendar buttons, dialogs and the date picker use the dark theme.
-Non-destructive static checks; visual verification happens on Windows."""
+Non-destructive static checks; visual verification happens on Windows.
+
+v8.0.43: the sidebar grew to 46 leaves (one per section card); the leaf count is now derived
+from the section cards instead of fixed, with every per-leaf rule unchanged."""
 from pathlib import Path
 from xml.etree import ElementTree as ET
 import re
@@ -38,6 +41,9 @@ named = {node.get(X): node for node in tree.iter() if node.get(X)}
 tabs = {node.get(X): node for node in tree.iter(W + "TabItem")}
 leaves = [item for item in tree.iter(W + "TreeViewItem") if item.find(W + "TreeViewItem") is None]
 anchors = {leaf.get("Tag").split("|", 1)[1] for leaf in leaves}
+# v8.0.43: every section card title (SectionTitle TextBlock) must be reachable from exactly one
+# leaf, so the leaf-to-card bijection covers all cards instead of a fixed count.
+section_titles = [n for n in tree.iter(W + "TextBlock") if (n.get("Style") or "") == "{StaticResource SectionTitle}"]
 
 section_issues = []
 for leaf in leaves:
@@ -81,7 +87,8 @@ version = tuple(map(int, re.search(r"<Version>(\d+\.\d+\.\d+)</Version>", projec
 
 checks = {
     "every sidebar entry opens its own card titled exactly like the entry":
-        len(leaves) == 33 and not section_issues,
+        len(leaves) == len(section_titles) and len(anchors) == len(leaves) and
+        {n.get(X) for n in section_titles} == anchors and not section_issues,
     "blank-desktop group creation has its own section with the button choice and its limits":
         {"CreateGroupSection", "CreateGroupMouseButtonCombo"} <= create_names and
         "사각형을 그릴 마우스 버튼" in create_text and "범위 선택" in create_text and

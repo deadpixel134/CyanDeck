@@ -1761,7 +1761,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         var createFence = menu.Items.Add("여기에 새 그룹 만들기", null, (_, _) =>
             _dispatcher.BeginInvoke(new Action(() => CreateFenceFromDesktopRectangle(gesture))));
         createFence.Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups");
-        var createPortal = menu.Items.Add("여기에 Folder Portal 만들기…", null, (_, _) =>
+        var createPortal = menu.Items.Add("여기에 폴더 포털 만들기…", null, (_, _) =>
             _dispatcher.BeginInvoke(new Action(() => CreateFolderPortalFromDesktopRectangle(gesture))));
         createPortal.Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups") && IsManagedCapabilityAllowed("FolderPortal.Edit");
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -1848,12 +1848,12 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private void CreateFolderPortalFromDesktopRectangle(DesktopCreationRectangleGesture gesture)
     {
-        if (!EnsureManagedCapability("Layout.CreateDeleteGroups", "빈 바탕화면에서 Folder Portal 만들기")) return;
-        if (!EnsureManagedCapability("FolderPortal.Edit", "빈 바탕화면에서 Folder Portal 만들기")) return;
+        if (!EnsureManagedCapability("Layout.CreateDeleteGroups", "빈 바탕화면에서 폴더 포털 만들기")) return;
+        if (!EnsureManagedCapability("FolderPortal.Edit", "빈 바탕화면에서 폴더 포털 만들기")) return;
         if (!CanCreateGroupFromDesktopGesture()) return;
         using var dialog = new Forms.FolderBrowserDialog
         {
-            Description = "Folder Portal로 표시할 폴더를 선택하세요",
+            Description = "폴더 포털로 표시할 폴더를 선택하세요",
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true
         };
@@ -3263,7 +3263,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (!EnsureManagedCapability("Layout.MoveResizeGroups", "자동 레이아웃")) return;
         if (System.Windows.MessageBox.Show(
-                "바탕화면을 기본 앱 / 작업 / 미디어 구성으로 다시 정리하시겠습니까?\n\n먼저 전체 복구 체크포인트를 저장합니다. 현재 레이아웃의 그룹별 사용자 지정과 Folder Portal은 기본 구성으로 교체됩니다.",
+                "바탕화면을 기본 앱 / 작업 / 미디어 구성으로 다시 정리하시겠습니까?\n\n먼저 전체 복구 체크포인트를 저장합니다. 현재 레이아웃의 그룹별 사용자 지정과 폴더 포털은 기본 구성으로 교체됩니다.",
                 "CyanDeck 자동 레이아웃", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
 
         try

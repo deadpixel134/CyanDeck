@@ -2,7 +2,13 @@
 """v8.0.31: non-destructive settings navigation and spacing regression guard.
 
 v8.0.40 regrouped the sidebar by task (Peek/quick hide, desktop icons, updates and
-troubleshooting got their own entries); the safety intent of every check is kept."""
+troubleshooting got their own entries); the safety intent of every check is kept.
+
+v8.0.43 settings redesign: the route count is derived (one leaf per section card) instead
+of a fixed number, desktop-icon rendering moved to the desktop icon page, page gestures
+joined the page transition on "바탕화면 페이지", icon movement joined "그룹 모양" and the
+folder portal / multi-select options joined "그룹 동작". Every page still inherits the
+Settings.EditGeneral read-only gate."""
 import re
 from collections import Counter
 from pathlib import Path
@@ -21,6 +27,12 @@ named = [node.get(ns) for node in tree.iter() if node.get(ns)]
 names = Counter(named)
 routes = [(leaf.get("Tag"), leaf.get("Header"))
           for leaf in tree.findall(".//w:TreeViewItem", xmlns)]
+nav_items = tree.findall(".//w:TreeViewItem", xmlns)
+nav_roots = tree.findall(".//w:TreeView/w:TreeViewItem", xmlns)
+nav_leaves = [item for item in nav_items if item.find("w:TreeViewItem", xmlns) is None]
+section_anchors = [node for node in tree.iter("{%s}TextBlock" % xmlns["w"])
+                   if "SectionTitle" in (node.get("Style") or "")
+                   and "SubsectionTitle" not in (node.get("Style") or "")]
 route_issues = []
 for route, label in routes:
     if not route or "|" not in route:
@@ -48,8 +60,9 @@ new_tabs = ["GeneralTab", "InteractionTab", "AppearanceTab",
 checks = {
     "settings XAML parses with unique named controls":
         len(names) >= 216 and all(count == 1 for count in names.values()),
-    "all 44 navigation roots/leaves resolve to their actual owning page":
-        len(routes) == 44 and not route_issues,
+    "every navigation root/leaf resolves to its owning page and every section card has one leaf":
+        len(nav_leaves) == len(section_anchors) and len(nav_leaves) >= 46 and
+        len(routes) == len(nav_roots) + len(nav_leaves) and not route_issues,
     "original calendar/system/group/about editors remain as distinct tabs":
         all(x in tabs for x in ("CalendarTab", "SystemIconsTab", "GroupsTab", "AboutTab")),
     "dedicated desktop settings pages including Peek and quick hide":
@@ -59,15 +72,23 @@ checks = {
             "StartupCheck", "DefaultDesktopPlacementCombo")
         and not has("GeneralTab", "AnimatePagesCheck")
         and not has("GeneralTab", "ChameleonCheck"),
-    "interaction page collects touch, snapping, tabs and rollup":
-        has("InteractionTab", "TouchPageGesturesCheck", "SmartSnapCheck",
-            "TabsSection", "RollupSection"),
+    "group behaviour page collects snapping, tabs, rollup, folder portals and multi-select drag":
+        has("InteractionTab", "SmartSnapCheck", "TabsSection", "RollupSection",
+            "FolderPortalSection", "ConfirmLargeBatchCheck", "ProtectMultiSelectionCheck")
+        and not has("InteractionTab", "TouchPageGesturesCheck"),
+    "desktop page gestures sit with the page transition they trigger":
+        has("AnimationTab", "GesturesSection", "TouchPageGesturesCheck", "EdgeGesturesCheck"),
     "Peek and quick hide have their own page":
         has("PeekTab", "PeekSection", "QuickHideSection", "PeekWorkAreaCheck") and
         not has("InteractionTab", "PeekSection") and not has("InteractionTab", "QuickHideSection"),
-    "appearance groups icon previews, header controls and chameleon":
-        has("AppearanceTab", "DesktopIconStyleSection", "ShowFilePreviewsCheck",
-            "ShowHeaderControlsCheck", "ChameleonSection"),
+    "group appearance holds header controls, chameleon and icon movement":
+        has("AppearanceTab", "ShowHeaderControlsCheck", "ChameleonSection",
+            "ItemAnimationSection", "AnimateIconsWhenMovedCheck",
+            "IconMovementDurationSlider", "AnimateItemChangesCheck"),
+    "icon previews and shortcut arrows sit with the other desktop icon settings and keep the Settings.EditGeneral policy":
+        has("SystemIconsTab", "DesktopIconStyleSection", "ShowFilePreviewsCheck",
+            "HideNativeIconsCheck") and
+        'SystemIconsTab.IsEnabled = _isManagedCapabilityAllowed("Settings.EditGeneral");' in code,
     "icons outside groups are configured with the other desktop icon settings":
         has("SystemIconsTab", "StandaloneSection", "StandaloneIconHoverOpacitySlider",
             "StandaloneIconIdleOpacitySlider") and not has("AppearanceTab", "StandaloneSection"),
@@ -78,11 +99,9 @@ checks = {
     "standalone icon appearance retains Settings.EditGroups managed policy":
         has("SystemIconsTab", "StandaloneAppearanceCard") and
         "StandaloneAppearanceCard.IsEnabled = GroupsTab.IsEnabled;" in code,
-    "all page and icon motion settings consolidated":
+    "desktop page motion settings consolidated":
         has("AnimationTab", "PageAnimationSection", "AnimatePagesCheck",
-            "EnhancedPageEasingCheck", "PageDurationSlider", "ItemAnimationSection",
-            "AnimateItemChangesCheck", "AnimateIconsWhenMovedCheck",
-            "IconMovementDurationSlider"),
+            "EnhancedPageEasingCheck", "PageDurationSlider", "GesturesSection"),
     "performance page owns deferred and background loading":
         has("PerformanceTab", "PerformanceSection", "SaveDebounceSlider",
             "LoadingPerformanceSection", "AsyncItemLoadingCheck", "IconCacheSlider"),

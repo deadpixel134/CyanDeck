@@ -96,7 +96,7 @@ public partial class SettingsWindow : Window
         _resetAllWindowGeometry = resetAllWindowGeometry ?? throw new ArgumentNullException(nameof(resetAllWindowGeometry));
         _reloadManagedPolicy = reloadManagedPolicy ?? throw new ArgumentNullException(nameof(reloadManagedPolicy));
         InitializeComponent();
-        Loaded += (_, _) => { if (SettingsNavigation.SelectedItem is null) NavGeneral.IsSelected = true; };
+        Loaded += (_, _) => SelectLandingEntry();
 
         var appVersion = Assembly.GetExecutingAssembly().GetName().Version;
         AboutVersionText.Text = $"CyanDeck {appVersion?.Major}.{appVersion?.Minor}.{appVersion?.Build}";
@@ -104,7 +104,7 @@ public partial class SettingsWindow : Window
         AboutModeText.Text = compatibilityReadOnly
             ? "호환성 보호가 활성화되었습니다. 더 새로운 설정 스키마를 보존했으며, 호환 가능한 백업을 가져오거나 CyanDeck을 업데이트할 때까지 이 세션에서는 레이아웃 상태를 저장하지 않습니다."
             : safeMode
-                ? "안전 모드가 활성화되었습니다. 바탕화면 Shell 연결, Windows 바탕화면 아이콘 변경, 파일 감시가 비활성화됩니다."
+                ? "안전 모드로 실행 중입니다. 바탕화면 마우스 후크, 파일 감시, Windows 아이콘 변경이 꺼져 있습니다."
                 : "일반 바탕화면 통합 모드가 활성화되었습니다.";
         RestartNormalButton.IsEnabled = safeMode;
         FactoryResetButton.IsEnabled = !compatibilityReadOnly && !_safeMode &&
@@ -211,9 +211,9 @@ public partial class SettingsWindow : Window
         AutoSnapshotDaysSlider.Value = state.Settings.AutomaticSnapshotRetentionDays;
         LayoutAdjustmentCombo.ItemsSource = new[]
         {
-            "레이아웃을 보존하지 않음",
-            "그룹 크기/위치를 비율 조정해 보존",
-            "모니터 구성별 레이아웃 저장"
+            "그대로 두기",
+            "비율에 맞춰 위치·크기 조정",
+            "모니터 구성별 배치 복원"
         };
         LayoutAdjustmentCombo.SelectedIndex = (int)state.Settings.LayoutAdjustmentMode;
         PeekWorkAreaCheck.IsChecked = state.Settings.PeekRespectWorkingArea;
@@ -244,9 +244,9 @@ public partial class SettingsWindow : Window
         };
         QuickHideModeCombo.SelectedIndex = (int)state.Settings.QuickHideMode;
 
-        PeekHotCornerLeftCombo.ItemsSource = new[] { "동작 없음", "그룹 표시", "전체 바탕화면 표시" };
+        PeekHotCornerLeftCombo.ItemsSource = new[] { "동작 없음", "Peek: 창 위로 그룹 보기", "바탕화면 보기 (모든 창 최소화)" };
         PeekHotCornerLeftCombo.SelectedIndex = (int)state.Settings.PeekHotCornerLeftAction;
-        PeekHotCornerRightCombo.ItemsSource = new[] { "동작 없음", "그룹 표시", "전체 바탕화면 표시" };
+        PeekHotCornerRightCombo.ItemsSource = new[] { "동작 없음", "Peek: 창 위로 그룹 보기", "바탕화면 보기 (모든 창 최소화)" };
         PeekHotCornerRightCombo.SelectedIndex = (int)state.Settings.PeekHotCornerRightAction;
         PeekHotCornerCheck.IsChecked = state.Settings.PeekHotCornerEnabled;
         PeekTaskbarButtonCheck.IsChecked = state.Settings.PeekTaskbarButtonEnabled;
@@ -264,6 +264,8 @@ public partial class SettingsWindow : Window
         if (state.Fences.Count > 0) FencePicker.SelectedIndex = 0;
         UpdateLabels();
         ApplyManagedPolicyRestrictions();
+        UpdateStateBanner();
+        UpdateNavigationLockState();
         UpdateManagedPolicyStatus();
         CaptureUnsavedChangesBaseline();
         Closing += SettingsWindow_Closing;
@@ -331,6 +333,8 @@ public partial class SettingsWindow : Window
                 _settingsBaseline[key] = value;
         }
         RefreshSaveState();
+        UpdateStateBanner();
+        UpdateNavigationLockState();
     }
 
     private void ApplyManagedPolicyRestrictions()
@@ -427,6 +431,50 @@ public partial class SettingsWindow : Window
         _reloadManagedPolicy();
         RefreshManagedPolicyState();
     }
+
+    // One window-wide notice above the pages (outside SettingsTabs, so never part of the
+    // unsaved-change signature). Display only: it never changes any control's IsEnabled.
+    private void UpdateStateBanner()
+    {
+        if (StateBanner is null || StateBannerText is null || StateBannerLink is null) return;
+        string? message = null;
+        string? route = null;
+        if (_compatibilityReadOnly)
+        {
+            message = "호환성 보호 모드: 설정을 저장할 수 없습니다";
+            route = "AboutTab|RestartSection";
+        }
+        else if (_safeMode)
+        {
+            message = "안전 모드: 설정은 저장되지만 일부는 다음 일반 시작부터 적용됩니다";
+            route = "AboutTab|RestartSection";
+        }
+        else if (!GeneralTab.IsEnabled || !GroupsTab.IsEnabled)
+        {
+            message = "일부 설정은 관리 정책으로 잠겨 있습니다";
+            route = "AboutTab|PolicySection";
+        }
+        StateBannerText.Text = message ?? "";
+        StateBannerLink.Tag = route;
+        StateBanner.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    // Sidebar entries whose page is locked by policy are dimmed and explain why. Selecting them
+    // still does nothing (NavigateToLeaf ignores disabled pages), as before.
+    private void UpdateNavigationLockState()
+    {
+        if (SettingsNavigation is null) return;
+        foreach (var leaf in SettingsNavigationLeaves(SettingsNavigation))
+        {
+            var tabName = (leaf.Tag as string ?? "").Split('|', 2)[0];
+            var locked = ResolveSettingsTab(tabName) is { IsEnabled: false };
+            leaf.Opacity = locked ? 0.45 : 1;
+            leaf.ToolTip = locked ? "관리 정책으로 잠김" : null;
+        }
+    }
+
+    // Cross-page link buttons carry their destination as Tag="Tab|Anchor".
+    private void SettingsLink_Click(object sender, RoutedEventArgs e) { if (sender is FrameworkElement { Tag: string route }) NavigateToSettingsAnchor(route); }
 
     private void LinkedIconSpacingCheck_Changed(object sender, RoutedEventArgs e)
     {
@@ -762,7 +810,35 @@ public partial class SettingsWindow : Window
     // their binding/draft state and the existing Apply/OK/Cancel transaction boundary.
     private void SettingsNavigation_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is TreeViewItem selected) NavigateToLeaf(selected);
+        if (e.NewValue is not TreeViewItem selected) return;
+        // Accordion: only the selected category stays open. While a search query is active the
+        // filter keeps every matching category open instead.
+        if (SettingsSearchBox is null || string.IsNullOrEmpty(SettingsSearchBox.Text)) ApplyNavigationAccordion(selected);
+        NavigateToLeaf(selected);
+    }
+
+    private void ApplyNavigationAccordion(TreeViewItem? selected)
+    {
+        if (SettingsNavigation is null) return;
+        foreach (var root in SettingsNavigation.Items.OfType<TreeViewItem>())
+            root.IsExpanded = selected is not null && (ReferenceEquals(root, selected) || root.Items.Contains(selected));
+    }
+
+    // Opens on the first page; when policy locks it, on the first page that is still editable
+    // (the update and troubleshooting pages always are).
+    private void SelectLandingEntry()
+    {
+        if (SettingsNavigation.SelectedItem is not null) return;
+        if (GeneralTab.IsEnabled)
+        {
+            NavGeneral.IsSelected = true;
+            return;
+        }
+        var fallback = SettingsNavigationLeaves(SettingsNavigation).FirstOrDefault(leaf =>
+            leaf.Tag is string route && ResolveSettingsTab(route.Split('|', 2)[0]) is { IsEnabled: true });
+        if (fallback is null) return;
+        if (fallback.Parent is TreeViewItem root) root.IsExpanded = true;
+        fallback.IsSelected = true;
     }
 
     private TabItem? ResolveSettingsTab(string name) => name switch
@@ -799,6 +875,8 @@ public partial class SettingsWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
         {
             if (SettingsTabs.SelectedItem != tab) return;
+            // A hit that is not shown (a collapsed note or hidden element) falls back to the card.
+            if (hit is FrameworkElement { IsVisible: false }) hit = null;
             var target = hit ?? FindName(anchorName) as FrameworkElement;
             if (target is null) return;
             ScrollSectionToTop(target, keepContextAbove: hit is not null);
@@ -808,7 +886,8 @@ public partial class SettingsWindow : Window
 
     // Puts the chosen section's card at the top of the page so the whole section is visible.
     // BringIntoView only scrolled until the heading appeared, often at the very bottom.
-    // The first card of a page scrolls fully up so the page title stays visible; a control
+    // The first card of a page scrolls fully up so the page title stays visible (cards nested in
+    // another panel, such as the per-group cards, never count as a page's first card); a control
     // found by search keeps some context above it.
     private static void ScrollSectionToTop(FrameworkElement target, bool keepContextAbove)
     {
@@ -824,7 +903,7 @@ public partial class SettingsWindow : Window
         double offset;
         if (keepContextAbove || card is null)
             offset = scroller.VerticalOffset + target.TranslatePoint(new Point(0, 0), scroller).Y - 56;
-        else if (card.Parent is Panel page && ReferenceEquals(page.Children.OfType<Border>().FirstOrDefault(), card))
+        else if (card.Parent is Panel page && ReferenceEquals(page, scroller.Content) && ReferenceEquals(page.Children.OfType<Border>().FirstOrDefault(), card))
             offset = 0;
         else
             offset = scroller.VerticalOffset + card.TranslatePoint(new Point(0, 0), scroller).Y - 12;
@@ -842,23 +921,38 @@ public partial class SettingsWindow : Window
         return null;
     }
 
+    // The navigation template has no expander chevron, so the built-in double-click toggle of a
+    // category is suppressed (it would close the category with no way to reopen it by clicking),
+    // and clicking the selected entry again re-applies the accordion.
     private void HookRepeatNavigationClicks()
     {
         SettingsNavigation.PreviewMouseLeftButtonDown += (_, e) =>
-            _leafSelectedAtPress = FindTreeViewItem(e.OriginalSource) is { IsSelected: true } item ? item : null;
+        {
+            var pressed = FindTreeViewItem(e.OriginalSource);
+            _leafSelectedAtPress = pressed is { IsSelected: true } ? pressed : null;
+            if (e.ClickCount > 1 && pressed is { HasItems: true }) e.Handled = true;
+        };
         SettingsNavigation.PreviewMouseLeftButtonUp += (_, e) =>
         {
             var item = FindTreeViewItem(e.OriginalSource);
-            if (item is not null && ReferenceEquals(item, _leafSelectedAtPress)) NavigateToLeaf(item);
+            if (item is not null && ReferenceEquals(item, _leafSelectedAtPress))
+            {
+                if (string.IsNullOrEmpty(SettingsSearchBox.Text)) ApplyNavigationAccordion(item);
+                NavigateToLeaf(item);
+            }
             _leafSelectedAtPress = null;
         };
     }
 
+    // A destination page locked by policy is ignored: moving the sidebar to its dimmed entry
+    // would collapse the current category while the page itself stays put.
     private void NavigateToSettingsAnchor(string route)
     {
+        if (ResolveSettingsTab(route.Split('|', 2)[0]) is not { IsEnabled: true }) return;
         var leaf = SettingsNavigationLeaves(SettingsNavigation)
             .FirstOrDefault(l => string.Equals(l.Tag as string, route, StringComparison.Ordinal));
         if (leaf is null) return;
+        if (leaf.Parent is TreeViewItem root) root.IsExpanded = true;
         if (leaf.IsSelected) NavigateToLeaf(leaf);
         else leaf.IsSelected = true;
     }
@@ -880,39 +974,63 @@ public partial class SettingsWindow : Window
     // and description inside a section is also searched (see BuildSearchIndex).
     private static readonly Dictionary<string, string> SearchAliases = new(StringComparer.Ordinal)
     {
-        ["FeaturesSection"] = "기능 켜기 끄기 그룹 관리 캘린더 사용 모듈",
-        ["DesktopSection"] = "바탕화면 자동 분류 시작 프로그램 windows 시작 시 실행 onedrive 새 항목 가져오기 아이콘 숨기기",
-        ["DesktopIconStyleSection"] = "아이콘 썸네일 미리보기 배지 바로가기 화살표 파일 폴더 모양 외관",
-        ["GroupChromeSection"] = "그룹 헤더 제목줄 제목 표시 버튼 스크롤바 비활성",
-        ["ChameleonSection"] = "흐리게 투명도 불투명도 색상 블러 카멜레온 배경화면 흐림",
-        ["GroupEditorSection"] = "그룹 아이콘 이름 글자 글꼴 폰트 크기 배치 제목 크기 색상 글꼴 배경 프리셋 잠금",
-        ["StandaloneSection"] = "개별 독립 단독 그룹 밖 아이콘 카멜레온 불투명도 투명도",
-        ["RecycleSection"] = "휴지통 recycle bin 표시 숨기기",
-        ["SystemGroupSection"] = "윈도우 windows pc 내 pc 제어판 네트워크 기본 아이콘 그룹",
-        ["GesturesSection"] = "제스처 페이지 마우스 터치 휠 드래그 스와이프 alt 가운데 버튼 두 손가락",
-        ["CreateGroupSection"] = "새 그룹 만들기 빈 곳 빈 바탕화면 사각형 그리기 드래그 마우스 버튼 왼쪽 오른쪽 우클릭 folder portal 생성",
-        ["SnapSection"] = "스냅 맞춤 간격 정렬 자석 그룹 이동 크기",
-        ["TabsSection"] = "탭 전환 클릭 포인터 호버 결합 합치기",
-        ["RollupSection"] = "접기 롤업 펼치기 가장자리 제목 두 번 클릭",
-        ["PeekSection"] = "peek 핫코너 작업 표시줄 버튼 창 위로 그룹 보기 작업 영역",
-        ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 숨기기 quick hide 더블클릭 페이지 전환 다시 표시",
-        ["PageAnimationSection"] = "애니메이션 페이지 전환 이징 시간 부드럽게 바운스",
-        ["ItemAnimationSection"] = "애니메이션 아이콘 이동 효과 항목 배치 시간 최대 항목 수",
-        ["CalendarSection"] = "달력 캘린더 calendar 크기 너비 높이 보기 월 주",
-        ["CalendarAppearanceSection"] = "달력 캘린더 글자 크기 배경색 투명도 불투명도 카멜레온",
+        // 시작·새 항목 정리
+        ["FeaturesSection"] = "시작 시작 프로그램 windows 시작 시 실행 부팅 로그인 기능 켜기 끄기 그룹 관리 사용 모듈 재시작 일반 설정 기본 설정",
+        ["DesktopSection"] = "바탕화면 새 항목 자동 정리 자동 분류 가져오기 기본 위치 그룹 밖 바탕화면 대상 탭 onedrive 바탕화면 폴더 위치 추적",
+        ["RulesSection"] = "자동 분류 규칙 지금 실행 다시 정리 적용 최신",
+        // 그룹 모양 (including the per-group editor page)
+        ["ChameleonSection"] = "흐리게 카멜레온 투명도 불투명도 대기 선명 모양 및 외관",
+        ["GroupChromeSection"] = "제목 표시줄 제목줄 그룹 헤더 버튼 검색 접기 메뉴 비활성 탭 닫기",
+        ["GroupSurfaceSection"] = "배경화면 흐림 블러 반투명 스크롤바 숨기기",
+        ["ItemAnimationSection"] = "애니메이션 아이콘 이동 효과 미끄러지듯 목록 페이드 시간 최대 항목 수",
+        ["GroupEditorSection"] = "그룹 개별 편집 그룹 선택 프리셋 좁게 균형 크게 초기화 그룹 옵션",
+        ["GroupIconsSection"] = "아이콘 크기 배치 격자 자유 배치 이름 표시 글자 크기 간격 가로 세로",
+        ["GroupBackgroundSection"] = "배경색 색상 hex 스포이드 배경화면에서 색상 투명도 밝기 채도 색조",
+        ["GroupTitleSection"] = "제목 표시줄 글꼴 폰트 제목 크기 제목 색상 아래로 숨김",
+        ["GroupBehaviorSection"] = "잠금 위치 크기 고정 접힌 그룹 열기 지연 마우스 오버 롤업",
+        ["LinkedSpacingSection"] = "아이콘 간격 동일 그룹 안팎 바탕화면 간격 모든 그룹 공통",
+        // 바탕화면 아이콘·휴지통
+        ["StandaloneSection"] = "windows 바탕화면 아이콘 숨기기 대신 표시 그룹 밖 아이콘 개별 독립 단독 흐리게 카멜레온 불투명도 투명도 터치 튕기기 플릭",
+        ["RecycleSection"] = "휴지통 recycle bin 표시 숨기기 위치 초기화",
+        ["DesktopIconStyleSection"] = "아이콘 썸네일 미리보기 파일 미리보기 배지 바로가기 화살표 lnk url website folder portal 폴더 포털 외관",
+        ["SystemGroupSection"] = "윈도우 windows pc 내 pc 제어판 네트워크 기본 아이콘 그룹 휴지통 포함",
+        // 그룹 동작
+        ["CreateGroupSection"] = "새 그룹 만들기 빈 곳 빈 바탕화면 사각형 그리기 드래그 마우스 버튼 왼쪽 오른쪽 우클릭 folder portal 생성 사각형 드래그 범위 선택 마우스 버튼 폴더 포털 만들기",
+        ["SnapSection"] = "스냅 맞춤 자석 간격 끌기 이동 크기 아이콘 칸 다중 선택 여러 아이콘 드래그",
+        ["TabsSection"] = "탭 전환 클릭 포인터 호버 결합 합치기 탭 합치기 결합 전환 마우스 올리면",
+        ["RollupSection"] = "접기 롤업 펼치기 가장자리 제목 두 번 클릭 접기 롤업 두 번 클릭 가장자리",
+        ["FolderPortalSection"] = "폴더 포털 folder portal 대량 삭제 휴지통 확인 기준 뒤로 앞으로 기록",
+        // 바탕화면 페이지
+        ["GesturesSection"] = "페이지 넘기기 제스처 alt 휠 가운데 버튼 드래그 가장자리 스와이프 터치 두 손가락 모니터 경계 마우스·터치 조작 마우스 터치 조작",
+        ["PageAnimationSection"] = "애니메이션 페이지 전환 효과 이징 움직임 곡선 시간 부드럽게 바운스 튕기기",
+        // Peek·빠른 숨김
+        ["QuickHideSection"] = "빠른 숨김 아이콘 그룹 숨기기 quick hide 더블클릭 페이지 전환 다시 표시 두 번 클릭 숨길 대상 시작 시 표시 남은 숨김",
+        ["PeekSection"] = "peek 핫코너 작업 표시줄 버튼 창 위로 그룹 보기 작업 영역 핫 코너 바탕화면 보기 모든 창 최소화",
+        // 캘린더
+        ["CalendarSection"] = "달력 캘린더 calendar 사용 켜기 끄기 크기 너비 높이 보기 방식 월 주",
+        ["CalendarAppearanceSection"] = "달력 캘린더 글자 크기 날짜 일정 폰트 배경색 색상",
+        ["CalendarFadeSection"] = "달력 캘린더 흐리게 카멜레온 투명도 불투명도 사용 중 마우스 편집",
         ["GoogleSection"] = "구글 google oauth 연결 로그인 계정 클라이언트",
-        ["SnapshotsSection"] = "레이아웃 모니터 해상도 스냅샷 자동 백업 조정 화면 내용 교환",
-        ["BackupSection"] = "백업 내보내기 가져오기 복원 파일",
-        ["PerformanceSection"] = "성능 저장 지연 드래그 다중 선택",
-        ["LoadingPerformanceSection"] = "성능 대량 작업 확인 폴더 포털 로딩 캐시 기록",
-        ["UpdatesSection"] = "버전 업데이트 배포 릴리스 베타 자동 설치 되돌리기",
-        ["AboutSection"] = "버전 정보 스키마 실행 모드",
-        ["TroubleshootSection"] = "문제 해결 진단 로그 복구 자체 테스트 설정 폴더",
-        ["StartupSection"] = "시작 충돌 반복 안전 모드 보호",
-        ["ResetSection"] = "초기화 기본값 되돌리기 설정 복원",
-        ["FactoryResetSection"] = "프로그램 초기화 모든 창 위치 크기 배치 그룹 복원 삭제된 그룹 빠진 아이콘 캘린더 초기 설정 전체 프로그램 공장 초기화 개인정보 데이터 삭제 완전 초기화 계정 로그아웃 로컬 일정",
-        ["RestartSection"] = "다시 시작 재시작 안전 모드 일반 모드",
-        ["PolicySection"] = "관리 정책 회사 관리자 잠금"
+        // 모니터·백업
+        ["MonitorLayoutSection"] = "모니터 해상도 레이아웃 자동 조정 화면 내용 교환 모니터별 배치 지우기 프로필",
+        ["SnapshotsSection"] = "스냅샷 자동 백업 일일 보관 개수 미리보기 화면 이미지 수동",
+        ["BackupSection"] = "백업 내보내기 가져오기 복원 파일 기본 그룹 다시 만들기 자동 레이아웃 레이아웃·백업",
+        // 성능
+        ["LoadingPerformanceSection"] = "성능 로딩 백그라운드 불러오기 큰 목록 기준 숨겨진 페이지 렌더링 지연 캐시 아이콘 캐시 비우기 메모리",
+        ["PerformanceSection"] = "성능 저장 지연 대기 시간 디스크",
+        // 업데이트·정보
+        ["AboutSection"] = "버전 정보 업데이트 확인 설치 마지막 확인",
+        ["UpdatesSection"] = "자동 업데이트 설치 베타 시험판 채널 배포 릴리스",
+        ["UpdateSourceSection"] = "매니페스트 manifest 업데이트 주소 공개 키 pem 서명 rsa 관리자",
+        ["UpdateRecoverySection"] = "업데이트 오류 실패 로그 진단 새로고침 되돌리기 롤백 이전 버전 복구",
+        // 문제 해결·초기화
+        ["TroubleshootSection"] = "문제 해결 진단 로그 복구 자체 테스트 설정 폴더 자체 검사 데이터 검사 진단 파일 zip 번들 설정 변경 기록 데이터 폴더",
+        ["RestartSection"] = "다시 시작 재시작 안전 모드 일반 모드 실행 모드 호환성 스키마",
+        ["StartupSection"] = "시작 충돌 반복 안전 모드 보호 자동 안전 모드 비정상 시작 횟수 기록 지우기",
+        ["PolicySection"] = "관리 정책 회사 관리자 잠금",
+        ["ResetSection"] = "초기화 기본값 되돌리기 설정 복원 모든 설정 기본값",
+        ["WindowResetSection"] = "창 위치 크기 초기화 기본 그룹 복원 빠진 아이콘 삭제된 그룹 캘린더 위치",
+        ["FactoryResetSection"] = "전체 프로그램 공장 초기화 모든 데이터 삭제 완전 초기화 계정 로그아웃 로컬 일정"
     };
 
     private Dictionary<TreeViewItem, List<(FrameworkElement Element, string Text)>>? _searchIndex;
@@ -1008,6 +1126,8 @@ public partial class SettingsWindow : Window
             foreach (var leaf in leaves) leaf.Visibility = Visibility.Visible;
             foreach (var root in SettingsNavigation.Items.OfType<TreeViewItem>()) root.Visibility = Visibility.Visible;
             SettingsSearchHint.Text = "";
+            // Back to the accordion: only the category of the current entry stays open.
+            ApplyNavigationAccordion(SettingsNavigation.SelectedItem as TreeViewItem);
             return;
         }
 
@@ -1361,7 +1481,7 @@ public partial class SettingsWindow : Window
     {
         var choices = new List<DefaultPlacementChoice>
         {
-            new("자동 분류 규칙 / 파일 종류 사용", false, DefaultDesktopPlacementKind.Desktop),
+            new("자동 분류 (규칙·파일 종류)", false, DefaultDesktopPlacementKind.Desktop),
             new("그룹 밖 바탕화면", true, DefaultDesktopPlacementKind.Desktop),
         };
         foreach (var fence in _state.Fences)
@@ -1618,8 +1738,12 @@ public partial class SettingsWindow : Window
     private void RefreshUpdateDiagnostics()
     {
         var result = UpdateFailureDiagnostics.Inspect(DataRootPaths.ActiveLocal, DateTime.UtcNow);
+        var pendingRecovery = UpdateService.HasPendingRecovery();
         UpdateFailureSummaryText.Text = result.Text +
-            (UpdateService.HasPendingRecovery() ? Environment.NewLine + "미완료 업데이트 복구 기록 있음 · 새 설치 전 복구 필요" : "");
+            (pendingRecovery ? Environment.NewLine + "미완료 업데이트 복구 기록 있음 · 새 설치 전 복구 필요" : "");
+        // Neutral unless there is something to act on: a failure log or a pending recovery.
+        UpdateFailureSummaryText.Foreground = new SolidColorBrush(result.HasLog || pendingRecovery
+            ? Color.FromRgb(0xE6, 0xBE, 0x7A) : Color.FromRgb(0x98, 0xA3, 0xB3));
         OpenUpdateFailureLogButton.IsEnabled = result.HasLog;
     }
 
@@ -1986,7 +2110,6 @@ public partial class SettingsWindow : Window
         _clearIconCache();
         MessageBox.Show(this, "메모리의 아이콘/미리보기 캐시를 비웠습니다. 표시 중인 그룹은 필요할 때 다시 채웁니다.", "CyanDeck", MessageBoxButton.OK, MessageBoxImage.Information);
     }
-    private void ValidateConfiguration_Click(object sender, RoutedEventArgs e) => _validateConfiguration();
     private void PageDurationSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
     private void IdleOpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
     private void StandaloneIconOpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => UpdateLabels();
@@ -2001,7 +2124,7 @@ public partial class SettingsWindow : Window
 
     private void UpdateLabels()
     {
-        if (PageDurationText is null || IdleOpacityText is null || SnapshotCountText is null || AutoSnapshotDaysText is null || SnapGapText is null || SaveDebounceText is null ||
+        if (PageDurationText is null || IconMovementDurationText is null || IconMovementMaxItemsText is null || IdleOpacityText is null || SnapshotCountText is null || AutoSnapshotDaysText is null || SnapGapText is null || SaveDebounceText is null ||
             BatchThresholdText is null || PortalHistoryText is null || AsyncThresholdText is null || IconCacheText is null || CrashLoopThresholdText is null || CrashLoopWindowText is null || IconSizeText is null || SpacingXText is null || SpacingYText is null || HoverDelayText is null || TitleFontSizeText is null ||
             BackgroundHueText is null || BackgroundSaturationText is null || BackgroundBrightnessText is null || BackgroundTransparencyText is null) return;
         SnapGapText.Text = $"{Math.Round(SnapGapSlider.Value):0} px";
@@ -2021,8 +2144,8 @@ public partial class SettingsWindow : Window
             StandaloneIconIdleOpacityText.Text = $"{StandaloneIconIdleOpacitySlider.Value:P0}";
             StandaloneIconHoverOpacityText.Text = $"{StandaloneIconHoverOpacitySlider.Value:P0}";
         }
-        SnapshotCountText.Text = $"{Math.Round(SnapshotCountSlider.Value):0}";
-        AutoSnapshotDaysText.Text = $"{Math.Round(AutoSnapshotDaysSlider.Value):0}일";
+        SnapshotCountText.Text = $"{Math.Round(SnapshotCountSlider.Value):0}개";
+        AutoSnapshotDaysText.Text = $"{Math.Round(AutoSnapshotDaysSlider.Value):0}개";
         IconSizeText.Text = $"{Math.Round(IconSizeSlider.Value):0} px";
         var linkedSpacingSuffix = LinkedIconSpacingCheck.IsChecked == true ? " (바탕화면)" : "";
         SpacingXText.Text = $"{Math.Round(SpacingXSlider.Value):0} px{linkedSpacingSuffix}";

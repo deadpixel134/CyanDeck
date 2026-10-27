@@ -307,7 +307,7 @@ public partial class FenceWindow
             // Explain why the item is unavailable instead of silently greying it out.
             iconSpacingMenu.Header = "아이콘 간격 (바탕화면과 같게 사용 중)";
             ToolTipService.SetShowOnDisabled(iconSpacingMenu, true);
-            iconSpacingMenu.ToolTip = "환경설정 > 모양 및 외관 > 그룹 개별 편집에서 '그룹 안팎의 아이콘 간격을 동일하게 사용'을 끄면 그룹별로 바꿀 수 있습니다.";
+            iconSpacingMenu.ToolTip = "설정 > 그룹 모양 > 모든 그룹 공통 간격에서 '모든 그룹에 바탕화면 아이콘 간격 사용'을 끄면 그룹별로 바꿀 수 있습니다.";
         }
         appearance.Items.Add(iconSpacingMenu);
         appearance.Items.Add(MakeChoiceMenu("아이콘 이름", Enum.GetValues<DeckIconLabelMode>().Select(mode => (mode switch
