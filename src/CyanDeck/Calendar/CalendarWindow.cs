@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using CyanDeck.Appearance;
 using CyanDeck.Models;
 using CyanDeck.Services;
 using Forms = System.Windows.Forms;
@@ -176,7 +177,14 @@ public sealed class CalendarWindow : Window
         Deactivated += (_, _) => ApplyCalendarAppearance();
         ApplyCalendarAppearance();
         // A previously chosen monitor may have been disconnected between launches.
-        Loaded += (_, _) => EnsureWithinVisibleWorkArea("loaded");
+        Loaded += (_, _) =>
+        {
+            EnsureWithinVisibleWorkArea("loaded");
+            // WorkerW placement/Loaded can synthesize stale WPF hover across windows.
+            // Correct only the background presentation after the HWND has settled.
+            Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,
+                new Action(ApplyCalendarAppearance));
+        };
         RenderMonth();
     }
 
@@ -826,7 +834,7 @@ public sealed class CalendarWindow : Window
         double idle = double.IsFinite(_settings.CalendarIdleOpacity)
             ? Math.Clamp(_settings.CalendarIdleOpacity, 0.15, 1) : 0.38;
         bool full = !_settings.CalendarChameleonEnabled || _editing || _showingPreferences
-            || IsActive || IsMouseOver;
+            || IsActive || DesktopPointerHover.IsActuallyOver(this);
         double activeBackground = double.IsFinite(_settings.CalendarActiveBackgroundOpacity)
             ? Math.Clamp(_settings.CalendarActiveBackgroundOpacity, 0.15, 1) : 0.86;
         double opacity = full ? Math.Clamp(activeBackground / active, 0.15, 1)
