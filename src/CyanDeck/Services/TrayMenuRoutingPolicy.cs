@@ -30,6 +30,7 @@ internal static class TrayMenuRoutingPolicy
             case "calendar.enable": return TrayMenuSection.Calendar;
             case "calendar.repair": return TrayMenuSection.CalendarRepair;
             case "group.new":
+            case "search.items":
             case "desktop.pages":
             case "desktop.peek":
             case "desktop.quick-hide": return TrayMenuSection.Primary;

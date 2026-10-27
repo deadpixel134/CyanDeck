@@ -1554,7 +1554,16 @@ public partial class FenceWindow : Window
             };
             inactiveControls.Children.Add(closeButton);
 
-            button.Click += (_, _) => SelectTabById(target.TabId);
+            button.Click += (_, _) =>
+            {
+                // "메뉴만" shows only the current tab; its "탭이름 ▾" button opens the tab list.
+                if (Model.TabStyle == DeckTabStyle.MenuOnly)
+                {
+                    OpenMenuOnlyTabList(button);
+                    return;
+                }
+                SelectTabById(target.TabId);
+            };
             header.MouseEnter += (_, _) =>
             {
                 if (!TabSwitchActivationPolicy.ShouldSelectOnPointerEnter(
@@ -2025,6 +2034,7 @@ public partial class FenceWindow : Window
             if (Math.Abs(dx) < minX && Math.Abs(dy) < minY) return;
             _movePending = false;
             _moving = true;
+            ResetPageEdgeDropTracking();
             if (!Model.RolledUp) Model.RollupDockEdge = DeckRollupDockEdge.None;
             Mouse.Capture(this, CaptureMode.SubTree);
             Cursor = Cursors.SizeAll;
@@ -2041,6 +2051,7 @@ public partial class FenceWindow : Window
         Left = left;
         Top = top;
         if (_settings.EnableSmartGroupSnapping) SnapToMonitorEdges();
+        UpdatePageEdgeDropPreview();
         e.Handled = true;
     }
 
@@ -2062,6 +2073,8 @@ public partial class FenceWindow : Window
         var moved = _moving;
         _movePending = false;
         _moving = false;
+        // The edge dwell state stays until AppController reads it in MoveCompleted.
+        HidePageEdgeDropPreview();
         Cursor = null;
         if (IsMouseCaptured) ReleaseMouseCapture();
         if (!moved) return;
@@ -2234,7 +2247,8 @@ public partial class FenceWindow : Window
         var q = SearchBox?.Text?.Trim();
         if (string.IsNullOrWhiteSpace(q)) return true;
         return tile.Name.Contains(q, StringComparison.CurrentCultureIgnoreCase)
-            || tile.Path.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+            // The Desktop / portal folder part of a path is not searched: "desktop" or the user name would match everything.
+            || GlobalItemSearchPolicy.SearchablePath(tile.Path, GetSearchExcludedRoots()).Contains(q, StringComparison.CurrentCultureIgnoreCase)
             || tile.Type.Contains(q, StringComparison.CurrentCultureIgnoreCase);
     }
 

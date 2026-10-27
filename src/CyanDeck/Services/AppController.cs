@@ -1068,6 +1068,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
     {
         if (_peek || !_windows.Contains(source)) return;
         if (TryMoveFenceAcrossPageEdge(source)) return;
+        FitMovedFenceIntoDominantMonitor(source);
         if (source.Model.RolledUp) return;
         var sourceRect = new System.Windows.Rect(source.Left, source.Top, source.ActualWidth, source.ActualHeight);
         var center = new System.Windows.Point(sourceRect.Left + sourceRect.Width / 2, sourceRect.Top + sourceRect.Height / 2);
@@ -1270,27 +1271,19 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         {
             var replace = System.Windows.MessageBox.Show($"기존 템플릿 '{existing.Name}'을(를) 바꾸시겠습니까?", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (replace != MessageBoxResult.Yes) return;
-            _state.Templates.Remove(existing);
         }
+        // Ask before the 50-template limit removes the oldest templates; nothing changes on "아니요".
+        if (!ConfirmTemplateLimitEviction(source, existing)) return;
+        if (existing is not null) _state.Templates.Remove(existing);
         _state.Templates.Insert(0, FenceFactory.CreateTemplate(source.Model, name));
         if (_state.Templates.Count > 50) _state.Templates.RemoveRange(50, _state.Templates.Count - 50);
         Persist();
         RebuildTrayMenu();
     }
 
+    // Placed at a free spot on the monitor under the pointer (see CreateFenceFromTemplateAt).
     private void CreateFenceFromTemplate(Guid templateId)
-    {
-        if (!EnsureManagedCapability("Layout.CreateDeleteGroups", "템플릿에서 그룹 만들기")) return;
-        var template = _state.Templates.FirstOrDefault(t => t.Id == templateId);
-        if (template is null) return;
-        var wa = SystemParameters.WorkArea;
-        var offset = (_state.Fences.Count % 8) * 18;
-        var fence = FenceFactory.CreateFromTemplate(template, wa.Left + 90 + offset, wa.Top + 90 + offset, _state.CurrentPage);
-        _state.Fences.Add(fence);
-        CreateWindow(fence);
-        Persist();
-        RebuildTrayMenu();
-    }
+        => CreateFenceFromTemplateAt(templateId, Forms.Cursor.Position, null, fromTray: false);
 
 
     private void ImportDroppedIntoFence(FenceWindow window, string path)
@@ -1306,21 +1299,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         Persist();
     }
 
+    // A visible free spot on the monitor under the pointer instead of a fixed primary-monitor corner.
     private void CreateNewFence()
     {
         if (!EnsureManagedCapability("Layout.CreateDeleteGroups", "새 그룹 만들기")) return;
-        var wa = SystemParameters.WorkArea;
-        var fence = new DeckFence
-        {
-            Title = "새 그룹",
-            X = wa.Left + 100 + _windows.Count * 18,
-            Y = wa.Top + 100 + _windows.Count * 18,
-            PageIndex = _state.CurrentPage,
-            Tabs = [new DeckTab { Title = "항목" }]
-        };
-        _state.Fences.Add(fence);
-        CreateWindow(fence);
-        Persist();
+        CreateNewFenceAt(Forms.Cursor.Position, null, _state.CurrentPage);
     }
 
     private void OnDeleteFence(FenceWindow window)
@@ -4047,11 +4030,11 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
 
     private bool TryMoveFenceAcrossPageEdge(FenceWindow source)
     {
-        if (!IsManagedCapabilityAllowed("Layout.MoveResizeGroups")) return false;
-        if (!_state.Settings.EnableEdgePageGestures) return false;
-        var direction = source.GetPageEdgeDirection();
-        if (direction == 0) return false;
-        if (direction < 0 && source.Model.PageIndex <= 0) return false;
+        // Decided by the pointer that released the group (outer edge / allowed seam, same rules
+        // as the pointer page gesture) after a short dwell there, never by where edge snapping
+        // or a seam-straddling group left the window. Capability and setting checks are inside.
+        var direction = ResolveFenceDropPageDirection(source);
+        if (!source.TakePageEdgeDropDwell(direction)) return false;
         var targetPage = Math.Max(0, source.Model.PageIndex + direction);
         source.Model.PageIndex = targetPage;
         source.MoveFromPageEdge(direction);
@@ -4419,37 +4402,20 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             CompactTrayMenu(menu);
             return;
         }
-        var newGroupMenuItem = menu.Items.Add("새 그룹", null, (_, _) => _dispatcher.Invoke(CreateNewFence));
+        // Where the pointer was when the tray menu opened: new groups go to that monitor.
+        var trayCursor = Forms.Cursor.Position;
+        var newGroupMenuItem = menu.Items.Add("새 그룹", null, (_, _) => _dispatcher.Invoke(() => CreateNewFenceFromTray(trayCursor)));
         newGroupMenuItem.Tag = "group.new";
         newGroupMenuItem.Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups");
+        var itemSearchMenuItem = menu.Items.Add("항목 찾기…", null, (_, _) => QueueTrayDialog(OpenGlobalItemSearch));
+        itemSearchMenuItem.Tag = "search.items";
         menu.Items.Add("휴지통 위치 초기화", null,
             (_, _) => _dispatcher.Invoke(ResetStandaloneRecycleBinPosition));
         var systemGroupMenuItem = menu.Items.Add("Windows 기본 아이콘 그룹 추가", null,
             (_, _) => _dispatcher.Invoke(AddSystemIconGroup));
         systemGroupMenuItem.Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups");
-        if (_state.Templates.Count > 0)
-        {
-            var templates = new Forms.ToolStripMenuItem("템플릿에서 새 그룹 만들기")
-            {
-                Enabled = IsManagedCapabilityAllowed("Layout.CreateDeleteGroups")
-            };
-            foreach (var template in _state.Templates.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
-            {
-                var local = template;
-                templates.DropDownItems.Add(local.Name, null, (_, _) => _dispatcher.Invoke(() => CreateFenceFromTemplate(local.Id)));
-            }
-            templates.DropDownItems.Add(new Forms.ToolStripSeparator());
-            var deleteTemplatesItem = templates.DropDownItems.Add("모든 템플릿 삭제", null, (_, _) => _dispatcher.Invoke(() =>
-            {
-                if (!EnsureManagedCapability("Templates.Edit", "모든 템플릿 삭제")) return;
-                if (System.Windows.MessageBox.Show("저장된 그룹 템플릿을 모두 삭제하시겠습니까?", "CyanDeck", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-                _state.Templates.Clear();
-                Persist();
-                RebuildTrayMenu();
-            }));
-            deleteTemplatesItem.Enabled = IsManagedCapabilityAllowed("Templates.Edit");
-            menu.Items.Add(templates);
-        }
+        // Per-template create / rename / delete; not disabled as a whole by the group-creation policy.
+        if (_state.Templates.Count > 0) menu.Items.Add(BuildTrayTemplateMenu(trayCursor));
         menu.Items.Add("바탕화면 분류 규칙 다시 적용", null, (_, _) => _dispatcher.Invoke(ApplyRulesNow));
         var pages = new Forms.ToolStripMenuItem($"바탕화면 페이지 (페이지 {_state.CurrentPage + 1})");
         for (var page = 0; page <= GetMaxPage(); page++)
@@ -4464,6 +4430,7 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
             pages.DropDownItems.Add(item);
         }
         pages.Tag = "desktop.pages";
+        AddTrayPageCommands(pages, trayCursor);
         menu.Items.Add(pages);
 
         var arrange = new Forms.ToolStripMenuItem("현재 페이지 정렬")
@@ -4476,12 +4443,8 @@ public sealed partial class AppController : IDisposable, ILinkedIconSpacingHost
         arrange.DropDownItems.Add("세로 간격 균등 배치", null, (_, _) => _dispatcher.Invoke(DistributeCurrentPageVertically));
         arrange.DropDownItems.Add("각 모니터 안에 그룹 정리", null, (_, _) => _dispatcher.Invoke(PackCurrentPage));
         menu.Items.Add(arrange);
-        var monitorRecovery = menu.Items.Add("이 모니터로 그룹 전부 옮기기", null, (_, _) =>
-        {
-            var monitorName = Forms.Screen.FromPoint(Forms.Cursor.Position).DeviceName;
-            _dispatcher.BeginInvoke(new Action(() => RecoverAllGroupsToMonitor(monitorName)));
-        });
-        monitorRecovery.Enabled = IsManagedCapabilityAllowed("Layout.MoveResizeGroups") && _state.Fences.Count > 0;
+        // The tray sits on one monitor: with two or more monitors each one is offered by number.
+        AddTrayMoveAllGroupsCommand(menu);
         if (Forms.Screen.AllScreens.Length >= 2)
         {
             var swapItem = menu.Items.Add("화면 내용 교환…", null, (_, _) => _dispatcher.Invoke(OpenMonitorContentSwapDialog));

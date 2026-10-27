@@ -13,6 +13,10 @@
     <Compile Include="../../src/CyanDeck/Services/NativeDesktopIconRecoveryPolicy.cs" Link="Production/NativeDesktopIconRecoveryPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/MonitorDisconnectLayoutPlanner.cs" Link="Production/MonitorDisconnectLayoutPlanner.cs" />
     <Compile Include="../../src/CyanDeck/Layout/MonitorGroupRecoveryPlanner.cs" Link="Production/MonitorGroupRecoveryPlanner.cs" />
+    <Compile Include="../../src/CyanDeck/Topology/DesktopMonitorTopology.cs" Link="Production/DesktopMonitorTopology.cs" />
+    <Compile Include="../../src/CyanDeck/Topology/DesktopMonitorTopologyTypes.cs" Link="Production/DesktopMonitorTopologyTypes.cs" />
+    <Compile Include="../../src/CyanDeck/Services/GroupPageOperationsPolicy.cs" Link="Production/GroupPageOperationsPolicy.cs" />
+    <Compile Include="../../src/CyanDeck/Services/GlobalItemSearchPolicy.cs" Link="Production/GlobalItemSearchPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/InitialGeometryResetPolicy.cs" Link="Production/InitialGeometryResetPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Layout/SavedMonitorLayoutSafetyPolicy.cs" Link="Production/SavedMonitorLayoutSafetyPolicy.cs" />
     <Compile Include="../../src/CyanDeck/Appearance/LooseIconOpacityPolicy.cs" Link="Production/LooseIconOpacityPolicy.cs" />
