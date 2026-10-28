@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.gate.outputs.publish }}
+      promote: ${{ steps.gate.outputs.promote }}
       version: ${{ steps.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +23,7 @@ jobs:
           version="$(python3 -c "import xml.etree.ElementTree as e;print(e.parse('src/CyanDeck/CyanDeck.csproj').findtext('.//Version'))")"
           request="$(tr -d '[:space:]' < .github/stable-release-request.txt)"
           echo "publish=false" >> "$GITHUB_OUTPUT"
+          echo "promote=false" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # Workflow file edits during Beta development are NOT Stable requests.
           # Do not fail CI or accidentally publish when the gate is unchanged.
@@ -40,19 +42,95 @@ jobs:
           PY
           tag="v$version"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # Idempotent verifier for an ALREADY published Stable release.
-            # Retrying or changing this workflow must never overwrite its assets.
-            actual="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
-            if [ "$actual" != "$tag" ]; then
-              echo "::error::Release $tag exists but is not the latest Stable ($actual)."
-              exit 1
+            # Promotion is metadata-only. Reuse the exact signed Beta artifacts;
+            # never overwrite files that existing users may already have installed.
+            release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")"
+            if echo "$release" | jq -e '.draft == false and .prerelease == false and (.assets | length) == 8' >/dev/null; then
+              actual="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+              if [ "$actual" != "$tag" ]; then
+                echo "::error::Release $tag exists but is not the latest Stable ($actual)."
+                exit 1
+              fi
+              echo "Already published and verified Stable: $tag. No assets changed."
+              exit 0
             fi
-            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq \
-              'if .draft == false and .prerelease == false and (.assets | length) == 8 then "Verified existing Stable" else error("Invalid Stable metadata or asset count") end'
-            echo "Already published and verified: $tag. Skipping duplicate production artifacts."
-            exit 0
+            if echo "$release" | jq -e '.draft == false and .prerelease == true and (.assets | length) == 8' >/dev/null; then
+              echo "promote=true" >> "$GITHUB_OUTPUT"
+              echo "Promoting existing signed Beta $tag to Stable without rebuilding."
+              exit 0
+            fi
+            echo "::error::Existing $tag is neither a verified Stable nor a complete published Beta."
+            exit 1
           fi
           echo "publish=true" >> "$GITHUB_OUTPUT"
+  promote:
+    needs: prepare
+    if: needs.prepare.outputs.promote == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Promote signed Beta to default Stable without replacing assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          release_path="$RUNNER_TEMP/cyandeck-release-before.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$release_path"
+          jq -e --arg version "$VERSION" '
+            .tag_name == ("v" + $version) and .draft == false and .prerelease == true and
+            (.assets | length) == 8 and
+            ([.assets[].name] | sort) == ([
+              "CyanDeck-" + $version + "-win-x64.zip",
+              "CyanDeck-" + $version + "-win-arm64.zip",
+              "CyanDeck-" + $version + "-win-x64.update.json",
+              "CyanDeck-" + $version + "-win-arm64.update.json",
+              "CyanDeck.exe", "CyanDeck-ARM64.exe",
+              "CyanDeck-v" + $version + "-full-source.zip",
+              "SHA256SUMS.txt"
+            ] | sort) and
+            ([.assets[] | (.size > 0 and (.digest // "" | test("^sha256:[0-9a-f]{64}$")))] | all)
+          ' "$release_path"
+          # The source tag is the exact code built for the signed Beta.
+          # The current Stable-request commit may only add workflow/metadata.
+          tag_commit="$(git rev-parse "$tag^{commit}")"
+          release_commit="$(jq -r '.target_commitish' "$release_path")"
+          test "$tag_commit" = "$release_commit"
+          git merge-base --is-ancestor "$tag_commit" "$GITHUB_SHA"
+          asset_snapshot="$(jq -cS '[.assets[] | {name, size, digest}] | sort_by(.name)' "$release_path")"
+          prior_notes="$(jq -r '.body // ""' "$release_path")"
+          stable_notes="CyanDeck v$VERSION Stable promotes the previously published signed Beta to the default production update channel. The original x64/ARM64 ZIPs, EXEs, signed update manifests, full source and checksums are preserved byte-for-byte; no user settings or data are modified.
+
+          Original release notes:
+          $prior_notes"
+          release_id="$(jq -r '.id' "$release_path")"
+          # GitHub's release-edit permission check resolves target_commitish.
+          # Point release metadata at this workflow-only promotion commit so
+          # GITHUB_TOKEN can edit it without workflow-write permission. The
+          # existing immutable Git tag still identifies the signed Beta code.
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F prerelease=false -f make_latest=true \
+            -f target_commitish="$GITHUB_SHA" \
+            -f name="CyanDeck $tag (Stable)" -f body="$stable_notes" >/dev/null
+          updated_path="$RUNNER_TEMP/cyandeck-release-after.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$updated_path"
+          jq -e --arg head "$GITHUB_SHA" '.draft == false and .prerelease == false and
+            .target_commitish == $head and (.assets | length) == 8' "$updated_path"
+          test "$asset_snapshot" = "$(jq -cS '[.assets[] | {name, size, digest}] | sort_by(.name)' "$updated_path")"
+          # GitHub can take a moment to refresh its latest-Stable endpoint.
+          latest=""
+          for attempt in 1 2 3 4 5 6; do
+            latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+            if [ "$latest" = "$tag" ]; then break; fi
+            sleep 2
+          done
+          test "$latest" = "$tag"
+          echo "Verified $tag as latest Stable; all eight signed assets unchanged."
+
   sign:
     needs: prepare
     if: needs.prepare.outputs.publish == 'true'
