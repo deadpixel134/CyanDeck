@@ -108,12 +108,18 @@ jobs:
           Original release notes:
           $prior_notes"
           release_id="$(jq -r '.id' "$release_path")"
+          # GitHub's release-edit permission check resolves target_commitish.
+          # Point release metadata at this workflow-only promotion commit so
+          # GITHUB_TOKEN can edit it without workflow-write permission. The
+          # existing immutable Git tag still identifies the signed Beta code.
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
             -F prerelease=false -f make_latest=true \
+            -f target_commitish="$GITHUB_SHA" \
             -f name="CyanDeck $tag (Stable)" -f body="$stable_notes" >/dev/null
           updated_path="$RUNNER_TEMP/cyandeck-release-after.json"
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" > "$updated_path"
-          jq -e '.draft == false and .prerelease == false and (.assets | length) == 8' "$updated_path"
+          jq -e --arg head "$GITHUB_SHA" '.draft == false and .prerelease == false and
+            .target_commitish == $head and (.assets | length) == 8' "$updated_path"
           test "$asset_snapshot" = "$(jq -cS '[.assets[] | {name, size, digest}] | sort_by(.name)' "$updated_path")"
           # GitHub can take a moment to refresh its latest-Stable endpoint.
           latest=""
